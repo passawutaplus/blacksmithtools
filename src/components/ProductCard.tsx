@@ -47,13 +47,21 @@ export function ProductCard({
           ) : null}
           {brand ? (
             <span
-              className="absolute right-2.5 top-2.5 overflow-hidden rounded-md bg-white p-0.5 shadow-md ring-1 ring-black/10"
+              className={
+                brand.slug === "blacksmith"
+                  ? "absolute right-3 top-3"
+                  : "absolute right-2.5 top-2.5 overflow-hidden rounded-md bg-white p-1 shadow-md ring-1 ring-black/10"
+              }
               title={brand.name}
             >
               <BrandLogo
                 brand={brand}
                 decorative
-                className="block h-8 w-auto max-h-8 max-w-[5rem] object-contain"
+                className={
+                  brand.slug === "blacksmith"
+                    ? "h-[4.5rem] w-[4.5rem] shadow-md"
+                    : "block h-8 w-auto max-h-8 max-w-[5rem] object-contain"
+                }
               />
             </span>
           ) : null}

@@ -284,7 +284,12 @@ export default async function AboutPage() {
                 href={`/shop/${brand.slug}`}
                 className="flex h-20 items-center justify-center rounded-3xl border border-steel bg-white px-3 hover:border-navy"
               >
-                <BrandLogo brand={brand} className="h-8 w-full max-w-[96px]" />
+                <BrandLogo
+                  brand={brand}
+                  className={
+                    brand.slug === "blacksmith" ? "h-14 w-14" : "h-8 w-full max-w-[96px]"
+                  }
+                />
               </Link>
             </li>
           ))}

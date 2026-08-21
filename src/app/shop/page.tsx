@@ -74,10 +74,18 @@ export default async function ShopPage({
                     <li key={b.id} className="min-w-0">
                       <Link
                         href={`/shop/${b.slug}`}
-                        className="card flex h-[4.75rem] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden px-2 hover:ring-1 hover:ring-navy/20"
+                        className="card flex h-[5.5rem] min-w-0 flex-col items-center justify-center gap-1.5 overflow-hidden px-2 py-2 hover:ring-1 hover:ring-navy/20"
                       >
-                        <span className="flex h-8 w-full items-center justify-center overflow-hidden">
-                          <BrandLogo brand={b} decorative className="h-8 w-auto max-h-8 max-w-full" />
+                        <span className="flex h-11 w-full items-center justify-center overflow-hidden">
+                          <BrandLogo
+                            brand={b}
+                            decorative
+                            className={
+                              b.slug === "blacksmith"
+                                ? "h-11 w-11"
+                                : "h-8 w-auto max-h-8 max-w-full"
+                            }
+                          />
                         </span>
                         <span className="w-full truncate text-center text-[11px] text-muted">{b.name}</span>
                       </Link>

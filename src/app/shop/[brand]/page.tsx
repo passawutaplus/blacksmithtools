@@ -53,8 +53,16 @@ export default async function BrandShopPage({
       />
       <div className="container-bs py-8 md:py-10">
         {brand.logoUrl ? (
-          <div className="mb-6 flex h-12 items-center">
-            <BrandLogo brand={brand} decorative className="h-10 w-auto max-w-[180px] object-contain" />
+          <div className="mb-8 flex items-center">
+            <BrandLogo
+              brand={brand}
+              decorative
+              className={
+                brand.slug === "blacksmith"
+                  ? "h-28 w-28 shadow-[0_8px_30px_rgba(35,50,61,0.12)]"
+                  : "h-10 w-auto max-w-[180px] object-contain"
+              }
+            />
           </div>
         ) : null}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">

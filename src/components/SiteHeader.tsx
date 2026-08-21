@@ -291,11 +291,19 @@ export function SiteHeader({
                         <Link
                           key={b.id}
                           href={`/shop/${b.slug}`}
-                          className="card flex min-h-16 min-w-0 flex-col items-center justify-center gap-1 overflow-hidden px-3 py-2 hover:ring-1 hover:ring-navy/20"
+                          className="card flex min-h-[4.75rem] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden px-3 py-2.5 hover:ring-1 hover:ring-navy/20"
                           onClick={closeAll}
                         >
-                          <span className="flex h-7 w-full items-center justify-center overflow-hidden">
-                            <BrandLogo brand={b} decorative className="h-7 w-auto max-h-7 max-w-full" />
+                          <span className="flex h-11 w-full items-center justify-center overflow-hidden">
+                            <BrandLogo
+                              brand={b}
+                              decorative
+                              className={
+                                b.slug === "blacksmith"
+                                  ? "h-11 w-11"
+                                  : "h-7 w-auto max-h-7 max-w-full"
+                              }
+                            />
                           </span>
                           <span className="w-full truncate text-center text-[11px] text-muted">{b.name}</span>
                         </Link>
@@ -381,11 +389,17 @@ export function SiteHeader({
                   <Link
                     key={b.id}
                     href={`/shop/${b.slug}`}
-                    className="flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl bg-white px-2 py-2"
+                    className="flex min-h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl bg-white px-2 py-2.5"
                     onClick={closeAll}
                   >
-                    <span className="flex h-6 w-full items-center justify-center overflow-hidden">
-                      <BrandLogo brand={b} decorative className="h-6 w-auto max-h-6 max-w-full" />
+                    <span className="flex h-11 w-full items-center justify-center overflow-hidden">
+                      <BrandLogo
+                        brand={b}
+                        decorative
+                        className={
+                          b.slug === "blacksmith" ? "h-11 w-11" : "h-6 w-auto max-h-6 max-w-full"
+                        }
+                      />
                     </span>
                     <span className="w-full truncate text-center text-[11px] text-navy/70">{b.name}</span>
                   </Link>

@@ -10,6 +10,19 @@ export function BrandLogo({
   decorative?: boolean;
 }) {
   if (brand.logoUrl) {
+    if (brand.slug === "blacksmith") {
+      return (
+        <span
+          className={`inline-flex items-center justify-center overflow-hidden rounded-xl bg-navy p-[12%] ${className}`}
+        >
+          <img
+            src={brand.logoUrl}
+            alt={decorative ? "" : brand.name}
+            className="h-full w-full object-contain object-center"
+          />
+        </span>
+      );
+    }
     return (
       <img
         src={brand.logoUrl}
