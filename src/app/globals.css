@@ -1,26 +1,433 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --forge: #c24b32;
+  --forge-hover: #a83f2a;
+  --navy: #23323d;
+  --navy-deep: #1a252e;
+  --steel: #e8eaec;
+  --muted: #6b7280;
+  --background: #f5f6f7;
+  --foreground: #23323d;
+  --radius: 1.5rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-forge: var(--forge);
+  --color-forge-hover: var(--forge-hover);
+  --color-navy: var(--navy);
+  --color-navy-deep: var(--navy-deep);
+  --color-steel: var(--steel);
+  --color-muted: var(--muted);
+  --font-sans: var(--font-prompt), var(--font-outfit), sans-serif;
+  --radius-sm: 0.75rem;
+  --radius-md: 1.5rem;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
+  background: #f7f8f9;
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-prompt), var(--font-outfit), sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  min-width: 0;
+  overflow-x: hidden;
+}
+
+.font-latin {
+  font-family: var(--font-outfit), sans-serif;
+}
+
+h1,
+h2 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h3,
+h4,
+.label {
+  font-weight: 500;
+}
+
+.text-xs,
+.caption,
+figcaption {
+  font-weight: 300;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+}
+
+.container-bs {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: 1rem;
+}
+
+@media (min-width: 768px) {
+  .container-bs {
+    padding-inline: 1.5rem;
+  }
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+  background: var(--forge);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+}
+
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.625rem 1.25rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn-sm {
+  min-height: 36px;
+  padding: 0.35rem 0.85rem;
+  font-size: 0.8125rem;
+}
+
+.btn-icon {
+  min-height: 36px;
+  min-width: 36px;
+  padding: 0.35rem;
+  border-radius: 999px;
+}
+
+.btn-primary {
+  background: var(--forge);
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--forge-hover);
+}
+
+.btn-secondary {
+  background: white;
+  color: var(--navy);
+  border-color: #d1d5db;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--navy);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: white;
+}
+
+.btn-navy {
+  background: var(--navy);
+  color: white;
+}
+
+.btn-danger {
+  background: #b42318;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #912018;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.admin-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+  color: var(--muted);
+  white-space: nowrap;
+  background: #fafafa;
+}
+
+.admin-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  background: white;
+  /* ต้องกำหนดสีเอง เพราะถ้าไปวางบนพื้นมืดที่ตั้ง text-white ตัวหนังสือและ placeholder จะกลายเป็นขาวบนขาว */
+  color: var(--foreground);
+  font-size: 1rem;
+}
+
+textarea.input {
+  border-radius: 1.25rem;
+  min-height: 6rem;
+  padding: 0.75rem 1rem;
+}
+
+.input:focus {
+  outline: 2px solid var(--forge);
+  outline-offset: 1px;
+}
+
+.label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+
+.card {
+  background: white;
+  border: 1px solid rgba(35, 50, 61, 0.06);
+  border-radius: 1.5rem;
+  box-shadow: 0 8px 30px rgba(35, 50, 61, 0.08);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.data-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.7rem 1rem;
+  background: #23323d;
+  color: white;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #e8eaec;
+  vertical-align: top;
+  color: #23323d;
+}
+
+.data-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.data-table tbody tr:nth-child(even) {
+  background: #f7f8f9;
+}
+
+.data-table .num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.safe-bottom {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+@keyframes bs-marquee-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes bs-marquee-right {
+  from {
+    transform: translateX(-50%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  gap: 0.75rem;
+}
+
+.marquee-left {
+  animation: bs-marquee-left 34s linear infinite;
+}
+
+.marquee-right {
+  animation: bs-marquee-right 42s linear infinite;
+}
+
+.marquee-track:hover,
+.marquee-band:hover .marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-left,
+  .marquee-right {
+    animation: none;
+  }
+  .marquee-track {
+    flex-wrap: wrap;
+    width: 100%;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+  body {
+    background: white;
+  }
+  .reveal,
+  .reveal-fade,
+  .reveal-stagger > * {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+}
+
+.print-only {
+  display: none;
+}
+
+summary {
+  list-style: none;
+}
+
+summary::-webkit-details-marker {
+  display: none;
+}
+
+.btn-navy:hover:not(:disabled) {
+  background: var(--navy-deep);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+    transform: translate3d(0, 28px, 0);
+    transition:
+      opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .reveal.is-in {
+    opacity: 1;
+    transform: none;
+  }
+
+  .reveal-fade {
+    opacity: 0;
+    transition: opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .reveal-fade.is-in {
+    opacity: 1;
+  }
+
+  .reveal.is-in .reveal-stagger > * {
+    animation: reveal-up 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .reveal.is-in .reveal-stagger > *:nth-child(1) { animation-delay: 0.04s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(2) { animation-delay: 0.1s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(3) { animation-delay: 0.16s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(4) { animation-delay: 0.22s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(5) { animation-delay: 0.28s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(6) { animation-delay: 0.34s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(7) { animation-delay: 0.4s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(8) { animation-delay: 0.46s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(9) { animation-delay: 0.52s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(10) { animation-delay: 0.58s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(11) { animation-delay: 0.64s; }
+  .reveal.is-in .reveal-stagger > *:nth-child(12) { animation-delay: 0.7s; }
+
+  @keyframes reveal-up {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 18px, 0);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .hero-zoom {
+    animation: hero-zoom 18s ease-out both;
+  }
+
+  @keyframes hero-zoom {
+    from {
+      transform: scale(1.08);
+    }
+    to {
+      transform: scale(1);
+    }
+  }
 }

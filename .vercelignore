@@ -1,0 +1,6 @@
+.next
+node_modules
+data/runtime
+.env.local
+.git
+*.md
