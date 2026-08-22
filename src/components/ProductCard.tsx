@@ -9,6 +9,7 @@ import { brands } from "@/lib/seed";
 import { formatTHB } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
 import { ProductAddPopup } from "@/components/ProductAddPopup";
+import { getProductBlurb } from "@/lib/parse-product-details";
 
 function productBrand(product: Product): Brand | undefined {
   const matched = product.brandIds
@@ -71,8 +72,8 @@ export function ProductCard({
       <div className="flex flex-1 flex-col px-4 pb-4 pt-3">
         <Link href={href} className="min-w-0">
           <h3 className="line-clamp-2 text-sm font-bold leading-snug text-navy">{product.nameTh}</h3>
-          {!compact && product.description ? (
-            <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted">{product.description}</p>
+          {!compact ? (
+            <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted">{getProductBlurb(product)}</p>
           ) : null}
         </Link>
 

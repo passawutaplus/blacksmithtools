@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { LazadaMark, ShopeeMark, TikTokMark } from "@/components/ChannelIcons";
 
 interface Props {
   shopeeUrl?: string | null;
@@ -16,9 +16,9 @@ export function MarketplaceButtons({
   stickyMobile = false,
 }: Props) {
   const links = [
-    { href: shopeeUrl, label: "ซื้อบน Shopee", color: "bg-[#EE4D2D] text-white" },
-    { href: lazadaUrl, label: "ซื้อบน Lazada", color: "bg-[#0F146D] text-white" },
-    { href: tiktokUrl, label: "ซื้อบน TikTok", color: "bg-black text-white" },
+    { href: shopeeUrl, label: "ซื้อบน Shopee", color: "bg-[#EE4D2D] text-white", Icon: ShopeeMark },
+    { href: lazadaUrl, label: "ซื้อบน Lazada", color: "bg-[#0F146D] text-white", Icon: LazadaMark },
+    { href: tiktokUrl, label: "ซื้อบน TikTok", color: "bg-black text-white", Icon: TikTokMark },
   ].filter((l) => Boolean(l.href));
 
   if (links.length === 0) return null;
@@ -37,8 +37,8 @@ export function MarketplaceButtons({
             rel="noopener noreferrer nofollow"
             className={`btn text-sm ${l.color}`}
           >
+            <l.Icon className="h-4 w-4" />
             {l.label}
-            <ExternalLink className="h-3.5 w-3.5" />
           </a>
         ))}
       </div>

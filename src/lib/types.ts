@@ -234,6 +234,28 @@ export interface SiteSettings {
   paymentsLive: boolean;
   freeShippingMin: number;
   flatShippingFee: number;
+  /** คะแนนร้านบน Shopee ที่กรอกเอง เช่น 4.9 — 0 คือไม่โชว์ */
+  shopeeRating: number;
+  /** จำนวนรีวิวบน Shopee ที่กรอกเอง — 0 คือไม่โชว์ตัวเลข */
+  shopeeReviewCount: number;
+}
+
+export type ReviewSource = "shopee" | "lazada" | "line" | "web";
+
+/** รีวิวที่คัดจาก Shopee/ช่องทางอื่น แปะเองในหลังร้าน ไม่ดึงอัตโนมัติ */
+export interface ShopReview {
+  id: string;
+  quote: string;
+  author: string;
+  stars: number;
+  productName: string;
+  productId: string;
+  source: ReviewSource;
+  sourceUrl: string;
+  published: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type WholesaleLeadStatus = "new" | "contacted" | "closed";
@@ -266,6 +288,7 @@ export interface DbShape {
   documents: DocumentRecord[];
   shipments: Shipment[];
   inquiries: WholesaleLead[];
+  testimonials: ShopReview[];
   settings: SiteSettings;
   receiptSeq: number;
   orderSeq: number;

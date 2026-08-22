@@ -8,7 +8,7 @@ Tagline: *Tools Designed for Simpler Work*
 ## สแต็ก
 
 - Next.js App Router + TypeScript + Tailwind CSS 4
-- ข้อมูลเดโม่: JSON store ใน `data/runtime/` (สร้างอัตโนมัติ)
+- ข้อมูลร้าน: JSON ใน `data/runtime/` ตอนพัฒนา — บน Vercel เก็บถาวรใน Blob (`BLOB_READ_WRITE_TOKEN`)
 - Schema Supabase พร้อมใน `supabase/migrations/`
 - ชำระเงิน: Mock + โอน/สลิป + PromptPay stub + Payso adapter (ปิดจนกว่ามี merchant)
 

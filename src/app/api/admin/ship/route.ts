@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
 import {
   addShipmentPhotos,
+  readShipPhotoBytes,
   shipOrder,
-  shipPhotoDir,
-  shipPhotoFilePath,
   updateShipment,
 } from "@/lib/db";
 import { saveJpegOrPng, imageResponse } from "@/lib/save-image-upload";
@@ -23,7 +21,7 @@ async function collectPhotos(form: FormData) {
   }
   const names: string[] = [];
   for (const file of files) {
-    names.push(await saveJpegOrPng(shipPhotoDir(), file));
+    names.push(await saveJpegOrPng("ship-photos", file));
   }
   return names;
 }
@@ -87,12 +85,7 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const file = url.searchParams.get("file") ?? "";
-  const full = shipPhotoFilePath(file);
-  if (!full) return NextResponse.json({ error: "ไฟล์ไม่ถูกต้อง" }, { status: 400 });
-  try {
-    const buf = await fs.readFile(full);
-    return imageResponse(buf, file);
-  } catch {
-    return NextResponse.json({ error: "ไม่พบภาพ" }, { status: 404 });
-  }
+  const buf = await readShipPhotoBytes(file);
+  if (!buf) return NextResponse.json({ error: "ไม่พบภาพ" }, { status: 404 });
+  return imageResponse(buf, file);
 }

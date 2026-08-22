@@ -18,7 +18,7 @@ export async function generateMetadata({
   const { token } = await params;
   const detail = await getOrderByToken(token);
   const issued = detail?.document?.issuedAt || detail?.order.paidAt || detail?.order.createdAt;
-  return { title: { absolute: invoicePdfBasename(issued) } };
+  return { title: { absolute: invoicePdfBasename(issued, detail?.document?.number) } };
 }
 
 export default async function PrintReceiptPage({
@@ -31,7 +31,7 @@ export default async function PrintReceiptPage({
   if (!detail?.document) notFound();
   const { order, document, settings } = detail;
   const issued = document.issuedAt || order.paidAt || order.createdAt;
-  const pdfName = invoicePdfFilename(issued);
+  const pdfName = invoicePdfFilename(issued, document.number);
 
   return (
     <div className="a4-print-root min-h-dvh bg-[#e8eaec] print:bg-white">

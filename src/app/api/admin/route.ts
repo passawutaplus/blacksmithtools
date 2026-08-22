@@ -21,6 +21,9 @@ import {
   rejectSlip,
   saveAdminNote,
   saveProductInput,
+  saveShopReview,
+  deleteShopReview,
+  listShopReviews,
   setOrderStatus,
   setProductStock,
   setProductsFeatured,
@@ -90,6 +93,8 @@ export async function GET(req: Request) {
       return NextResponse.json({
         inquiries: await listWholesaleLeads(url.searchParams.get("status") || undefined),
       });
+    case "reviews":
+      return NextResponse.json({ reviews: await listShopReviews() });
     default:
       return NextResponse.json({ error: "ไม่รู้จักรายการ" }, { status: 400 });
   }
@@ -170,6 +175,10 @@ export async function POST(req: Request) {
         });
       case "update_settings":
         return NextResponse.json({ settings: await updateSettings(body.settings ?? {}) });
+      case "save_review":
+        return NextResponse.json({ review: await saveShopReview(body.review ?? body) });
+      case "delete_review":
+        return NextResponse.json(await deleteShopReview(String(body.id ?? "")));
       case "update_inquiry":
         return NextResponse.json({
           inquiry: await updateWholesaleLead(body.id, {

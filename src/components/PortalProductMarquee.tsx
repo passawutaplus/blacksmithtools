@@ -50,7 +50,8 @@ export function PortalProductMarquee({
 
   return (
     <section className="mt-7 -mx-4">
-      <h2 className="px-5 text-xs font-semibold uppercase tracking-wider text-white/55">สินค้า</h2>
+      <h2 className="sr-only">สินค้า</h2>
+      <div className="mx-4 h-px bg-white/25" aria-hidden />
       <div className="marquee-band mt-2.5 space-y-2.5 [mask-image:linear-gradient(to_right,transparent,black_6%,black_94%,transparent)]">
         {printItems.length > 0 ? <ProductSlideRow items={printItems} /> : null}
         {chemItems.length > 0 ? <ProductSlideRow items={chemItems} reverse /> : null}

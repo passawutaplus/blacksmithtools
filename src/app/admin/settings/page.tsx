@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { adminJson } from "@/lib/admin-client";
+import { GO_QR_DOWNLOAD_NAME, GO_QR_URL } from "@/lib/go-qr";
 import { GITHUB_REPO, SUPABASE_DASHBOARD } from "@/lib/project-links";
 import type { SiteSettings } from "@/lib/types";
 
@@ -29,6 +30,8 @@ const EMPTY: SiteSettings = {
   paymentsLive: false,
   freeShippingMin: 0,
   flatShippingFee: 0,
+  shopeeRating: 0,
+  shopeeReviewCount: 0,
 };
 
 function Field({
@@ -157,6 +160,32 @@ export default function AdminSettingsPage() {
           <Field id="ig" label="Instagram" value={s.instagramUrl} onChange={(v) => patch({ instagramUrl: v })} />
           <Field id="tiktokSocial" label="TikTok (โซเชียล)" value={s.tiktokSocialUrl} onChange={(v) => patch({ tiktokSocialUrl: v })} />
           <Field id="yt" label="YouTube" value={s.youtubeUrl} onChange={(v) => patch({ youtubeUrl: v })} />
+        </div>
+      </section>
+
+      <section className="card mt-4 space-y-4 p-4 md:p-6">
+        <h2 className="font-semibold text-navy">QR สติกเกอร์สินค้า</h2>
+        <p className="text-sm text-muted">
+          สแกนแล้วเข้า{" "}
+          <a href="/go" className="underline" target="_blank" rel="noreferrer">
+            /go
+          </a>{" "}
+          — ไฟล์ SVG ย่อขยายได้ไม่แตก เอาไปวางในงานพิมพ์สติกเกอร์ได้เลย
+        </p>
+        <div className="flex flex-wrap items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/go/qr.svg"
+            alt="QR ไปหน้าช่องทางร้าน"
+            className="h-40 w-40 rounded-lg bg-white p-2 ring-1 ring-navy/10"
+          />
+          <div className="space-y-2">
+            <p className="font-latin text-sm text-navy">{GO_QR_URL}</p>
+            <p className="text-xs text-muted">แนะนำไม่เล็กกว่า 2 ซม. และเหลือขอบขาวรอบโค้ด</p>
+            <a href="/go/qr.svg" download={GO_QR_DOWNLOAD_NAME} className="btn btn-secondary">
+              ดาวน์โหลด SVG
+            </a>
+          </div>
         </div>
       </section>
 

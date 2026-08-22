@@ -400,6 +400,9 @@ export function ProductForm({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
+          <p className="mt-1 text-xs text-muted">
+            ขึ้นบรรทัดใหม่ตามหัวข้อ ข้อมูลเฉพาะรุ่น / ข้อมูลสำคัญทั่วไป / ข้อควรระวัง / วิธีใช้ — หน้าร้านจะจัดไอคอนให้เอง
+          </p>
         </div>
         <div className="mt-4">
           <label className="label" htmlFor="compat">

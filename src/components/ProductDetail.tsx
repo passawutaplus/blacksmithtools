@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ListChecks, Minus, Plus, TriangleAlert } from "lucide-react";
+import { ChevronDown, Minus, Plus, ShoppingCart, Zap } from "lucide-react";
 import type { Brand, Category, Product } from "@/lib/types";
 import { formatTHB } from "@/lib/utils";
 import {
@@ -14,9 +14,10 @@ import {
   uniqueGallery,
   variantAxes,
 } from "@/lib/product";
-import { getProductCopy } from "@/lib/product-copy";
+import { getProductDetailSections } from "@/lib/parse-product-details";
 import { useCartStore } from "@/lib/cart-store";
 import { MarketplaceButtons } from "@/components/MarketplaceButtons";
+import { ProductDetailSections } from "@/components/ProductDetailSections";
 
 export function ProductDetail({
   product,
@@ -28,7 +29,7 @@ export function ProductDetail({
   categories: Category[];
 }) {
   const router = useRouter();
-  const copy = useMemo(() => getProductCopy(product), [product]);
+  const detailSections = useMemo(() => getProductDetailSections(product), [product]);
   const addItem = useCartStore((s) => s.addItem);
   const setOpen = useCartStore((s) => s.setOpen);
   const options = selectableVariants(product);
@@ -97,35 +98,37 @@ export function ProductDetail({
   ].filter((tag, i, all) => tag && all.findIndex((t) => t.toLowerCase() === tag.toLowerCase()) === i);
 
   return (
-    <div className="grid gap-10 lg:grid-cols-2 lg:items-start lg:gap-14">
-      <div>
-        <div className="relative aspect-square overflow-hidden rounded-3xl bg-steel">
+    <div className="grid min-w-0 gap-8 lg:grid-cols-2 lg:items-start lg:gap-14">
+      <div className="min-w-0">
+        <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-steel md:aspect-square md:rounded-3xl">
           {main ? (
             <Image
               src={main}
               alt={selected?.name ? `${product.nameTh} ${selected.name}` : product.nameTh}
               fill
               priority
-              className="object-contain p-10"
+              className="object-contain p-3 md:p-10"
               sizes="(max-width: 1024px) 100vw, 50vw"
             />
           ) : null}
         </div>
         {gallery.length > 1 ? (
           <div
-            className={`mt-4 grid grid-cols-4 gap-3 ${
-              thumbCols === 6 ? "sm:grid-cols-6" : thumbCols === 5 ? "sm:grid-cols-5" : "sm:grid-cols-4"
+            className={`mt-3 flex w-full min-w-0 gap-2.5 overflow-x-auto overscroll-x-contain pb-1 snap-x snap-mandatory [scrollbar-width:thin] md:mt-4 md:grid md:gap-3 md:overflow-visible md:pb-0 md:snap-none ${
+              thumbCols === 6 ? "md:grid-cols-6" : thumbCols === 5 ? "md:grid-cols-5" : "md:grid-cols-4"
             }`}
+            aria-label="รูปสินค้า"
           >
             {gallery.map((src, i) => (
               <button
                 key={`${src}-${i}`}
                 type="button"
                 onClick={() => setMain(src)}
-                className={`relative aspect-square overflow-hidden rounded-xl bg-steel ${
+                className={`relative aspect-square w-[4.75rem] shrink-0 snap-start overflow-hidden rounded-xl bg-steel md:w-auto md:min-w-0 ${
                   src === main ? "ring-2 ring-navy" : "ring-1 ring-transparent"
                 }`}
                 aria-label="ดูรูปนี้"
+                aria-current={src === main ? "true" : undefined}
               >
                 <Image src={src} alt="" fill className="object-contain p-1.5" sizes="120px" />
               </button>
@@ -167,23 +170,6 @@ export function ProductDetail({
                 className="rounded-full bg-steel px-3.5 py-1.5 text-xs font-semibold text-navy"
               >
                 {tag}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-
-        {copy.hook ? (
-          <p className="mt-5 text-sm leading-7 text-navy/80">{copy.hook}</p>
-        ) : null}
-
-        {copy.highlights.length > 0 ? (
-          <ul className="mt-6 space-y-3.5">
-            {copy.highlights.map((h, i) => (
-              <li key={i} className="flex items-start gap-3 text-sm text-navy">
-                <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-forge/10 text-forge">
-                  <h.icon className="h-4 w-4" aria-hidden />
-                </span>
-                <span className="leading-6">{h.text}</span>
               </li>
             ))}
           </ul>
@@ -296,6 +282,7 @@ export function ProductDetail({
             disabled={!canBuy}
             onClick={buyNow}
           >
+            <Zap className="h-4 w-4" aria-hidden />
             {canBuy ? "ซื้อเลย" : "รอคิวพิมพ์"}
           </button>
           <button
@@ -304,6 +291,7 @@ export function ProductDetail({
             disabled={!canBuy}
             onClick={() => addToCart(true)}
           >
+            <ShoppingCart className="h-4 w-4" aria-hidden />
             ใส่ตะกร้า
           </button>
         </div>
@@ -316,46 +304,6 @@ export function ProductDetail({
           />
         </div>
 
-        {copy.howTo.length > 0 ? (
-          <div className="mt-8 rounded-2xl bg-steel/60 p-5">
-            <p className="flex items-center gap-2 text-sm font-bold text-navy">
-              <ListChecks className="h-4 w-4 text-forge" aria-hidden />
-              วิธีใช้งาน
-            </p>
-            <ol className="mt-4 space-y-3.5">
-              {copy.howTo.map((step, i) => (
-                <li key={i} className="flex items-start gap-3 text-sm text-navy/85">
-                  <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-navy text-[11px] font-bold text-white">
-                    {i + 1}
-                  </span>
-                  <span className="leading-6">{step}</span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        ) : null}
-
-        {copy.specs.length > 0 ? (
-          <div className="mt-6 rounded-2xl border border-steel p-5">
-            <p className="text-sm font-bold text-navy">สเปกสินค้า</p>
-            <dl className="mt-4 space-y-3">
-              {copy.specs.map((spec) => (
-                <div key={spec.label} className="flex gap-4 text-sm">
-                  <dt className="w-28 shrink-0 text-muted">{spec.label}</dt>
-                  <dd className="text-navy">{spec.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ) : null}
-
-        {copy.caution ? (
-          <p className="mt-6 flex items-start gap-2.5 text-xs leading-6 text-muted">
-            <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-forge" aria-hidden />
-            {copy.caution}
-          </p>
-        ) : null}
-
         <div className="mt-8 divide-y border-y">
           <details
             className="group py-4"
@@ -366,9 +314,7 @@ export function ProductDetail({
               รายละเอียดทั้งหมด
               <ChevronDown className={`h-4 w-4 transition ${openDesc ? "rotate-180" : ""}`} />
             </summary>
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-navy/80">
-              {product.description}
-            </p>
+            <ProductDetailSections sections={detailSections} />
           </details>
           <details
             className="group py-4"

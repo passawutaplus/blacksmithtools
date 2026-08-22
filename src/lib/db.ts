@@ -1,13 +1,16 @@
 import "server-only";
-import { promises as fs } from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
-import { brands, categories, CATALOG_VERSION, defaultSettings, seedProducts, SHOP_ADDRESS, SHOP_ADDRESS_VERSION } from "./seed";
+import { brands, categories, CATALOG_VERSION, defaultSettings, seedProducts, SHOP_ADDRESS, SHOP_ADDRESS_VERSION, SHOP_PHONE } from "./seed";
 import { linePricing, normalizeVariants, syncFromVariants } from "./product";
 import { slugify } from "./utils";
 import type { AdminOrderRow } from "./admin-types";
 import { phonesMatch } from "./phone";
 import { completeThaiAddress } from "./thai-address";
+import { normalizeShopReview, sortShopReviews } from "./reviews";
+import { readRuntimeBytes, readRuntimeText, runtimeRoot, safeUploadName, writeRuntimeText } from "./runtime-store";
+
+export { safeUploadName };
 import { filterBillsByPhone, toTrackBillSummary } from "./track-bills";
 import type { TrackBillSummary } from "./track-types";
 import { mapTrack17ToShop, normalizeTrackingNo, type Track17Snapshot } from "./track17";
@@ -29,23 +32,20 @@ import type {
   Shipment,
   ShippingAddress,
   SiteSettings,
+  ShopReview,
   WholesaleLead,
   WholesaleLeadStatus,
 } from "./types";
 
-const DATA_DIR = process.env.VERCEL
-  ? path.join("/tmp", "blacksmith-runtime")
-  : path.join(process.cwd(), "data", "runtime");
-const DB_FILE = path.join(DATA_DIR, "db.json");
+const DATA_DIR = runtimeRoot();
 
 export function slipDir() {
   return path.join(DATA_DIR, "slips");
 }
 
 export function slipFilePath(filename: string) {
-  const base = path.basename(filename);
-  if (!base || base !== filename.replace(/\\/g, "/").split("/").pop()) return null;
-  if (!/^[a-zA-Z0-9._-]+$/.test(base)) return null;
+  const base = safeUploadName(filename);
+  if (!base) return null;
   return path.join(slipDir(), base);
 }
 
@@ -54,9 +54,8 @@ export function shipPhotoDir() {
 }
 
 export function shipPhotoFilePath(filename: string) {
-  const base = path.basename(filename);
-  if (!base || base !== filename.replace(/\\/g, "/").split("/").pop()) return null;
-  if (!/^[a-zA-Z0-9._-]+$/.test(base)) return null;
+  const base = safeUploadName(filename);
+  if (!base) return null;
   return path.join(shipPhotoDir(), base);
 }
 
@@ -83,6 +82,7 @@ function emptyDb(): DbShape {
     documents: [],
     shipments: [],
     inquiries: [],
+    testimonials: [],
     settings: structuredClone(defaultSettings),
     receiptSeq: 0,
     orderSeq: 0,
@@ -112,32 +112,44 @@ function applyShopAddress(db: DbShape): boolean {
   if (!db.settings) db.settings = structuredClone(defaultSettings);
   if (db.shopAddressVersion === SHOP_ADDRESS_VERSION) return false;
   db.settings.address = SHOP_ADDRESS;
+  db.settings.phone = SHOP_PHONE;
   db.shopAddressVersion = SHOP_ADDRESS_VERSION;
   return true;
 }
 
 async function ensureDb(): Promise<DbShape> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  try {
-    const raw = await fs.readFile(DB_FILE, "utf8");
-    const db = JSON.parse(raw) as DbShape;
-    if (!Array.isArray(db.inquiries)) db.inquiries = [];
-    if (typeof db.inquirySeq !== "number") db.inquirySeq = db.inquiries.length;
-    const catalogChanged = applyCatalog(db);
-    const shippingChanged = applyShippingPolicy(db);
-    const addressChanged = applyShopAddress(db);
-    if (catalogChanged || shippingChanged || addressChanged) await saveDb(db);
-    return db;
-  } catch {
+  const raw = await readRuntimeText("db.json");
+  if (!raw) {
     const db = emptyDb();
-    await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+    await saveDb(db);
     return db;
   }
+  const db = JSON.parse(raw) as DbShape;
+  if (!Array.isArray(db.inquiries)) db.inquiries = [];
+  if (!Array.isArray(db.testimonials)) db.testimonials = [];
+  if (typeof db.inquirySeq !== "number") db.inquirySeq = db.inquiries.length;
+  db.settings = { ...defaultSettings, ...db.settings };
+  const catalogChanged = applyCatalog(db);
+  const shippingChanged = applyShippingPolicy(db);
+  const addressChanged = applyShopAddress(db);
+  if (catalogChanged || shippingChanged || addressChanged) await saveDb(db);
+  return db;
 }
 
 async function saveDb(db: DbShape) {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
+  await writeRuntimeText("db.json", JSON.stringify(db, null, 2));
+}
+
+export async function readSlipBytes(filename: string) {
+  const name = safeUploadName(filename);
+  if (!name) return null;
+  return readRuntimeBytes(`slips/${name}`);
+}
+
+export async function readShipPhotoBytes(filename: string) {
+  const name = safeUploadName(filename);
+  if (!name) return null;
+  return readRuntimeBytes(`ship-photos/${name}`);
 }
 
 function todayCode() {
@@ -192,9 +204,58 @@ export async function getSettings() {
 
 export async function updateSettings(patch: Partial<SiteSettings>) {
   const db = await ensureDb();
+  if (patch.shopeeRating !== undefined) {
+    patch.shopeeRating = Math.min(5, Math.max(0, Number(patch.shopeeRating) || 0));
+  }
+  if (patch.shopeeReviewCount !== undefined) {
+    patch.shopeeReviewCount = Math.max(0, Math.round(Number(patch.shopeeReviewCount) || 0));
+  }
   db.settings = { ...db.settings, ...patch };
   await saveDb(db);
   return db.settings;
+}
+
+export async function listShopReviews() {
+  const db = await ensureDb();
+  return sortShopReviews(db.testimonials);
+}
+
+export async function listPublishedReviews(productId?: string) {
+  const rows = (await listShopReviews()).filter((row) => row.published);
+  if (!productId) return rows;
+  const matched = rows.filter((row) => row.productId === productId);
+  return matched.length ? matched : rows.filter((row) => !row.productId);
+}
+
+export async function saveShopReview(input: Partial<ShopReview> & { quote?: string }) {
+  const db = await ensureDb();
+  const id = String(input.id ?? "").trim();
+  const existing = id ? db.testimonials.find((row) => row.id === id) : undefined;
+  const next = normalizeShopReview(input, existing);
+  const now = new Date().toISOString();
+  if (existing) {
+    Object.assign(existing, next, { id: existing.id, createdAt: existing.createdAt, updatedAt: now });
+    await saveDb(db);
+    return existing;
+  }
+  const row: ShopReview = {
+    ...next,
+    id: nanoid(12),
+    createdAt: now,
+    updatedAt: now,
+  };
+  db.testimonials.push(row);
+  await saveDb(db);
+  return row;
+}
+
+export async function deleteShopReview(id: string) {
+  const db = await ensureDb();
+  const before = db.testimonials.length;
+  db.testimonials = db.testimonials.filter((row) => row.id !== id);
+  if (db.testimonials.length === before) throw new Error("ไม่พบรีวิว");
+  await saveDb(db);
+  return { ok: true as const };
 }
 
 export async function listProducts(filters?: {
@@ -1074,7 +1135,7 @@ export async function getShipmentPhotoForToken(token: string, filename: string) 
   if (!detail) return null;
   const allowed = detail.shipments.some((s) => (s.photoPaths ?? []).includes(filename));
   if (!allowed) return null;
-  return shipPhotoFilePath(filename);
+  return safeUploadName(filename);
 }
 
 export async function markDelivered(orderId: string) {

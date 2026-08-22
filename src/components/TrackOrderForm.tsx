@@ -191,7 +191,7 @@ export function TrackOrderForm({
 
       {lineUrl ? (
         <p className={portal ? "mt-3 text-center text-xs leading-relaxed text-muted" : "mt-4 text-center text-sm leading-relaxed text-muted"}>
-          จำเลขบิลไม่ได้?{" "}
+          จำเบอร์ไม่ได้?{" "}
           <a
             href={lineUrl}
             target="_blank"

@@ -26,6 +26,8 @@ const settings: SiteSettings = {
   paymentsLive: false,
   freeShippingMin: 1000,
   flatShippingFee: 35,
+  shopeeRating: 0,
+  shopeeReviewCount: 0,
 };
 
 describe("shopChannelLinks", () => {

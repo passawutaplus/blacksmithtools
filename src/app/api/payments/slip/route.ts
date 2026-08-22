@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
-import { nanoid } from "nanoid";
 import { getOrderByToken, submitSlip } from "@/lib/db";
+import { saveSlipUpload } from "@/lib/save-image-upload";
 
 export async function POST(req: Request) {
   const form = await req.formData();
@@ -23,23 +21,14 @@ export async function POST(req: Request) {
   const detail = await getOrderByToken(token);
   if (!detail) return NextResponse.json({ error: "ไม่พบบิล" }, { status: 404 });
 
-  const buf = Buffer.from(await file.arrayBuffer());
-  // magic bytes check (jpeg/png/pdf)
-  const isJpeg = buf[0] === 0xff && buf[1] === 0xd8;
-  const isPng = buf[0] === 0x89 && buf[1] === 0x50;
-  const isPdf = buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46;
-  if (!isJpeg && !isPng && !isPdf) {
-    return NextResponse.json({ error: "ไฟล์ไม่ถูกต้อง" }, { status: 400 });
+  try {
+    const filename = await saveSlipUpload(file);
+    const { order } = await submitSlip(detail.order.id, filename);
+    return NextResponse.json({ ok: true, status: order.status });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "อัปสลิปไม่สำเร็จ" },
+      { status: 400 },
+    );
   }
-
-  const ext = isPdf ? "pdf" : isPng ? "png" : "jpg";
-  const dir = process.env.VERCEL
-    ? path.join("/tmp", "blacksmith-runtime", "slips")
-    : path.join(process.cwd(), "data", "runtime", "slips");
-  await fs.mkdir(dir, { recursive: true });
-  const filename = `${nanoid(16)}.${ext}`;
-  await fs.writeFile(path.join(dir, filename), buf);
-
-  const { order } = await submitSlip(detail.order.id, filename);
-  return NextResponse.json({ ok: true, status: order.status });
 }

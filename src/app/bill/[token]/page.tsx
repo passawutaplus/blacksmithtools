@@ -74,8 +74,8 @@ export default async function BillPage({
         <div className="card p-5">
           <h2 className="font-bold">รายการสินค้า</h2>
           <ul className="mt-4 space-y-3">
-            {order.items.map((item) => (
-              <li key={`${item.productId}-${item.variantId ?? item.sku}`} className="flex gap-3">
+            {order.items.map((item, i) => (
+              <li key={`${item.productId}-${item.variantId ?? item.sku}-${i}`} className="flex gap-3">
                 <div className="relative h-16 w-16 shrink-0 bg-steel">
                   <Image src={item.imageUrl} alt={item.name} fill className="object-contain p-1" sizes="64px" />
                 </div>

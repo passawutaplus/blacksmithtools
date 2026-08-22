@@ -12,6 +12,7 @@ import {
   Menu,
   Package,
   Settings,
+  Star,
   X,
 } from "lucide-react";
 import { adminJson } from "@/lib/admin-client";
@@ -20,10 +21,11 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/admin", label: "ภาพรวม", icon: LayoutDashboard },
   { href: "/admin/orders", label: "ออเดอร์", icon: ClipboardList },
-          { href: "/admin/issue", label: "พิมพ์เอกสาร", icon: FileText },
+  { href: "/admin/issue", label: "พิมพ์เอกสาร", icon: FileText },
   { href: "/admin/inquiries", label: "ขายส่ง", icon: Handshake },
   { href: "/admin/slips", label: "สลิป", icon: ImageIcon },
   { href: "/admin/products", label: "สินค้า", icon: Package },
+  { href: "/admin/reviews", label: "รีวิว", icon: Star },
   { href: "/admin/settings", label: "ตั้งค่า", icon: Settings },
 ];
 

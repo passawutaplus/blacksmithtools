@@ -1,13 +1,18 @@
 import Image from "next/image";
 import Link from "next/link";
 import { Printer, ShieldCheck, Truck, Wrench } from "lucide-react";
-import { listProducts, getSettings } from "@/lib/db";
+import { listProducts, getSettings, listPublishedReviews } from "@/lib/db";
+import { ReviewSection } from "@/components/ReviewSection";
 import { pickCollectionProducts, storefrontCategories } from "@/lib/collections";
 import { CategoryShowcase } from "@/components/CategoryShowcase";
 import { HeroBrandSlider } from "@/components/HeroBrandSlider";
 
 export default async function HomePage() {
-  const [{ products: all, categories }, settings] = await Promise.all([listProducts(), getSettings()]);
+  const [{ products: all, categories }, settings, reviews] = await Promise.all([
+    listProducts(),
+    getSettings(),
+    listPublishedReviews(),
+  ]);
   const navCats = storefrontCategories(categories);
   const modules = navCats
     .map((category) => {
@@ -35,6 +40,16 @@ export default async function HomePage() {
       settings.facebookUrl,
       settings.lineUrl,
     ].filter((url, i, all) => Boolean(url) && all.indexOf(url) === i),
+    ...(settings.shopeeRating > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: settings.shopeeRating,
+            bestRating: 5,
+            ...(settings.shopeeReviewCount > 0 ? { ratingCount: settings.shopeeReviewCount } : {}),
+          },
+        }
+      : {}),
   };
 
   return (
@@ -105,6 +120,8 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
+
+      <ReviewSection reviews={reviews.slice(0, 6)} settings={settings} />
 
       <section className="container-bs py-10 md:py-12">
         <p className="text-sm font-semibold text-forge">หมวดสินค้า</p>

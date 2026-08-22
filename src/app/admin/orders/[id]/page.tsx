@@ -717,8 +717,8 @@ export default function AdminOrderDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {order.items.map((item) => (
-                <tr key={`${item.productId}-${item.sku}`}>
+              {order.items.map((item, i) => (
+                <tr key={`${item.productId}-${item.variantId ?? item.sku}-${i}`}>
                   <td>
                     <div className="flex items-center gap-3">
                       {item.imageUrl ? (

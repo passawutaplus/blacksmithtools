@@ -1,20 +1,19 @@
 import catalog from "@/data/shopee-catalog.json";
 import { merchIdsForProduct } from "./collections";
+import { SHOP_ADDRESS, SHOP_PHONE } from "./shop-contact";
 import type { Brand, Category, Product, SiteSettings } from "./types";
 
 export const CATALOG_VERSION = catalog.version;
 export const TIKTOK_PROFILE_URL = "https://www.tiktok.com/@blacksmith_ts";
 export const FACEBOOK_PAGE_URL = "https://www.facebook.com/blacksmithtoolsandsupplies";
 
-export const SHOP_ADDRESS =
-  "143/109 บางซื่อคอนโดมิเนียม ถนนริมคลองประปา แขวงบางซื่อ บางซื่อ กรุงเทพมหานคร 10800";
-export const SHOP_ADDRESS_VERSION = "2026-08-22-bangsue";
+export { SHOP_ADDRESS, SHOP_ADDRESS_VERSION, SHOP_PHONE } from "./shop-contact";
 
 export const defaultSettings: SiteSettings = {
   shopName: "BlackSmith Tools & Supplies",
   tagline: "Tools Designed for Simpler Work",
   address: SHOP_ADDRESS,
-  phone: "",
+  phone: SHOP_PHONE,
   email: "",
   taxId: "",
   lineUrl: "https://lin.ee/8iXKCd6",
@@ -35,6 +34,8 @@ export const defaultSettings: SiteSettings = {
   paymentsLive: false,
   freeShippingMin: 1000,
   flatShippingFee: 35,
+  shopeeRating: 0,
+  shopeeReviewCount: 0,
 };
 
 export const brands: Brand[] = [

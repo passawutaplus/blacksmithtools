@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowUpRight, ChevronRight, ClipboardCheck, Globe, Phone, RotateCcw } from "lucide-react";
+import { ArrowUpRight, ChevronRight, ClipboardCheck, Globe, RotateCcw } from "lucide-react";
 import type { Product, SiteSettings } from "@/lib/types";
 import { formatTHB } from "@/lib/utils";
 import {
@@ -243,6 +243,15 @@ function SectionLabel({ children }: { children: string }) {
   return <h2 className="px-1 text-xs font-semibold uppercase tracking-wider text-white/55">{children}</h2>;
 }
 
+function SectionRule({ label }: { label: string }) {
+  return (
+    <>
+      <h2 className="sr-only">{label}</h2>
+      <div className="h-px bg-white/25" aria-hidden />
+    </>
+  );
+}
+
 export function LinkPortal({
   settings,
   product,
@@ -335,24 +344,8 @@ export function LinkPortal({
           </section>
         ) : null}
 
-        {settings.phone ? (
-          <a
-            href={`tel:${settings.phone}`}
-            className={`${rowClassName()} mt-2`}
-          >
-            <ChannelBadge className="bg-navy-deep text-white">
-              <Phone className="h-5 w-5" aria-hidden />
-            </ChannelBadge>
-            <span className="min-w-0 flex-1">
-              <span className="block text-[15px] font-semibold leading-tight">โทรร้าน</span>
-              <span className="mt-0.5 block text-xs font-light text-muted">{settings.phone}</span>
-            </span>
-            <ChevronRight className="h-5 w-5 shrink-0 text-muted" aria-hidden />
-          </a>
-        ) : null}
-
         <section className="mt-7">
-          <SectionLabel>ซื้อสินค้า</SectionLabel>
+          <SectionRule label="ซื้อสินค้า" />
           {markets.length > 0 ? (
             <div
               className={`mt-3 grid gap-3 ${
@@ -405,7 +398,7 @@ export function LinkPortal({
         <PortalProductMarquee printItems={printSlides} chemItems={chemSlides} />
 
         <section className="mt-7">
-          <SectionLabel>บริการ</SectionLabel>
+          <SectionRule label="บริการ" />
           <div className="mt-2.5 flex flex-col gap-3">
             {services.map((link) => (
               <ServiceCard key={link.id} link={link} />

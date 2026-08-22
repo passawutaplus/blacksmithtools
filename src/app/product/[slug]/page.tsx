@@ -1,8 +1,10 @@
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getProductBySlug, listProducts } from "@/lib/db";
+import { getProductBySlug, listProducts, getSettings, listPublishedReviews } from "@/lib/db";
+import { ReviewSection } from "@/components/ReviewSection";
 import { formatTHB } from "@/lib/utils";
+import { getProductBlurb } from "@/lib/parse-product-details";
 import { ProductDetail } from "@/components/ProductDetail";
 import { ProductCard } from "@/components/ProductCard";
 import { SectionHead } from "@/components/PageHeader";
@@ -17,13 +19,16 @@ export async function generateMetadata({
   const data = await getProductBySlug(slug);
   if (!data) return { title: "ไม่พบสินค้า" };
   const { product, brands } = data;
+  const blurb = getProductBlurb(product, 180);
   const brandNames = brands.map((b) => b.name).join(", ");
   return {
     title: `${product.nameTh} | ${formatTHB(product.price)}`,
-    description: `${product.description} ใช้กับ: ${product.compatibilities.join(", ")}. ${brandNames}`,
+    description: product.compatibilities.length
+      ? `${blurb} ใช้กับ: ${product.compatibilities.join(", ")}. ${brandNames}`
+      : `${blurb} ${brandNames}`.trim(),
     openGraph: {
       title: product.nameTh,
-      description: product.description,
+      description: blurb,
       images: [{ url: product.imageUrl }],
     },
   };
@@ -49,18 +54,23 @@ export default async function ProductPage({
   if (product.slug && product.slug !== requested) {
     redirect(`/product/${encodeURI(product.slug)}`);
   }
-  const { products: related } = await listProducts({
-    brand: brands[0]?.slug,
-  });
+  const [{ products: related }, settings, reviews] = await Promise.all([
+    listProducts({
+      brand: brands[0]?.slug,
+    }),
+    getSettings(),
+    listPublishedReviews(product.id),
+  ]);
   const relatedList = related.filter((p) => p.id !== product.id).slice(0, 4);
   const optionCount = product.variants?.length ?? 0;
+  const blurb = getProductBlurb(product, 180);
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.nameTh,
     image: product.images,
-    description: product.description,
+    description: blurb,
     sku: product.sku,
     brand: brands.map((b) => ({ "@type": "Brand", name: b.name })),
     offers:
@@ -109,6 +119,8 @@ export default async function ProductPage({
         <span className="text-navy">{product.nameTh}</span>
       </nav>
       <ProductDetail product={product} brands={brands} categories={shopCats.length ? shopCats : categories} />
+
+      <ReviewSection reviews={reviews.slice(0, 3)} settings={settings} embedded />
 
       {relatedList.length > 0 ? (
         <section className="mt-16 md:mt-24">

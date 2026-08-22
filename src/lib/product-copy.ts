@@ -66,6 +66,21 @@ function detectMaterial(description: string): string | null {
   return null;
 }
 
+function productText(product: Product) {
+  return `${product.slug}\n${product.nameTh}\n${product.description || ""}`;
+}
+
+export type CatalogKind = "chem" | "adhesive" | "reuse" | "print" | "other";
+
+export function catalogKind(product: Product): CatalogKind {
+  const t = productText(product);
+  if (/reuse|แกลลอนเปล่า|โรลม้วนสายไฟ|hand-?caster/i.test(t)) return "reuse";
+  if (/kleenboy|adhesive cleaner|ลอกสติ๊กเกอร์|น้ำยาขจัดคราบเหนียว/i.test(t)) return "adhesive";
+  if (product.categoryIds.includes("c-chem") || /gooporange|เจลล้างมือ/i.test(t)) return "chem";
+  if (detectMaterial(t) || /3d\s*print|fdm|เส้นพลาสติก/i.test(t)) return "print";
+  return "other";
+}
+
 function detectPackSize(name: string, description: string): string | null {
   const m = `${name} ${description}`.match(/(\d[\d,]*\.?\d*)\s*(ml\.?|มล)/i);
   if (!m) return null;
@@ -102,6 +117,7 @@ function compatText(product: Product): string {
 export function getProductCopy(product: Product): ProductCopy {
   const list = blocks(product.description || "");
   const type = physicalType(product);
+  const kind = catalogKind(product);
   const hook = extractHook(list) || product.nameTh;
 
   const generalBlock = findBlock(list, /ข้อมูลสำคัญทั่วไป/);
@@ -110,8 +126,46 @@ export function getProductCopy(product: Product): ProductCopy {
 
   const material = detectMaterial(product.description || "");
   const variantCount = product.variants?.length ?? 0;
+  const optionSpec = { label: "ตัวเลือก", value: variantCount > 1 ? `${variantCount} แบบ` : "1 แบบ" };
 
-  if (type === "c-chem") {
+  if (kind === "reuse") {
+    return {
+      hook,
+      highlights: [{ icon: Layers, text: "สินค้ามือสองหรือของเหลือใช้ ตามสต็อกที่มี" }],
+      howTo: [
+        "เลือกสีหรือแบบที่มีในสต็อก",
+        "ตรวจสภาพสินค้าก่อนใช้",
+        "ล้างทำความสะอาดหากจะบรรจุของเหลวหรือเก็บสาย",
+      ],
+      specs: [
+        { label: "ประเภท", value: "ของใช้ซ้ำ / ตามสต็อก" },
+        optionSpec,
+      ],
+      caution: "สินค้ามือสองหรือของเหลือใช้ จำนวนตามที่ลงสต็อก อาจมีรอยจากการใช้งาน",
+    };
+  }
+
+  if (kind === "adhesive") {
+    return {
+      hook,
+      highlights: [
+        { icon: Droplets, text: "ลบคราบเหนียว สติ๊กเกอร์ และเทปกาว สำหรับงานติดตั้งภาคสนาม" },
+        { icon: ShieldCheck, text: "ขนาดพกพา ใช้กับพื้นผิวหลายชนิด ควรทดสอบมุมเล็ก ๆ ก่อน" },
+      ],
+      howTo: [
+        "ทดสอบบนมุมเล็ก ๆ ของพื้นผิวก่อนใช้",
+        "ทาลงบนคราบเหนียว รอสักครู่ให้ซึม",
+        "เช็ดออกด้วยผ้าสะอาด แล้วล้างมือหลังใช้",
+      ],
+      specs: [
+        { label: "ประเภท", value: "น้ำยาขจัดคราบเหนียว" },
+        optionSpec,
+      ],
+      caution: "ใช้ในที่ระบายอากาศ หลีกเลี่ยงเปลวไฟ หากมีอาการแพ้ให้หยุดใช้และปรึกษาแพทย์",
+    };
+  }
+
+  if (type === "c-chem" || kind === "chem") {
     const packSize = detectPackSize(product.nameTh, product.description || "");
     const stepLines = usageStepsBlock
       ? bulletsOf(usageStepsBlock)
@@ -181,31 +235,45 @@ export function getProductCopy(product: Product): ProductCopy {
     ],
   };
 
-  const materialText = material ?? "พิมพ์ 3D (FDM)";
+  const printed = kind === "print";
+  const materialText = material ?? (printed ? "พิมพ์ 3D (FDM)" : null);
   const highlights: ProductCopy["highlights"] = [
     { icon: Wrench, text: `เข้ากับ ${compatText(product)}` },
-    { icon: Ruler, text: `ขึ้นรูปด้วย ${materialText} น้ำหนักเบา แข็งแรง ทนทาน` },
+    ...(materialText
+      ? [{ icon: Ruler, text: `ขึ้นรูปด้วย ${materialText} น้ำหนักเบา แข็งแรง ทนทาน` }]
+      : [{ icon: Ruler, text: "ออกแบบให้หยิบใช้จริงในไซต์งาน น้ำหนักเบา ทนทาน" }]),
     categoryHighlight[type] ?? { icon: Link2, text: "ออกแบบให้ใช้งานง่าย ติดตั้งเอง 2-3 ขั้นตอน" },
+  ];
+
+  const listingCaution = cautionBlock ? bulletsOf(cautionBlock).join(" ") : "";
+  const fallbackHowTo = howToByType[type] ?? [
+    "เลือกรุ่นให้ตรงกับเครื่องมือหรือรุ่นที่ใช้",
+    "ยึด/เสียบเข้ากับจุดที่ต้องการ",
+    "ตรวจสอบว่าติดแน่น พร้อมใช้งาน",
   ];
 
   return {
     hook,
     highlights,
-    howTo: howToByType[type] ?? [
-      "เลือกรุ่นให้ตรงกับเครื่องมือหรือรุ่นที่ใช้",
-      "ยึด/เสียบเข้ากับจุดที่ต้องการ",
-      "ตรวจสอบว่าติดแน่น พร้อมใช้งาน",
-    ],
+    howTo: printed
+      ? fallbackHowTo
+      : [
+          "เลือกจำนวนหรือชุดที่ต้องการ",
+          "ตรวจสินค้าให้ตรงกับงานก่อนใช้",
+          "ใช้ตามลักษณะงานที่ระบุในรายละเอียด",
+        ],
     specs: [
       { label: "ประเภท", value: TYPE_LABEL[type] },
-      { label: "วัสดุ", value: materialText },
+      ...(materialText ? [{ label: "วัสดุ", value: materialText }] : []),
       { label: "เข้ากับ", value: compatText(product) },
-      { label: "ตัวเลือก", value: variantCount > 1 ? `${variantCount} แบบ` : "1 แบบ" },
+      optionSpec,
     ],
     caution:
-      (cautionBlock && bulletsOf(cautionBlock).join(" ")) ||
-      (generalBlock
-        ? undefined
-        : "ไม่ควรใช้งานในพื้นที่ที่มีอุณหภูมิสูงเกิน 60°C หากช่องแน่นเกินไปสามารถใช้ตะไบขัดเพิ่มเติมได้"),
+      listingCaution ||
+      (printed
+        ? generalBlock
+          ? undefined
+          : "ไม่ควรใช้งานในพื้นที่ที่มีอุณหภูมิสูงเกิน 60°C หากช่องแน่นเกินไปสามารถใช้ตะไบขัดเพิ่มเติมได้"
+        : "ตรวจขนาดและรุ่นให้ตรงกับงาน หากไม่แน่ใจทัก LINE ร้านก่อนสั่ง"),
   };
 }

@@ -4,13 +4,13 @@ import { CashReceipt } from "@/components/CashReceipt";
 import { DownloadPdfButton } from "@/components/DownloadPdfButton";
 import { PrintButton } from "@/components/PrintButton";
 import { getOrdersAdminByIds, getSettings } from "@/lib/db";
-import { invoicePdfBasename, invoicePdfFilename } from "@/lib/invoice-filename";
+import { bulkInvoicePdfFilename } from "@/lib/invoice-filename";
 import "@/components/receipt-print.css";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return { title: { absolute: invoicePdfBasename() } };
+  return { title: { absolute: "blacksmith_invoice" } };
 }
 
 export default async function BulkPrintBillsPage({
@@ -28,7 +28,12 @@ export default async function BulkPrintBillsPage({
   const settings = await getSettings();
   const printable = rows.filter((row) => row.document);
   const skipped = rows.length - printable.length;
-  const pdfName = invoicePdfFilename();
+  const pdfName = bulkInvoicePdfFilename(
+    printable.map(({ document }) => ({
+      issuedAt: document?.issuedAt,
+      number: document?.number,
+    })),
+  );
 
   return (
     <div className="a4-print-root min-h-dvh bg-[#e8eaec] print:bg-white">
