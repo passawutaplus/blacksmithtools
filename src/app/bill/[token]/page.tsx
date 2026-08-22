@@ -2,9 +2,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getOrderByToken } from "@/lib/db";
+import { formatThaiLocality } from "@/lib/thai-address-format";
 import { formatTHB } from "@/lib/utils";
 import { ORDER_STATUS_LABEL, carrierLabel, trackingLinkLabel, trackingUrl } from "@/lib/shipping";
 import { BillActions } from "./BillActions";
+import { CopyButton } from "@/components/CopyButton";
+import { PhotoThumbs } from "@/components/PhotoThumbs";
+import { RememberBill } from "@/components/RememberBill";
 
 const STEPS = ["pending_payment", "payment_submitted", "paid", "packing", "shipped", "delivered"];
 
@@ -28,6 +32,7 @@ export default async function BillPage({
 
   return (
     <div className="container-bs py-8 md:py-10">
+      <RememberBill token={order.token} number={order.number} />
       {sp.paid ? (
         <div className="mb-4 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
           ชำระเงินสำเร็จ — ระบบออกบิลเงินสดให้อัตโนมัติแล้ว
@@ -46,7 +51,7 @@ export default async function BillPage({
           </p>
         </div>
         {document ? (
-          <Link href={`/bill/${token}/print`} className="btn btn-secondary no-print">
+          <Link href={`/bill/${token}/print`} prefetch={false} className="btn btn-secondary relative z-10 no-print">
             พิมพ์บิลเงินสด {document.number}
           </Link>
         ) : null}
@@ -89,10 +94,18 @@ export default async function BillPage({
               <span>ยอดสินค้า</span>
               <span>{formatTHB(order.subtotal)}</span>
             </div>
-            <div className="flex justify-between">
-              <span>ค่าส่ง</span>
-              <span>{order.shippingFee === 0 ? "ฟรี" : formatTHB(order.shippingFee)}</span>
-            </div>
+            {order.origin === "manual" ? null : (
+              <div className="flex justify-between">
+                <span>ค่าส่ง</span>
+                <span>{order.shippingFee === 0 ? "ฟรี" : formatTHB(order.shippingFee)}</span>
+              </div>
+            )}
+            {order.discount ? (
+              <div className="flex justify-between">
+                <span>ส่วนลด</span>
+                <span>-{formatTHB(order.discount)}</span>
+              </div>
+            ) : null}
             <div className="flex justify-between text-base font-bold">
               <span>รวม</span>
               <span className="text-forge">{formatTHB(order.grandTotal)}</span>
@@ -117,9 +130,57 @@ export default async function BillPage({
               {order.address.line1}
               {order.address.line2 ? `, ${order.address.line2}` : ""}
               <br />
-              {order.address.district} {order.address.province} {order.address.postalCode}
+              {formatThaiLocality(order.address)}
             </p>
+            {order.customerNote ? (
+              <p className="mt-3 border-t border-gray-100 pt-3 text-sm">
+                <span className="font-semibold">หมายเหตุ: </span>
+                {order.customerNote}
+              </p>
+            ) : null}
           </div>
+
+          {order.wantReceipt ? (
+            <div className="card p-5">
+              <h2 className="font-bold">ข้อมูลออกบิล</h2>
+              {order.billing ? (
+                <p className="mt-2 text-sm">
+                  {order.billing.name}
+                  <br />
+                  {order.billing.phone}
+                  {order.billing.email ? (
+                    <>
+                      <br />
+                      {order.billing.email}
+                    </>
+                  ) : null}
+                  <br />
+                  {order.billing.line1}
+                  <br />
+                  {formatThaiLocality(order.billing)}
+                  {order.billing.taxId ? (
+                    <>
+                      <br />
+                      เลขประจำตัวผู้เสียภาษี {order.billing.taxId}
+                    </>
+                  ) : null}
+                </p>
+              ) : (
+                <p className="mt-2 text-sm text-muted">ใช้ที่อยู่จัดส่งบนบิล</p>
+              )}
+              <p className="mt-3 border-t border-gray-100 pt-3 text-sm leading-relaxed text-muted">
+                {order.billing?.email || order.address.email
+                  ? document?.emailedAt
+                    ? `ส่งบิลเงินสดไปที่ ${order.billing?.email || order.address.email} แล้ว — ไม่ใช่ใบกำกับภาษี เพราะร้านเป็นบุคคลธรรมดา ยังไม่ได้จด VAT`
+                    : `เมื่อชำระแล้ว ร้านจะส่งบิลเงินสดไปที่ ${order.billing?.email || order.address.email} — ไม่ใช่ใบกำกับภาษี เพราะร้านเป็นบุคคลธรรมดา ยังไม่ได้จด VAT`
+                  : "ร้านเป็นบุคคลธรรมดา ยังไม่ได้จด VAT จึงออกได้แค่บิลเงินสด ไม่ใช่ใบกำกับภาษี"}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm leading-relaxed text-muted">
+              ร้านเป็นบุคคลธรรมดา ยังไม่ได้จด VAT จึงออกได้แค่บิลเงินสด ไม่ใช่ใบกำกับภาษี
+            </p>
+          )}
 
           <div className="card p-5">
             <h2 className="font-bold">การชำระเงิน</h2>
@@ -144,13 +205,21 @@ export default async function BillPage({
           {shipments.length > 0 ? (
             <div className="card p-5">
               <h2 className="font-bold">การจัดส่ง</h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted">
+                ร้านลงเลขพัสดุและรูปใบปะหน้าแล้ว สถานะระหว่างทางดูที่เว็บขนส่ง — กดปุ่มด้านล่างได้เลย เลขถูกใส่ให้แล้ว
+              </p>
               <ul className="mt-3 space-y-4">
                 {shipments.map((s) => {
                   const url = trackingUrl(s.carrier, s.trackingNo);
                   return (
                     <li key={s.id} className="min-w-0 rounded-2xl border border-gray-100 p-3">
                       <p className="font-semibold text-navy">{carrierLabel(s.carrier)}</p>
-                      <p className="mt-1 break-all text-sm">เลขพัสดุ {s.trackingNo || "-"}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className="min-w-0 break-all text-sm">เลขพัสดุ {s.trackingNo || "-"}</p>
+                        {s.trackingNo && s.carrier !== "pickup" ? (
+                          <CopyButton value={s.trackingNo} compact />
+                        ) : null}
+                      </div>
                       {url ? (
                         <a
                           href={url}
@@ -167,20 +236,12 @@ export default async function BillPage({
                       ) : s.carrier === "pickup" ? (
                         <p className="mt-2 text-xs text-muted">นัดรับเอง ไม่มีเลขพัสดุ</p>
                       ) : null}
-                      {(s.photoPaths ?? []).length > 0 ? (
-                        <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                          {(s.photoPaths ?? []).map((file) => (
-                            <li key={file} className="overflow-hidden rounded-2xl bg-steel">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={`/api/bill/ship-photo?token=${encodeURIComponent(token)}&file=${encodeURIComponent(file)}`}
-                                alt="ภาพพัสดุจากร้าน"
-                                className="h-32 w-full object-cover"
-                              />
-                            </li>
-                          ))}
-                        </ul>
-                      ) : null}
+                      <PhotoThumbs
+                        images={(s.photoPaths ?? []).map((file) => ({
+                          src: `/api/bill/ship-photo?token=${encodeURIComponent(token)}&file=${encodeURIComponent(file)}`,
+                          alt: "ภาพพัสดุจากร้าน",
+                        }))}
+                      />
                     </li>
                   );
                 })}

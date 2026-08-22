@@ -1,0 +1,25 @@
+@page {
+  size: 100mm 100mm;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    width: 100mm !important;
+    height: 100mm !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .shipping-label-root {
+    min-height: 0 !important;
+    background: #fff !important;
+  }
+
+  .shipping-label-stage {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+}

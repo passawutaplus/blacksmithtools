@@ -2,11 +2,18 @@ import "server-only";
 import { promises as fs } from "fs";
 import path from "path";
 import { nanoid } from "nanoid";
-import { brands, categories, CATALOG_VERSION, defaultSettings, seedProducts } from "./seed";
+import { brands, categories, CATALOG_VERSION, defaultSettings, seedProducts, SHOP_ADDRESS, SHOP_ADDRESS_VERSION } from "./seed";
 import { linePricing, normalizeVariants, syncFromVariants } from "./product";
 import { slugify } from "./utils";
 import type { AdminOrderRow } from "./admin-types";
+import { phonesMatch } from "./phone";
+import { completeThaiAddress } from "./thai-address";
+import { filterBillsByPhone, toTrackBillSummary } from "./track-bills";
+import type { TrackBillSummary } from "./track-types";
+import { mapTrack17ToShop, normalizeTrackingNo, type Track17Snapshot } from "./track17";
+import { ORDER_STATUS_LABEL, CARRIERS, carrierLabel } from "./shipping";
 import type {
+  BillingInfo,
   Brand,
   Carrier,
   Cart,
@@ -14,6 +21,7 @@ import type {
   DocumentRecord,
   Order,
   OrderEvent,
+  OrderItem,
   OrderStatus,
   Payment,
   PaymentProvider,
@@ -65,6 +73,7 @@ function emptyDb(): DbShape {
   return {
     catalogVersion: CATALOG_VERSION,
     shippingPolicyVersion: SHIPPING_POLICY_VERSION,
+    shopAddressVersion: SHOP_ADDRESS_VERSION,
     products: structuredClone(seedProducts),
     brands: structuredClone(brands),
     categories: structuredClone(categories),
@@ -91,10 +100,19 @@ function applyCatalog(db: DbShape): boolean {
 }
 
 function applyShippingPolicy(db: DbShape): boolean {
+  if (!db.settings) db.settings = structuredClone(defaultSettings);
   if (db.shippingPolicyVersion === SHIPPING_POLICY_VERSION) return false;
   db.settings.flatShippingFee = defaultSettings.flatShippingFee;
   db.settings.freeShippingMin = defaultSettings.freeShippingMin;
   db.shippingPolicyVersion = SHIPPING_POLICY_VERSION;
+  return true;
+}
+
+function applyShopAddress(db: DbShape): boolean {
+  if (!db.settings) db.settings = structuredClone(defaultSettings);
+  if (db.shopAddressVersion === SHOP_ADDRESS_VERSION) return false;
+  db.settings.address = SHOP_ADDRESS;
+  db.shopAddressVersion = SHOP_ADDRESS_VERSION;
   return true;
 }
 
@@ -107,7 +125,8 @@ async function ensureDb(): Promise<DbShape> {
     if (typeof db.inquirySeq !== "number") db.inquirySeq = db.inquiries.length;
     const catalogChanged = applyCatalog(db);
     const shippingChanged = applyShippingPolicy(db);
-    if (catalogChanged || shippingChanged) await saveDb(db);
+    const addressChanged = applyShopAddress(db);
+    if (catalogChanged || shippingChanged || addressChanged) await saveDb(db);
     return db;
   } catch {
     const db = emptyDb();
@@ -145,11 +164,30 @@ const LEGACY_LINE_URL = "https://lin.ee/lgpCBi1";
 
 export async function getSettings() {
   const db = await ensureDb();
+  let dirty = false;
   if (!db.settings.lineUrl || db.settings.lineUrl === LEGACY_LINE_URL) {
     db.settings.lineUrl = defaultSettings.lineUrl;
-    await saveDb(db);
+    dirty = true;
   }
-  return db.settings;
+  if (!db.settings.tiktokShopUrl) {
+    db.settings.tiktokShopUrl = defaultSettings.tiktokShopUrl;
+    dirty = true;
+  }
+  if (!db.settings.tiktokSocialUrl) {
+    db.settings.tiktokSocialUrl = defaultSettings.tiktokSocialUrl;
+    dirty = true;
+  }
+  if (!db.settings.facebookUrl) {
+    db.settings.facebookUrl = defaultSettings.facebookUrl;
+    dirty = true;
+  }
+  const merged: SiteSettings = { ...defaultSettings, ...db.settings };
+  if (db.settings.thaiMartShopUrl === undefined) {
+    db.settings = merged;
+    dirty = true;
+  }
+  if (dirty) await saveDb(db);
+  return { ...defaultSettings, ...db.settings };
 }
 
 export async function updateSettings(patch: Partial<SiteSettings>) {
@@ -392,6 +430,9 @@ export async function createOrder(input: {
   address: ShippingAddress;
   paymentMethod: PaymentProvider;
   shippingMethod?: string;
+  customerNote?: string;
+  wantReceipt?: boolean;
+  billing?: BillingInfo;
 }) {
   const db = await ensureDb();
   const cart = db.carts.find((c) => c.id === input.cartId);
@@ -445,6 +486,9 @@ export async function createOrder(input: {
     shippingMethod: input.shippingMethod ?? "standard",
     address: input.address,
     paymentMethod: input.paymentMethod,
+    customerNote: input.customerNote || undefined,
+    wantReceipt: input.wantReceipt || undefined,
+    billing: input.billing,
     shipmentIds: [],
     events: [],
     stockReservedUntil: reserveUntil,
@@ -472,6 +516,158 @@ export async function createOrder(input: {
   return { order, payment, settings: db.settings };
 }
 
+const MANUAL_PAY: Record<"receipt" | "label", PaymentProvider> = {
+  receipt: "cash",
+  label: "cash",
+};
+
+export async function createManualOrder(input: {
+  kind: "receipt" | "label";
+  address: ShippingAddress;
+  items: Array<{
+    productId?: string;
+    variantId?: string;
+    name: string;
+    variantName?: string;
+    sku?: string;
+    price: number;
+    quantity: number;
+    discount?: number;
+    imageUrl?: string;
+  }>;
+  customerNote?: string;
+  billing?: BillingInfo;
+}) {
+  const db = await ensureDb();
+  const kind = input.kind === "label" ? "label" : "receipt";
+  if (kind === "receipt" && !input.items.length) throw new Error("ต้องมีอย่างน้อย 1 รายการ");
+  const name = input.address?.fullName?.trim() ?? "";
+  const phone = String(input.address?.phone ?? "").replace(/\D/g, "");
+  if (name.length < 2) throw new Error("ใส่ชื่อลูกค้า");
+  if (phone.length < 9) throw new Error("ใส่เบอร์โทร");
+  if (!input.address?.line1?.trim()) throw new Error("ใส่ที่อยู่");
+  const loc = completeThaiAddress(input.address);
+  if (!loc.subdistrict || !loc.postalCode) {
+    throw new Error("เลือกจังหวัด เขต/อำเภอ และแขวง/ตำบล");
+  }
+  const address: ShippingAddress = {
+    ...input.address,
+    fullName: name,
+    phone: input.address.phone.trim(),
+    email: input.address.email?.trim() || undefined,
+    line1: input.address.line1.trim(),
+    subdistrict: loc.subdistrict,
+    district: loc.district,
+    province: loc.province,
+    postalCode: loc.postalCode,
+  };
+
+  const items: OrderItem[] =
+    kind === "label"
+      ? []
+      : input.items.map((raw) => {
+          const quantity = Math.max(1, Math.floor(Number(raw.quantity) || 0));
+          const price = Math.max(0, Number(raw.price) || 0);
+          const discount = Math.max(0, Number(raw.discount) || 0);
+          if (!quantity) throw new Error("จำนวนสินค้าไม่ถูกต้อง");
+          const catalog = raw.productId ? db.products.find((p) => p.id === raw.productId) : undefined;
+          if (catalog) {
+            const priced = linePricing(catalog, raw.variantId);
+            return {
+              productId: catalog.id,
+              variantId: priced.variant?.id,
+              variantName: priced.variantName || undefined,
+              name: priced.name,
+              sku: priced.sku,
+              price: Number.isFinite(raw.price) ? price : priced.price,
+              quantity,
+              discount: discount || undefined,
+              imageUrl: priced.imageUrl,
+            };
+          }
+          const itemName = String(raw.name ?? "").trim();
+          if (!itemName) throw new Error("ใส่ชื่อสินค้า");
+          return {
+            productId: "custom",
+            variantName: raw.variantName?.trim() || undefined,
+            name: itemName,
+            sku: raw.sku?.trim() || "CUSTOM",
+            price,
+            quantity,
+            discount: discount || undefined,
+            imageUrl: raw.imageUrl?.trim() || "",
+          };
+        });
+
+  const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
+  const discount = items.reduce((s, i) => s + (i.discount ?? 0), 0);
+  const shippingFee = 0;
+  const grandTotal = Math.max(0, subtotal - discount);
+  db.orderSeq += 1;
+  const now = new Date().toISOString();
+  const number = `BS-${todayCode()}-${String(db.orderSeq).padStart(4, "0")}`;
+  const paymentMethod = MANUAL_PAY[kind];
+
+  const order: Order = {
+    id: nanoid(12),
+    number,
+    token: nanoid(32),
+    status: "completed",
+    origin: "manual",
+    channel: kind,
+    items,
+    subtotal,
+    shippingFee,
+    discount,
+    grandTotal,
+    shippingMethod: "standard",
+    address,
+    paymentMethod,
+    customerNote: input.customerNote?.trim() || undefined,
+    wantReceipt: kind === "receipt" || undefined,
+    billing: input.billing,
+    shipmentIds: [],
+    events: [],
+    createdAt: now,
+    updatedAt: now,
+    paidAt: now,
+  };
+  pushEvent(order, "created", kind === "receipt" ? "ออกบิลพิมพ์เอง" : "ออกใบปะหน้าพิมพ์เอง", "admin");
+
+  const payment: Payment = {
+    id: nanoid(12),
+    orderId: order.id,
+    provider: paymentMethod,
+    amount: grandTotal,
+    status: "paid",
+    createdAt: now,
+    updatedAt: now,
+  };
+  order.paymentId = payment.id;
+
+  if (kind === "receipt") {
+    await issueCashReceipt(db, order);
+  }
+
+  db.orders.push(order);
+  db.payments.push(payment);
+  await saveDb(db);
+  return { order, payment, document: db.documents.find((d) => d.id === order.documentId) };
+}
+
+export async function deleteManualOrder(orderId: string) {
+  const db = await ensureDb();
+  const order = db.orders.find((o) => o.id === orderId);
+  if (!order) throw new Error("ไม่พบเอกสาร");
+  if (order.origin !== "manual") throw new Error("ลบได้เฉพาะเอกสารพิมพ์เอง");
+  db.orders = db.orders.filter((o) => o.id !== orderId);
+  db.payments = db.payments.filter((p) => p.orderId !== orderId);
+  db.documents = db.documents.filter((d) => d.orderId !== orderId);
+  db.shipments = db.shipments.filter((s) => s.orderId !== orderId);
+  await saveDb(db);
+  return { ok: true };
+}
+
 export async function getOrderByToken(token: string) {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.token === token);
@@ -484,17 +680,21 @@ export async function getOrderByToken(token: string) {
 
 export async function getOrderByNumberAndPhone(number: string, phone: string) {
   const db = await ensureDb();
-  const normalized = phone.replace(/\D/g, "");
   const order = db.orders.find(
     (o) =>
       o.number.toLowerCase() === number.toLowerCase() &&
-      o.address.phone.replace(/\D/g, "") === normalized,
+      phonesMatch(o.address.phone, phone),
   );
   if (!order) return null;
   return getOrderByToken(order.token);
 }
 
-export type { AdminOrderRow };
+export async function listBillsByPhone(phone: string, limit = 20): Promise<TrackBillSummary[]> {
+  const db = await ensureDb();
+  return filterBillsByPhone(db.orders, phone, limit).map(toTrackBillSummary);
+}
+
+export type { AdminOrderRow, TrackBillSummary };
 
 function toOrderRow(db: DbShape, order: Order): AdminOrderRow {
   return {
@@ -505,11 +705,46 @@ function toOrderRow(db: DbShape, order: Order): AdminOrderRow {
   };
 }
 
-export async function listOrders(filters?: { status?: string; q?: string }) {
+export async function listOrders(filters?: {
+  status?: string;
+  q?: string;
+  from?: string;
+  to?: string;
+  paymentMethod?: string;
+  carrier?: string;
+  hasReceipt?: string;
+  origin?: string;
+}) {
   const db = await ensureDb();
   let orders = db.orders.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (filters?.status) {
     orders = orders.filter((o) => o.status === filters.status);
+  }
+  if (filters?.origin === "manual") {
+    orders = orders.filter((o) => o.origin === "manual");
+  }
+  if (filters?.origin === "shop") {
+    orders = orders.filter((o) => o.origin !== "manual");
+  }
+  if (filters?.from) {
+    orders = orders.filter((o) => bangkokDay(o.createdAt) >= filters.from!);
+  }
+  if (filters?.to) {
+    orders = orders.filter((o) => bangkokDay(o.createdAt) <= filters.to!);
+  }
+  if (filters?.paymentMethod) {
+    orders = orders.filter((o) => o.paymentMethod === filters.paymentMethod);
+  }
+  if (filters?.carrier) {
+    orders = orders.filter((o) =>
+      db.shipments.some((s) => o.shipmentIds.includes(s.id) && s.carrier === filters.carrier),
+    );
+  }
+  if (filters?.hasReceipt === "yes") {
+    orders = orders.filter((o) => Boolean(o.documentId));
+  }
+  if (filters?.hasReceipt === "no") {
+    orders = orders.filter((o) => !o.documentId);
   }
   if (filters?.q) {
     const q = filters.q.trim().toLowerCase();
@@ -521,11 +756,22 @@ export async function listOrders(filters?: { status?: string; q?: string }) {
         o.address.fullName.toLowerCase().includes(q) ||
         o.address.phone.includes(q) ||
         (digits.length >= 3 && phone.includes(digits)) ||
-        (o.address.email ?? "").toLowerCase().includes(q)
+        (o.address.email ?? "").toLowerCase().includes(q) ||
+        (o.externalRef ?? "").toLowerCase().includes(q)
       );
     });
   }
   return orders.map((order) => toOrderRow(db, order));
+}
+
+export async function getOrdersAdminByIds(ids: string[]) {
+  const db = await ensureDb();
+  const found = [];
+  for (const id of ids) {
+    const order = db.orders.find((o) => o.id === id || o.token === id || o.number === id);
+    if (order) found.push(toOrderRow(db, order));
+  }
+  return found;
 }
 
 export async function getOrderAdmin(id: string) {
@@ -554,12 +800,15 @@ export async function getDashboard() {
   const db = await ensureDb();
   const today = bangkokToday();
   const monthPrefix = today.slice(0, 7);
-  const orders = db.orders;
-  const byStatus = (status: OrderStatus) => orders.filter((o) => o.status === status);
+  const shopOrders = db.orders.filter((o) => o.origin !== "manual");
+  const byStatus = (status: OrderStatus) => shopOrders.filter((o) => o.status === status);
+
+  const countsAsShopRevenue = (o: Order) =>
+    COUNTED_REVENUE.includes(o.status) && o.paidAt && o.origin !== "manual";
 
   const revenueInRange = (prefixLen: number, key: string) =>
-    orders
-      .filter((o) => COUNTED_REVENUE.includes(o.status) && o.paidAt)
+    db.orders
+      .filter(countsAsShopRevenue)
       .filter((o) => bangkokDay(o.paidAt!).slice(0, prefixLen) === key)
       .reduce((s, o) => s + o.grandTotal, 0);
 
@@ -584,14 +833,14 @@ export async function getDashboard() {
     },
     todayRevenue: revenueInRange(10, today),
     monthRevenue: revenueInRange(7, monthPrefix),
-    orderCount: orders.length,
+    orderCount: shopOrders.length,
     wholesaleCount: db.inquiries.length,
     recentWholesale: db.inquiries
       .slice()
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, 5),
     lowStock,
-    recent: orders
+    recent: shopOrders
       .slice()
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .slice(0, 8)
@@ -616,15 +865,18 @@ async function issueCashReceipt(db: DbShape, order: Order) {
     type: "cash_receipt",
     number,
     issuedAt: new Date().toISOString(),
-    emailedAt: order.address.email ? null : null,
+    emailedAt: null,
     printCount: 0,
   };
-  if (order.address.email) {
+  const receiptEmail = order.billing?.email || order.address.email;
+  if (order.wantReceipt && receiptEmail) {
     doc.emailedAt = new Date().toISOString();
+    pushEvent(order, "receipt_issued", `ออกบิลเงินสด ${number} ส่งไป ${receiptEmail}`);
+  } else {
+    pushEvent(order, "receipt_issued", `ออกบิลเงินสด ${number}`);
   }
   db.documents.push(doc);
   order.documentId = doc.id;
-  pushEvent(order, "receipt_issued", `ออกบิลเงินสด ${number}`);
   return doc;
 }
 
@@ -663,6 +915,27 @@ export async function submitSlip(orderId: string, slipPath: string, transferredA
   return { order, payment };
 }
 
+export async function attachPaymentSlip(orderId: string, slipPath: string, by = "admin") {
+  const db = await ensureDb();
+  const order = db.orders.find((o) => o.id === orderId);
+  if (!order) throw new Error("ไม่พบออเดอร์");
+  if (order.status === "cancelled" || order.status === "refunded") {
+    throw new Error("ออเดอร์นี้ปิดไปแล้ว");
+  }
+  const payment = db.payments.find((p) => p.id === order.paymentId);
+  if (!payment) throw new Error("ไม่พบการชำระเงิน");
+  payment.slipPath = slipPath;
+  payment.transferredAt = payment.transferredAt ?? new Date().toISOString();
+  payment.updatedAt = new Date().toISOString();
+  if (order.status === "pending_payment") {
+    payment.status = "submitted";
+    order.status = "payment_submitted";
+  }
+  pushEvent(order, "slip_attached", "แนบสลิปโอนเงิน", by);
+  await saveDb(db);
+  return { order, payment };
+}
+
 export async function mockPay(orderId: string) {
   return markOrderPaid(orderId, "mock");
 }
@@ -671,8 +944,32 @@ export async function setOrderStatus(orderId: string, status: OrderStatus, by = 
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
+  if (order.status === "cancelled" || order.status === "refunded") {
+    throw new Error("ออเดอร์นี้ปิดไปแล้ว ย้ายสถานะไม่ได้");
+  }
+  if (status === "cancelled" || status === "refunded") {
+    throw new Error("ใช้ปุ่มยกเลิกหรือคืนเงินด้านล่าง");
+  }
+  if (order.status === status) return order;
+
+  const from = order.status;
+  const now = new Date().toISOString();
+  const paidLike: OrderStatus[] = ["paid", "packing", "shipped", "delivered", "completed"];
+  if (paidLike.includes(status) && !order.paidAt) {
+    const payment = db.payments.find((p) => p.id === order.paymentId);
+    if (payment) {
+      payment.status = "paid";
+      payment.updatedAt = now;
+    }
+    order.paidAt = now;
+    await issueCashReceipt(db, order);
+  }
+
   order.status = status;
-  pushEvent(order, "status", `เปลี่ยนสถานะเป็น ${status}`, by);
+  order.updatedAt = now;
+  const fromLabel = ORDER_STATUS_LABEL[from] ?? from;
+  const toLabel = ORDER_STATUS_LABEL[status] ?? status;
+  pushEvent(order, "status", `ย้ายสถานะจาก ${fromLabel} เป็น ${toLabel}`, by);
   await saveDb(db);
   return order;
 }
@@ -713,6 +1010,51 @@ export async function shipOrder(
   return { order, shipment };
 }
 
+export async function updateShipment(
+  orderId: string,
+  shipmentId: string,
+  input: { carrier: Carrier; trackingNo: string },
+) {
+  const db = await ensureDb();
+  const order = db.orders.find((o) => o.id === orderId);
+  if (!order) throw new Error("ไม่พบออเดอร์");
+  const shipment = db.shipments.find((s) => s.id === shipmentId && s.orderId === orderId);
+  if (!shipment) throw new Error("ไม่พบพัสดุ");
+  if (!CARRIERS.includes(input.carrier)) throw new Error("ขนส่งไม่ถูกต้อง");
+
+  const trackingNo = input.carrier === "pickup" ? "" : input.trackingNo.trim();
+  if (!trackingNo && input.carrier !== "pickup") {
+    throw new Error("ต้องใส่เลขแทรก");
+  }
+
+  const prevCarrier = shipment.carrier;
+  const prevNo = shipment.trackingNo;
+  const changed =
+    prevCarrier !== input.carrier ||
+    normalizeTrackingNo(prevNo) !== normalizeTrackingNo(trackingNo);
+  if (!changed) return { order, shipment, changed: false as const };
+
+  shipment.carrier = input.carrier;
+  shipment.trackingNo = trackingNo;
+  shipment.carrierStatus = null;
+  shipment.carrierSubStatus = null;
+  shipment.carrierStatusText = null;
+  shipment.carrierStatusAt = null;
+  shipment.trackRegisteredAt = null;
+  shipment.trackRegisterError = null;
+  shipment.deliveredAt = null;
+  if (order.status === "delivered") order.status = "shipped";
+  order.updatedAt = new Date().toISOString();
+  pushEvent(
+    order,
+    "ship_edit",
+    `แก้พัสดุ ${carrierLabel(prevCarrier)} ${prevNo || "—"} → ${carrierLabel(input.carrier)} ${trackingNo || "นัดรับ"}`,
+    "admin",
+  );
+  await saveDb(db);
+  return { order, shipment, changed: true as const };
+}
+
 export async function addShipmentPhotos(orderId: string, shipmentId: string, photoPaths: string[]) {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
@@ -747,6 +1089,98 @@ export async function markDelivered(orderId: string) {
   pushEvent(order, "delivered", "ถึงมือลูกค้าแล้ว");
   await saveDb(db);
   return order;
+}
+
+export function isTrackableShipment(shipment: Shipment) {
+  return Boolean(shipment.trackingNo.trim()) && shipment.carrier !== "pickup";
+}
+
+export async function listTrackableShipmentRows() {
+  const db = await ensureDb();
+  const rows: { shipment: Shipment; order: Order }[] = [];
+  for (const shipment of db.shipments) {
+    if (!isTrackableShipment(shipment) || shipment.deliveredAt) continue;
+    const order = db.orders.find((o) => o.id === shipment.orderId);
+    if (order?.status === "shipped") rows.push({ shipment, order });
+  }
+  return rows;
+}
+
+export async function listTrackableShipments() {
+  return (await listTrackableShipmentRows()).map((row) => row.shipment);
+}
+
+export async function markShipmentTrackMeta(
+  shipmentId: string,
+  meta: { registered?: boolean; error?: string | null },
+) {
+  const db = await ensureDb();
+  const shipment = db.shipments.find((s) => s.id === shipmentId);
+  if (!shipment) return null;
+  if (meta.registered) {
+    shipment.trackRegisteredAt = new Date().toISOString();
+    shipment.trackRegisterError = null;
+  }
+  if (meta.error !== undefined) shipment.trackRegisterError = meta.error;
+  await saveDb(db);
+  return shipment;
+}
+
+export async function applyCarrierTrackingUpdate(snapshot: Track17Snapshot) {
+  const db = await ensureDb();
+  const normalized = normalizeTrackingNo(snapshot.trackingNo);
+  const shipment = db.shipments.find((s) => {
+    if (snapshot.tag && s.id === snapshot.tag) return true;
+    return normalizeTrackingNo(s.trackingNo) === normalized;
+  });
+  if (!shipment) return { ok: false as const, reason: "not_found" };
+  const order = db.orders.find((o) => o.id === shipment.orderId);
+  if (!order) return { ok: false as const, reason: "no_order" };
+  if (order.status === "cancelled" || order.status === "refunded" || order.status === "completed") {
+    return { ok: false as const, reason: "closed" };
+  }
+
+  const prevStatus = shipment.carrierStatus ?? "";
+  shipment.carrierStatus = snapshot.status;
+  shipment.carrierSubStatus = snapshot.subStatus ?? null;
+  shipment.carrierStatusText = snapshot.description ?? null;
+  shipment.carrierStatusAt = snapshot.at ?? new Date().toISOString();
+
+  const mapped = mapTrack17ToShop(snapshot.status, snapshot.subStatus);
+  const changed = prevStatus !== snapshot.status;
+
+  if (mapped === "delivered" && (order.status === "shipped" || order.status === "packing")) {
+    order.status = "delivered";
+    shipment.deliveredAt = shipment.carrierStatusAt;
+    pushEvent(
+      order,
+      "delivered",
+      `ขนส่งยืนยันถึงมือแล้ว${snapshot.description ? ` — ${snapshot.description}` : ""}`,
+      "17track",
+    );
+  } else if (mapped === "exception" && changed) {
+    pushEvent(
+      order,
+      "ship_exception",
+      `ขนส่งแจ้งปัญหา${snapshot.description ? ` — ${snapshot.description}` : ` (${snapshot.status})`}`,
+      "17track",
+    );
+  } else if (changed && order.status === "shipped") {
+    const label =
+      snapshot.status === "OutForDelivery"
+        ? "กำลังนำจ่าย"
+        : snapshot.status === "InTransit"
+          ? "กำลังขนส่ง"
+          : snapshot.status === "AvailableForPickup"
+            ? "ถึงจุดรับแล้ว"
+            : snapshot.status === "InfoReceived"
+              ? "ขนส่งรับข้อมูลแล้ว"
+              : snapshot.status;
+    pushEvent(order, "ship_update", `อัปเดตจากขนส่ง: ${label}`, "17track");
+  }
+
+  await saveDb(db);
+  return { ok: true as const, orderId: order.id, status: order.status };
 }
 
 export async function incrementPrintCount(documentId: string) {

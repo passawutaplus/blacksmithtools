@@ -16,6 +16,7 @@ const EMPTY: SiteSettings = {
   lineId: "",
   shopeeShopUrl: "",
   lazadaShopUrl: "",
+  thaiMartShopUrl: "",
   tiktokShopUrl: "",
   facebookUrl: "",
   instagramUrl: "",
@@ -124,7 +125,7 @@ export default function AdminSettingsPage() {
         </div>
         <div>
           <label className="label" htmlFor="address">
-            ที่อยู่บนใบเสร็จ
+            ที่อยู่ร้าน / ที่อยู่คืนของ
           </label>
           <textarea
             id="address"
@@ -132,19 +133,29 @@ export default function AdminSettingsPage() {
             value={s.address}
             onChange={(e) => patch({ address: e.target.value })}
           />
+          <p className="mt-1 text-xs text-muted">ใช้บนใบเสร็จ หน้าร้าน และใบปะหน้าส่งของ (ที่อยู่คืนพัสดุ)</p>
         </div>
       </section>
 
       <section className="card mt-4 space-y-4 p-4 md:p-6">
         <h2 className="font-semibold text-navy">ช่องทางติดต่อ / ขาย</h2>
+        <p className="text-sm text-muted">
+          ลิงก์เหล่านี้โชว์บนหน้า QR{" "}
+          <a href="/go" className="underline" target="_blank" rel="noreferrer">
+            /go
+          </a>{" "}
+          — เว้นว่างถ้ายังไม่มีร้าน
+        </p>
         <div className="grid gap-4 md:grid-cols-2">
           <Field id="lineId" label="LINE ID" value={s.lineId} onChange={(v) => patch({ lineId: v })} />
           <Field id="lineUrl" label="ลิงก์ LINE" value={s.lineUrl} onChange={(v) => patch({ lineUrl: v })} />
           <Field id="shopee" label="ร้าน Shopee" value={s.shopeeShopUrl} onChange={(v) => patch({ shopeeShopUrl: v })} />
           <Field id="lazada" label="ร้าน Lazada" value={s.lazadaShopUrl} onChange={(v) => patch({ lazadaShopUrl: v })} />
+          <Field id="thaimart" label="ร้านไทยมาร์ท" value={s.thaiMartShopUrl} onChange={(v) => patch({ thaiMartShopUrl: v })} />
           <Field id="tiktokShop" label="TikTok Shop" value={s.tiktokShopUrl} onChange={(v) => patch({ tiktokShopUrl: v })} />
           <Field id="facebook" label="Facebook" value={s.facebookUrl} onChange={(v) => patch({ facebookUrl: v })} />
           <Field id="ig" label="Instagram" value={s.instagramUrl} onChange={(v) => patch({ instagramUrl: v })} />
+          <Field id="tiktokSocial" label="TikTok (โซเชียล)" value={s.tiktokSocialUrl} onChange={(v) => patch({ tiktokSocialUrl: v })} />
           <Field id="yt" label="YouTube" value={s.youtubeUrl} onChange={(v) => patch({ youtubeUrl: v })} />
         </div>
       </section>

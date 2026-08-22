@@ -31,11 +31,11 @@ export function PrintFarm() {
         <div className="mt-6 overflow-hidden rounded-3xl border border-gray-200">
           <div className="relative aspect-[16/9] bg-navy">
             <Image
-              src="/print/p2s-farm.png"
-              alt="เครื่อง Bambu Lab P2S หกเครื่องเรียงบนโต๊ะงาน"
+              src="/print/farm-racks.png"
+              alt="ฟาร์มเครื่องพิมพ์ 3D เรียงบนชั้นสองแถว"
               fill
               priority
-              className="object-cover"
+              className="object-cover object-center"
               sizes="(min-width: 1440px) 1400px, 100vw"
             />
           </div>

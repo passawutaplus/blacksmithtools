@@ -23,9 +23,6 @@ export default function AssistantMapPage() {
         <Link href="/assistant/tables" className="rounded-full border border-steel px-3 py-1.5 font-medium text-navy hover:border-navy/30">
           ตารางอ้างอิง
         </Link>
-        <Link href="/sitemap" className="rounded-full border border-steel px-3 py-1.5 font-medium text-navy hover:border-navy/30">
-          แผนผังทั้งเว็บ
-        </Link>
       </p>
 
       {PILLARS.map((pillar) => {

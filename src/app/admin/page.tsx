@@ -48,6 +48,11 @@ export default function AdminDashboardPage() {
       <p className="mt-1 text-sm text-muted">
         ชำระเงิน: {data.paymentsLive ? "รับเงินจริง" : "โหมดทดลอง"} · ออเดอร์ทั้งหมด {data.orderCount} ใบ
       </p>
+      <p className="mt-3">
+        <Link href="/admin/issue" className="btn btn-primary">
+          พิมพ์บิล / ใบปะหน้า
+        </Link>
+      </p>
 
       <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         {cards.map((c) => (

@@ -1,0 +1,24 @@
+@page {
+  size: 100mm 100mm;
+  margin: 0;
+}
+
+@media print {
+  html,
+  body {
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .bulk-label {
+    box-shadow: none !important;
+    margin: 0 !important;
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .bulk-label:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+}

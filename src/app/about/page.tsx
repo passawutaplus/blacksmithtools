@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { getBrandsAndCategories, getSettings } from "@/lib/db";
 import { BrandLogo } from "@/components/BrandLogo";
-import { LineTile, LazadaTile, ShopeeTile, WebsiteTile } from "@/components/ChannelIcons";
+import { LineTile, LazadaTile, ShopeeTile, TikTokTile, WebsiteTile } from "@/components/ChannelIcons";
 import { WholesaleInquiry } from "@/components/WholesaleInquiry";
 
 export const metadata = {
@@ -332,6 +332,31 @@ export default async function AboutPage() {
                   Lazada: เปิดร้าน
                 </a>
               </li>
+              {settings.tiktokShopUrl ? (
+                <li className="flex items-center gap-3">
+                  <TikTokTile href={settings.tiktokShopUrl} />
+                  <a
+                    href={settings.tiktokShopUrl}
+                    className="text-sm text-navy underline"
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                  >
+                    TikTok: @blacksmith_ts
+                  </a>
+                </li>
+              ) : null}
+              {settings.facebookUrl ? (
+                <li className="flex items-center gap-3">
+                  <a
+                    href={settings.facebookUrl}
+                    className="text-sm text-navy underline"
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                  >
+                    Facebook: BlackSmith Tools & Supplies
+                  </a>
+                </li>
+              ) : null}
               <li className="flex items-center gap-3">
                 <LineTile href={settings.lineUrl} />
                 <a

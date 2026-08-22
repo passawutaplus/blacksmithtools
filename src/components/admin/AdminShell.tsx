@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   ClipboardList,
+  FileText,
   Handshake,
   ImageIcon,
   LayoutDashboard,
@@ -19,6 +20,7 @@ import { cn } from "@/lib/utils";
 const NAV = [
   { href: "/admin", label: "ภาพรวม", icon: LayoutDashboard },
   { href: "/admin/orders", label: "ออเดอร์", icon: ClipboardList },
+          { href: "/admin/issue", label: "พิมพ์เอกสาร", icon: FileText },
   { href: "/admin/inquiries", label: "ขายส่ง", icon: Handshake },
   { href: "/admin/slips", label: "สลิป", icon: ImageIcon },
   { href: "/admin/products", label: "สินค้า", icon: Package },
@@ -43,6 +45,10 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       })
       .catch(() => undefined);
   }, [pathname]);
+
+  if (pathname.includes("/print")) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="min-h-screen bg-steel">

@@ -284,7 +284,7 @@ export function toolCount(): number {
 
 export type AssistantHref = { href: string; title: string; blurb?: string };
 
-/** รายการหน้าผู้ช่วยงานช่างทั้งหมด ใช้ทั้งแผนผังและ sitemap.xml */
+/** รายการหน้าผู้ช่วยงานช่างทั้งหมด ใช้ใน sitemap.xml */
 export function assistantPages(): AssistantHref[] {
   const pages: AssistantHref[] = [
     { href: "/assistant", title: "ผู้ช่วยงานช่าง", blurb: "เลือกสายงานและเครื่องมือ" },

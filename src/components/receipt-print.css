@@ -1,0 +1,75 @@
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+.a4-sheet {
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  margin-inline: auto;
+  padding: 14mm 16mm 16mm;
+  background: #fff;
+  color: #23323d;
+  box-shadow: 0 8px 30px rgba(35, 50, 61, 0.12);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+.a4-invoice {
+  display: flex;
+  min-height: calc(297mm - 30mm);
+  flex-direction: column;
+}
+
+.a4-invoice-logo {
+  height: 14mm;
+  width: auto;
+}
+
+.a4-invoice-end {
+  margin-top: auto;
+  padding-top: 10mm;
+}
+
+.a4-invoice table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.a4-invoice thead th {
+  border-bottom: 0.4mm solid #23323d;
+}
+
+.a4-invoice tbody td {
+  border-bottom: 0.2mm solid #d8dce0;
+}
+
+@media print {
+  html,
+  body {
+    width: 210mm !important;
+    min-height: 297mm !important;
+    margin: 0 !important;
+    background: #fff !important;
+  }
+
+  .a4-print-root {
+    min-height: 0 !important;
+    background: #fff !important;
+  }
+
+  .a4-sheet {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 !important;
+    box-shadow: none !important;
+    page-break-after: auto;
+    break-after: auto;
+  }
+
+  .a4-sheet + .a4-sheet {
+    break-before: page;
+    page-break-before: always;
+  }
+}

@@ -49,6 +49,22 @@ export default async function ContactPage() {
             เปิดร้าน
           </a>
         </p>
+        {settings.tiktokSocialUrl ? (
+          <p>
+            TikTok:{" "}
+            <a href={settings.tiktokSocialUrl} target="_blank" rel="noopener noreferrer nofollow" className="underline">
+              @blacksmith_ts
+            </a>
+          </p>
+        ) : null}
+        {settings.facebookUrl ? (
+          <p>
+            Facebook:{" "}
+            <a href={settings.facebookUrl} target="_blank" rel="noopener noreferrer nofollow" className="underline">
+              blacksmithtoolsandsupplies
+            </a>
+          </p>
+        ) : null}
       </div>
       <p className="mt-4 text-sm text-muted">
         ฟอร์มติดต่อจะเชื่อมอีเมล/LINE เมื่อตั้งค่า SMTP หรือ Messaging API ในเฟสถัดไป

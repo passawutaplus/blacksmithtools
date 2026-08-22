@@ -21,7 +21,7 @@ export function StoreChrome({
   categories: Category[];
 }) {
   const pathname = usePathname();
-  if (pathname.startsWith("/admin")) {
+  if (pathname.startsWith("/admin") || pathname === "/go" || pathname.startsWith("/go/") || pathname.includes("/print")) {
     return <>{children}</>;
   }
 

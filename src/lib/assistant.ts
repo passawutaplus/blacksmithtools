@@ -1,8 +1,10 @@
 import "server-only";
-import { getOrderByNumberAndPhone } from "@/lib/db";
+import { getOrderByNumberAndPhone, getOrderByToken, listBillsByPhone } from "@/lib/db";
 import { formatTHB } from "@/lib/utils";
-import { ORDER_STATUS_LABEL, carrierLabel } from "@/lib/shipping";
+import { ORDER_STATUS_LABEL, carrierLabel, carrierTrackLabel } from "@/lib/shipping";
+import { normalizePhoneDigits } from "@/lib/phone";
 import type { AssistantReply, ChatMessage } from "@/lib/chat-types";
+import type { Order, Shipment } from "@/lib/types";
 
 export type { AssistantReply, ChatMessage } from "@/lib/chat-types";
 
@@ -16,9 +18,23 @@ function extractBill(text: string) {
 function extractPhone(text: string) {
   const raw = text.match(PHONE_RE)?.[0];
   if (!raw) return null;
-  const digits = raw.replace(/\D/g, "");
-  if (digits.length < 9) return null;
-  return digits.startsWith("66") ? `0${digits.slice(2)}` : digits;
+  const digits = normalizePhoneDigits(raw);
+  return digits.length >= 9 ? digits : null;
+}
+
+function orderReply(order: Order, shipments: Shipment[]): AssistantReply {
+  const ship = shipments[0];
+  const shipLine = ship
+    ? `\nขนส่ง: ${carrierLabel(ship.carrier)}${ship.trackingNo ? ` · ${ship.trackingNo}` : ""}${
+        ship.carrierStatus ? `\nสถานะพัสดุ: ${carrierTrackLabel(ship.carrierStatus)}` : ""
+      }`
+    : "";
+  const items = order.items.map((i) => `• ${i.name} × ${i.quantity}`).join("\n");
+  return {
+    text: `พบบิล ${order.number}\nสถานะ: ${ORDER_STATUS_LABEL[order.status] ?? order.status}\nยอดรวม: ${formatTHB(order.grandTotal)}${shipLine}\n\n${items}\n\nเปิดบิลออนไลน์เพื่อดูรายละเอียด จ่ายเงิน หรือตามพัสดุได้เลย`,
+    links: [{ href: `/bill/${order.token}`, label: `เปิดบิล ${order.number}` }],
+    showMenu: true,
+  };
 }
 
 function allUserText(messages: ChatMessage[]) {
@@ -69,15 +85,32 @@ export async function replyToChat(messages: ChatMessage[]): Promise<AssistantRep
         showMenu: true,
       };
     }
-    const { order, shipments } = detail;
-    const ship = shipments[0];
-    const shipLine = ship
-      ? `\nขนส่ง: ${carrierLabel(ship.carrier)}${ship.trackingNo ? ` · ${ship.trackingNo}` : ""}`
-      : "";
-    const items = order.items.map((i) => `• ${i.name} × ${i.quantity}`).join("\n");
+    return orderReply(detail.order, detail.shipments);
+  }
+
+  const lastLooksLikePhone = /^\s*(?:\+66|0)[\d\s-]{8,14}\s*$/.test(last);
+  const askingInConvo = askingOrder || includesAny(blob.toLowerCase(), ["เลขบิล", "ติดตาม", "พัสดุ", "ออเดอร์", "บิล"]);
+
+  if (phone && !bill && (askingInConvo || lastLooksLikePhone)) {
+    const bills = await listBillsByPhone(phone);
+    if (bills.length === 0) {
+      return {
+        text: "ไม่พบบิลของเบอร์นี้ ตรวจเบอร์อีกครั้ง หรือส่งเลขบิลมาด้วย เช่น BS-260821-0001",
+        links: [{ href: "/track", label: "ค้นหาที่หน้าตามพัสดุ" }],
+        showMenu: true,
+      };
+    }
+    if (bills.length === 1) {
+      const detail = await getOrderByToken(bills[0].token);
+      if (detail) return orderReply(detail.order, detail.shipments);
+    }
+    const lines = bills
+      .slice(0, 8)
+      .map((b) => `• ${b.number} · ${ORDER_STATUS_LABEL[b.status] ?? b.status} · ${formatTHB(b.grandTotal)}`)
+      .join("\n");
     return {
-      text: `พบบิล ${order.number}\nสถานะ: ${ORDER_STATUS_LABEL[order.status] ?? order.status}\nยอดรวม: ${formatTHB(order.grandTotal)}${shipLine}\n\n${items}\n\nเปิดบิลออนไลน์เพื่อดูรายละเอียด จ่ายเงิน หรือตามพัสดุได้เลย`,
-      links: [{ href: `/bill/${order.token}`, label: `เปิดบิล ${order.number}` }],
+      text: `พบบิล ${bills.length} ใบของเบอร์นี้ กดเปิดใบที่ต้องการได้เลย\n\n${lines}`,
+      links: bills.slice(0, 5).map((b) => ({ href: `/bill/${b.token}`, label: `เปิดบิล ${b.number}` })),
       showMenu: true,
     };
   }
@@ -89,14 +122,8 @@ export async function replyToChat(messages: ChatMessage[]): Promise<AssistantRep
         showMenu: true,
       };
     }
-    if (phone && !bill) {
-      return {
-        text: "รับเบอร์แล้ว ส่งเลขบิลมาด้วย เช่น BS-260821-0001 (อยู่บนบิลหรืออีเมลยืนยัน)",
-        showMenu: true,
-      };
-    }
     return {
-      text: "ส่งเลขบิลกับเบอร์โทรที่ใช้สั่งมาในแชทนี้ได้เลย เช่น\nBS-260821-0001\n0812345678",
+      text: "ส่งเบอร์โทรที่ใช้สั่งมาได้เลย ถ้าจำเลขบิลได้ใส่มาด้วย เช่น\n0812345678\nBS-260821-0001",
       links: [{ href: "/track", label: "หรือกรอกที่หน้าตามพัสดุ" }],
       showMenu: true,
     };

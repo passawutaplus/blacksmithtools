@@ -6,6 +6,7 @@ import {
   LazadaTile,
   LineTile,
   ShopeeTile,
+  ThaiMartTile,
   TikTokTile,
   WebsiteTile,
 } from "@/components/ChannelIcons";
@@ -15,7 +16,6 @@ const SERVICES = [
   { href: "/shop", label: "ดูสินค้าทั้งหมด" },
   { href: "/custom-print", label: "บริการพิมพ์ 3D" },
   { href: "/assistant", label: "ผู้ช่วยงานช่าง" },
-  { href: "/sitemap", label: "แผนผังเว็บ" },
   { href: "/shop?category=battery-mount", label: "ที่เก็บแบต" },
   { href: "/shop?category=blower-nozzle", label: "ท่อเป่าลม" },
 ] as const;
@@ -185,6 +185,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
             <WebsiteTile href="/" />
             {settings.shopeeShopUrl ? <ShopeeTile href={settings.shopeeShopUrl} /> : null}
             {settings.lazadaShopUrl ? <LazadaTile href={settings.lazadaShopUrl} /> : null}
+            {settings.thaiMartShopUrl ? <ThaiMartTile href={settings.thaiMartShopUrl} /> : null}
             {settings.tiktokShopUrl ? <TikTokTile href={settings.tiktokShopUrl} /> : null}
             {settings.lineUrl ? <LineTile href={settings.lineUrl} /> : null}
           </div>

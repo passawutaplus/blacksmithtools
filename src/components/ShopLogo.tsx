@@ -28,13 +28,8 @@ export function ShopLogo({
   if (variant === "print") {
     return (
       <span className={`inline-flex items-center ${className}`}>
-        <Image
-          src="/brand/lockup-sticky.png"
-          alt="BlackSmith"
-          width={635}
-          height={262}
-          className="h-12 w-auto"
-        />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/lockup-sticky.png" alt="BlackSmith" className="a4-invoice-logo h-12 w-auto" />
       </span>
     );
   }

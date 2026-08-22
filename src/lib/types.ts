@@ -9,8 +9,18 @@ export type OrderStatus =
   | "cancelled"
   | "refunded";
 
-export type PaymentProvider = "mock" | "payso" | "bank_transfer" | "promptpay_qr";
+export type PaymentProvider =
+  | "mock"
+  | "payso"
+  | "bank_transfer"
+  | "promptpay_qr"
+  | "cash"
+  | "shopee"
+  | "lazada"
+  | "claim";
 export type PaymentStatus = "pending" | "submitted" | "paid" | "failed" | "cancelled";
+
+export type ManualChannel = "receipt" | "label" | "walk_in" | "shopee" | "lazada" | "line" | "claim" | "other";
 
 export type Carrier =
   | "flash"
@@ -85,9 +95,23 @@ export interface ShippingAddress {
   email?: string;
   line1: string;
   line2?: string;
+  subdistrict?: string;
   district: string;
   province: string;
   postalCode: string;
+}
+
+/** ข้อมูลผู้ซื้อบนบิลเงินสด อาจต่างจากที่อยู่จัดส่ง */
+export interface BillingInfo {
+  name: string;
+  email: string;
+  phone?: string;
+  line1: string;
+  subdistrict?: string;
+  district: string;
+  province: string;
+  postalCode: string;
+  taxId?: string;
 }
 
 export interface OrderItem {
@@ -99,6 +123,8 @@ export interface OrderItem {
   price: number;
   quantity: number;
   imageUrl: string;
+  /** ส่วนลดของรายการนี้ (บาท) */
+  discount?: number;
 }
 
 export interface OrderEvent {
@@ -141,6 +167,13 @@ export interface Shipment {
   photoPaths?: string[];
   shippedAt: string;
   deliveredAt?: string | null;
+  /** Latest main status from 17TRACK, e.g. InTransit / Delivered. */
+  carrierStatus?: string | null;
+  carrierSubStatus?: string | null;
+  carrierStatusText?: string | null;
+  carrierStatusAt?: string | null;
+  trackRegisteredAt?: string | null;
+  trackRegisterError?: string | null;
 }
 
 export interface Order {
@@ -164,7 +197,17 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   paidAt?: string;
+  /** หมายเหตุจากลูกค้าตอนสั่ง เช่น เวลาว่างรับของ */
+  customerNote?: string;
+  /** ลูกค้าขอรับบิลเงินสดทางอีเมล */
+  wantReceipt?: boolean;
+  billing?: BillingInfo;
   adminNote?: string;
+  /** ออเดอร์จากหน้าร้าน หรือแอดมินออกเอกสารเอง */
+  origin?: "shop" | "manual";
+  channel?: ManualChannel;
+  /** เลขออเดอร์ Shopee / Lazada / อ้างอิงภายนอก */
+  externalRef?: string;
 }
 
 export interface SiteSettings {
@@ -178,6 +221,7 @@ export interface SiteSettings {
   lineId: string;
   shopeeShopUrl: string;
   lazadaShopUrl: string;
+  thaiMartShopUrl: string;
   tiktokShopUrl: string;
   facebookUrl: string;
   instagramUrl: string;
@@ -212,6 +256,7 @@ export interface WholesaleLead {
 export interface DbShape {
   catalogVersion?: string;
   shippingPolicyVersion?: string;
+  shopAddressVersion?: string;
   products: Product[];
   brands: Brand[];
   categories: Category[];

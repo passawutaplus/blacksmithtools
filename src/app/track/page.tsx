@@ -4,7 +4,7 @@ import { TrackLookup } from "./TrackLookup";
 
 export const metadata = {
   title: "ติดตามออเดอร์",
-  description: "ใส่เลขบิลและเบอร์โทรเพื่อดูสถานะ แพ็กของ เลขพัสดุ และพิมพ์ใบเสร็จ",
+  description: "ใส่เบอร์โทรที่ใช้สั่งเพื่อดูบิล สถานะ เลขพัสดุ และพิมพ์ใบเสร็จ — ไม่ต้องสมัครสมาชิก",
 };
 
 export default async function TrackPage() {
@@ -14,7 +14,7 @@ export default async function TrackPage() {
     <>
       <PageHeader
         title="ติดตามออเดอร์"
-        description="ใส่เลขบิลกับเบอร์โทรที่ใช้สั่ง แล้วดูสถานะได้ทันที — ไม่ต้องล็อกอิน"
+        description="ใส่เบอร์ที่ใช้สั่งก็พอ จำเลขบิลได้ใส่เพิ่ม — ไม่ต้องล็อกอิน"
         crumbs={[{ href: "/", label: "หน้าแรก" }, { label: "ติดตามออเดอร์" }]}
       />
       <div className="container-bs max-w-5xl py-8 md:py-12">

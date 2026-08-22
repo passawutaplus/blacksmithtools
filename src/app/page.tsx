@@ -27,7 +27,14 @@ export default async function HomePage() {
     slogan: settings.tagline,
     url: process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
     logo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/brand/logo.png`,
-    sameAs: [settings.shopeeShopUrl, settings.lazadaShopUrl, settings.lineUrl].filter(Boolean),
+    sameAs: [
+      settings.shopeeShopUrl,
+      settings.lazadaShopUrl,
+      settings.tiktokShopUrl,
+      settings.tiktokSocialUrl,
+      settings.facebookUrl,
+      settings.lineUrl,
+    ].filter((url, i, all) => Boolean(url) && all.indexOf(url) === i),
   };
 
   return (

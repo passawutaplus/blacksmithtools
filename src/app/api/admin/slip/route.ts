@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
-import { slipFilePath } from "@/lib/db";
+import { attachPaymentSlip, slipDir, slipFilePath } from "@/lib/db";
+import { saveSlipUpload } from "@/lib/save-image-upload";
 
 export const dynamic = "force-dynamic";
 
@@ -24,5 +25,25 @@ export async function GET(req: Request) {
     });
   } catch {
     return NextResponse.json({ error: "ไม่พบสลิป" }, { status: 404 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const form = await req.formData();
+    const orderId = String(form.get("orderId") ?? "");
+    const file = form.get("slip");
+    if (!orderId) return NextResponse.json({ error: "ไม่พบออเดอร์" }, { status: 400 });
+    if (!(file instanceof File) || file.size === 0) {
+      return NextResponse.json({ error: "เลือกไฟล์สลิปก่อน" }, { status: 400 });
+    }
+    const filename = await saveSlipUpload(slipDir(), file);
+    const result = await attachPaymentSlip(orderId, filename, "admin");
+    return NextResponse.json({ ok: true, ...result });
+  } catch (e) {
+    return NextResponse.json(
+      { error: e instanceof Error ? e.message : "แนบสลิปไม่สำเร็จ" },
+      { status: 400 },
+    );
   }
 }

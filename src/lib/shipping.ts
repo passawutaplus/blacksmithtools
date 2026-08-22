@@ -36,10 +36,27 @@ export function trackingUrl(carrier: Carrier, trackingNo: string) {
 export function trackingLinkLabel(carrier: Carrier) {
   if (carrier === "pickup") return "นัดรับเอง ไม่มีเลขพัสดุ";
   if (carrier === "other") return "คัดลอกเลขไปเช็คกับขนส่ง";
-  return `ดูสถานะบน ${carrierLabel(carrier)}`;
+  return `เปิดหน้า ${carrierLabel(carrier)} — เลขใส่ให้แล้ว`;
 }
 
 export const CARRIERS = Object.keys(CARRIER_LABELS) as Carrier[];
+
+export const CARRIER_TRACK_LABEL: Record<string, string> = {
+  NotFound: "ยังไม่พบข้อมูลจากขนส่ง",
+  InfoReceived: "ขนส่งรับข้อมูลแล้ว",
+  InTransit: "กำลังขนส่ง",
+  Expired: "เกินเวลานาน ยังไม่ถึง",
+  AvailableForPickup: "ถึงจุดรับแล้ว",
+  OutForDelivery: "กำลังนำจ่าย",
+  DeliveryFailure: "นำจ่ายไม่สำเร็จ",
+  Delivered: "ขนส่งยืนยันถึงมือแล้ว",
+  Exception: "ขนส่งแจ้งปัญหา",
+};
+
+export function carrierTrackLabel(status?: string | null) {
+  if (!status) return "";
+  return CARRIER_TRACK_LABEL[status] ?? status;
+}
 
 export const ORDER_STATUS_LABEL: Record<string, string> = {
   pending_payment: "รอชำระเงิน",
@@ -58,6 +75,21 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
   payso: "Payso",
   bank_transfer: "โอนเงิน",
   promptpay_qr: "PromptPay",
+  cash: "เงินสด / นอกเว็บ",
+  shopee: "Shopee",
+  lazada: "Lazada",
+  claim: "เคลม / รับประกัน",
+};
+
+export const MANUAL_CHANNEL_LABEL: Record<string, string> = {
+  receipt: "ใบเสร็จ",
+  label: "ใบปะหน้า",
+  walk_in: "ขายหน้าร้าน",
+  shopee: "Shopee",
+  lazada: "Lazada",
+  line: "LINE",
+  claim: "เคลม / รับประกัน",
+  other: "อื่น ๆ",
 };
 
 export const PAYMENT_STATUS_LABEL: Record<string, string> = {
@@ -86,4 +118,15 @@ export const OPEN_ORDER_STATUSES = [
   "paid",
   "packing",
   "shipped",
+] as const;
+
+/** ขั้นตอนหลักที่แอดมินย้ายไป-กลับได้จาก dropdown */
+export const ORDER_FLOW_STATUSES = [
+  "pending_payment",
+  "payment_submitted",
+  "paid",
+  "packing",
+  "shipped",
+  "delivered",
+  "completed",
 ] as const;

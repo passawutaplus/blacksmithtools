@@ -66,25 +66,25 @@ function TradeCard({ trade }: { trade: Trade }) {
             src={cover}
             alt=""
             fill
-            sizes="(min-width: 1024px) 22rem, (min-width: 640px) 45vw, 100vw"
+            sizes="(min-width: 1024px) 22rem, 50vw"
             className="object-cover transition duration-500 group-hover:scale-[1.04]"
           />
         ) : (
           <span className="flex h-full items-center justify-center text-navy/25">
-            {Icon ? <Icon className="h-12 w-12" aria-hidden /> : null}
+            {Icon ? <Icon className="h-10 w-10 sm:h-12 sm:w-12" aria-hidden /> : null}
           </span>
         )}
-        <span className="badge absolute left-3 top-3 bg-navy/80 text-white backdrop-blur">{trade.short}</span>
-        <span className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-navy shadow-md">
-          {Icon ? <Icon className="h-5 w-5" aria-hidden /> : null}
+        <span className="badge absolute left-2 top-2 bg-navy/80 px-2 py-0.5 text-[11px] text-white backdrop-blur sm:left-3 sm:top-3 sm:text-xs">
+          {trade.short}
+        </span>
+        <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white text-navy shadow-md sm:right-3 sm:top-3 sm:h-10 sm:w-10">
+          {Icon ? <Icon className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden /> : null}
         </span>
       </span>
-      <span className="block p-4">
-        <span className="flex items-baseline justify-between gap-2">
-          <span className="truncate font-bold text-navy">{trade.name}</span>
-          <span className="shrink-0 text-xs text-muted">{trade.tools.length} เครื่องมือ</span>
-        </span>
-        <span className="mt-1 block text-sm leading-relaxed text-muted">{trade.blurb}</span>
+      <span className="block p-2.5 sm:p-4">
+        <span className="block text-sm font-bold leading-snug text-navy sm:text-base">{trade.name}</span>
+        <span className="mt-0.5 block text-[11px] text-muted sm:text-xs">{trade.tools.length} เครื่องมือ</span>
+        <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-muted sm:text-sm">{trade.blurb}</span>
       </span>
     </Link>
   );
@@ -367,7 +367,7 @@ export function AssistantHome() {
         <section key={pillar.id}>
           <h2 className="text-base font-bold text-navy">{pillar.name}</h2>
           <p className="mb-3 text-sm text-muted">{pillar.blurb}</p>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3">
             {trades.map((trade) => (
               <TradeCard key={trade.id} trade={trade} />
             ))}

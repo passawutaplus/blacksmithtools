@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import {
   cancelOrder,
   completeOrder,
+  createManualOrder,
+  deleteManualOrder,
   deleteProducts,
   getBrandsAndCategories,
   getDashboard,
@@ -19,6 +21,7 @@ import {
   rejectSlip,
   saveAdminNote,
   saveProductInput,
+  setOrderStatus,
   setProductStock,
   setProductsFeatured,
   shipOrder,
@@ -26,7 +29,7 @@ import {
   updateSettings,
   updateWholesaleLead,
 } from "@/lib/db";
-import type { Carrier } from "@/lib/types";
+import type { Carrier, OrderStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +55,12 @@ export async function GET(req: Request) {
         orders: await listOrders({
           status: url.searchParams.get("status") || undefined,
           q: url.searchParams.get("q") || undefined,
+          from: url.searchParams.get("from") || undefined,
+          to: url.searchParams.get("to") || undefined,
+          paymentMethod: url.searchParams.get("paymentMethod") || undefined,
+          carrier: url.searchParams.get("carrier") || undefined,
+          hasReceipt: url.searchParams.get("hasReceipt") || undefined,
+          origin: url.searchParams.get("origin") || undefined,
         }),
       });
     case "order": {
@@ -94,12 +103,28 @@ export async function POST(req: Request) {
     switch (action) {
       case "confirm_payment":
         return NextResponse.json(await markOrderPaid(body.orderId, "admin"));
+      case "create_manual_order":
+        return NextResponse.json(
+          await createManualOrder({
+            kind: body.kind === "label" ? "label" : "receipt",
+            address: body.address,
+            items: Array.isArray(body.items) ? body.items : [],
+            customerNote: body.customerNote,
+            billing: body.billing,
+          }),
+        );
+      case "delete_manual_order":
+        return NextResponse.json(await deleteManualOrder(String(body.orderId ?? "")));
       case "reject_slip":
         return NextResponse.json(
           await rejectSlip(body.orderId, String(body.reason ?? ""), "admin"),
         );
       case "packing":
         return NextResponse.json({ order: await startPacking(body.orderId) });
+      case "set_status": {
+        const status = String(body.status ?? "") as OrderStatus;
+        return NextResponse.json({ order: await setOrderStatus(body.orderId, status, "admin") });
+      }
       case "ship":
         return NextResponse.json(
           await shipOrder(body.orderId, {

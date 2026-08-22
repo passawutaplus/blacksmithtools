@@ -3,11 +3,17 @@ import { merchIdsForProduct } from "./collections";
 import type { Brand, Category, Product, SiteSettings } from "./types";
 
 export const CATALOG_VERSION = catalog.version;
+export const TIKTOK_PROFILE_URL = "https://www.tiktok.com/@blacksmith_ts";
+export const FACEBOOK_PAGE_URL = "https://www.facebook.com/blacksmithtoolsandsupplies";
+
+export const SHOP_ADDRESS =
+  "143/109 บางซื่อคอนโดมิเนียม ถนนริมคลองประปา แขวงบางซื่อ บางซื่อ กรุงเทพมหานคร 10800";
+export const SHOP_ADDRESS_VERSION = "2026-08-22-bangsue";
 
 export const defaultSettings: SiteSettings = {
   shopName: "BlackSmith Tools & Supplies",
   tagline: "Tools Designed for Simpler Work",
-  address: "[ที่อยู่ร้าน — แก้ไขในหลังร้าน]",
+  address: SHOP_ADDRESS,
   phone: "",
   email: "",
   taxId: "",
@@ -16,11 +22,12 @@ export const defaultSettings: SiteSettings = {
   shopeeShopUrl:
     "https://shopee.co.th/blacksmithaplus?categoryId=100001&entryPoint=ShopByPDP&itemId=21344275549",
   lazadaShopUrl: "https://www.lazada.co.th/shop/blacksmith-toolssupplies-store",
-  tiktokShopUrl: "",
-  facebookUrl: "",
+  thaiMartShopUrl: "",
+  tiktokShopUrl: TIKTOK_PROFILE_URL,
+  facebookUrl: FACEBOOK_PAGE_URL,
   instagramUrl: "",
   youtubeUrl: "",
-  tiktokSocialUrl: "",
+  tiktokSocialUrl: TIKTOK_PROFILE_URL,
   bankName: "ธนาคารกสิกรไทย",
   bankAccountName: "BlackSmith Tools",
   bankAccountNumber: "000-0-00000-0",
