@@ -8,7 +8,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { storefrontCategories } from "@/lib/collections";
 
 export const metadata = {
-  title: "สินค้าทั้งหมด",
+  title: "สินค้าทั้งหมด — อุปกรณ์เสริมเครื่องมือช่าง",
+  description:
+    "ที่เก็บแบต ที่แขวนเครื่องมือ ถาดกล่อง Packout / TSTAK และท่อเป่าลม ใช้ได้กับ Milwaukee, DeWalt, Makita, Bosch พิมพ์ 3D วัสดุ PETG ส่งใน 2 วัน",
+  alternates: { canonical: "/shop" },
 };
 
 export default async function ShopPage({

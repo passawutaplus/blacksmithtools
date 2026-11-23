@@ -1,3 +1,4 @@
+import { jsonLd as toJsonLd } from "@/lib/json-ld";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -26,6 +27,7 @@ export async function generateMetadata({
     description: product.compatibilities.length
       ? `${blurb} ใช้กับ: ${product.compatibilities.join(", ")}. ${brandNames}`
       : `${blurb} ${brandNames}`.trim(),
+    alternates: { canonical: `/product/${product.slug}` },
     openGraph: {
       title: product.nameTh,
       description: blurb,
@@ -97,7 +99,7 @@ export default async function ProductPage({
     <div className="container-bs py-10 md:py-14" data-reveal>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: toJsonLd(jsonLd) }}
       />
       <nav aria-label="เส้นทาง" className="mb-8 text-sm text-muted">
         <Link href="/" className="hover:text-navy">
