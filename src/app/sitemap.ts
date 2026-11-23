@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { listProducts, getBrandsAndCategories } from "@/lib/db";
 import { assistantPages } from "@/lib/chang/catalog";
+import { listArticles } from "@/lib/articles";
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -21,6 +22,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     "/pdpa",
     "/track",
     "/go",
+    "/tools-lab",
   ].map((path) => ({
     url: `${base}${path}`,
     lastModified: new Date(),
@@ -51,5 +53,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.7,
   }));
 
-  return [...staticPages, ...assistant, ...brandPages, ...productPages];
+  const articlePages = (await listArticles())
+    .filter((a) => !a.draft)
+    .map((a) => ({
+      url: `${base}/tools-lab/${a.slug}`,
+      lastModified: new Date(a.date),
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    }));
+
+  return [...staticPages, ...articlePages, ...assistant, ...brandPages, ...productPages];
 }

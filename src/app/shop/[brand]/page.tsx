@@ -20,6 +20,7 @@ export async function generateMetadata({
     description: own
       ? `สินค้าแบรนด์ BlackSmith เช่น GoopOrange และอุปกรณ์อเนกประสงค์`
       : `อุปกรณ์เสริม BlackSmith ที่เข้ากับเครื่องมือ ${brand.name} โดยเฉพาะ`,
+    alternates: { canonical: `/shop/${brand.slug}` },
   };
 }
 

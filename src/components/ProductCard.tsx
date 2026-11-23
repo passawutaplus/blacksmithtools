@@ -30,7 +30,10 @@ export function ProductCard({
   const brand = productBrand(product);
   const compact = layout === "related";
 
-  const onSale = Boolean(product.compareAtPrice && product.compareAtPrice > product.price);
+  // Shopee-imported multi-variant products store the top variant price as compareAtPrice,
+  // so a strike-through would be a fake discount. Show "เริ่ม" instead.
+  const multi = (product.variants?.length ?? 0) > 1;
+  const onSale = !multi && Boolean(product.compareAtPrice && product.compareAtPrice > product.price);
   const fitsLabel = brand && brand.slug !== "blacksmith" ? `ใช้ได้กับ ${brand.name}` : "BlackSmith Original";
 
   return (
@@ -87,6 +90,7 @@ export function ProductCard({
                 </span>
               </span>
             ) : null}
+            {multi ? <span className="text-[11px] text-muted">เริ่ม</span> : null}
             <span className="num text-lg font-semibold leading-none text-navy">{formatTHB(product.price)}</span>
           </p>
           <button

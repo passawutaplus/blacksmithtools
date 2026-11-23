@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { MessageCircle, Send, X } from "lucide-react";
 import { CHAT_MENU, type AssistantReply, type ChatLink, type ChatMessage } from "@/lib/chat-types";
 
@@ -86,7 +87,10 @@ export function ChatFab({ lineUrl, lineId }: { lineUrl: string; lineId: string }
     }
   }
 
-  const fabBottom = cookieUp ? "bottom-36" : "bottom-5";
+  const pathname = usePathname();
+  // Product pages have a sticky buy bar on mobile; sit above it instead of covering "ใส่ตะกร้า".
+  const onProduct = pathname?.startsWith("/product/");
+  const fabBottom = cookieUp ? "bottom-36" : onProduct ? "bottom-24 md:bottom-5" : "bottom-5";
 
   function MenuButtons() {
     return (

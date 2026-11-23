@@ -16,6 +16,7 @@ const SERVICES = [
   { href: "/shop", label: "ดูสินค้าทั้งหมด" },
   { href: "/custom-print", label: "บริการพิมพ์ 3D" },
   { href: "/assistant", label: "ผู้ช่วยงานช่าง" },
+  { href: "/tools-lab", label: "Tools ลับ ฉบับย่อ" },
   { href: "/shop?category=battery-mount", label: "ที่เก็บแบต" },
   { href: "/shop?category=blower-nozzle", label: "ท่อเป่าลม" },
 ] as const;

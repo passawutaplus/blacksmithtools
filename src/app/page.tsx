@@ -1,3 +1,4 @@
+import { jsonLd as toJsonLd } from "@/lib/json-ld";
 import Image from "next/image";
 import Link from "next/link";
 import { listProducts, getSettings, listPublishedReviews } from "@/lib/db";
@@ -53,7 +54,7 @@ export default async function HomePage() {
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(orgLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toJsonLd(orgLd) }} />
 
       <section className="relative isolate min-h-dvh overflow-hidden">
         <Image

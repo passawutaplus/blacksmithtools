@@ -323,6 +323,9 @@ export function SiteHeader({
             <Link href="/assistant" className={navLink(pathname.startsWith("/assistant"))}>
               ผู้ช่วยงานช่าง
             </Link>
+            <Link href="/tools-lab" className={navLink(pathname.startsWith("/tools-lab"))}>
+              Tools ลับ
+            </Link>
             <Link href="/about" className={navLink(pathname.startsWith("/about"))}>
               เกี่ยวกับเรา
             </Link>
@@ -417,6 +420,13 @@ export function SiteHeader({
               onClick={closeAll}
             >
               ผู้ช่วยงานช่าง
+            </Link>
+            <Link
+              href="/tools-lab"
+              className={`block border-b border-white/10 py-3 ${pathname.startsWith("/tools-lab") ? "font-bold" : "font-light"}`}
+              onClick={closeAll}
+            >
+              Tools ลับ ฉบับย่อ
             </Link>
             <Link
               href="/about"
