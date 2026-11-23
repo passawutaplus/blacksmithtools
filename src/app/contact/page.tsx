@@ -1,7 +1,11 @@
 import { getSettings } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
 
-export const metadata = { title: "ติดต่อเรา" };
+export const metadata = {
+  title: "ติดต่อเรา",
+  description: "ติดต่อร้าน BlackSmith Tools ทาง LINE โทรศัพท์ หรืออีเมล สอบถามสินค้า เคลม หรือสั่งพิมพ์ 3D",
+  alternates: { canonical: "/contact" },
+};
 
 export default async function ContactPage() {
   const settings = await getSettings();

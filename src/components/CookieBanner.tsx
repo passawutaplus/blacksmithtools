@@ -33,11 +33,11 @@ export function CookieBanner() {
   if (!visible) return null;
 
   return (
-    <div className="safe-bottom fixed inset-x-3 bottom-3 z-50 rounded-[3px] border border-black/5 bg-white p-4 shadow-[0_8px_40px_rgba(35,50,61,0.16)] md:inset-x-0 md:bottom-0 md:rounded-none md:rounded-t-3xl">
+    <div className="safe-bottom fixed inset-x-3 bottom-3 z-50 rounded-[3px] border border-navy/15 bg-white p-3 md:p-4 md:inset-x-0 md:bottom-0 md:rounded-none">
       <div className="container-bs flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="max-w-2xl text-sm text-navy">
           <p className="font-semibold">คุกกี้และความเป็นส่วนตัว</p>
-          <p className="mt-1 text-muted">
+          <p className="mt-1 text-xs text-muted md:text-sm">
             เราใช้คุกกี้ที่จำเป็นต่อการทำงานของร้าน และขออนุญาตก่อนใช้คุกกี้วิเคราะห์/การตลาด ตาม PDPA{" "}
             <a href="/cookies" className="underline">
               นโยบายคุกกี้
@@ -67,9 +67,13 @@ export function CookieBanner() {
             </div>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" className="btn btn-secondary" onClick={() => setCustomize((v) => !v)}>
-            ปรับแต่ง
+        <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center">
+          <button
+            type="button"
+            className="col-span-2 justify-self-start text-xs font-semibold text-navy underline underline-offset-2 md:order-first md:mr-2 md:text-sm"
+            onClick={() => setCustomize((v) => !v)}
+          >
+            {customize ? "ซ่อนตัวเลือก" : "ปรับแต่งคุกกี้"}
           </button>
           <button
             type="button"

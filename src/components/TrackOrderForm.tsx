@@ -1,19 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PackageSearch, Receipt, Smartphone, Truck } from "lucide-react";
 import { LastBillButton } from "@/components/LastBillButton";
 import { saveLastBill } from "@/lib/last-bill";
-import { ORDER_STATUS_LABEL } from "@/lib/shipping";
-import type { TrackBillSummary } from "@/lib/track-types";
-import { formatDate, formatTHB } from "@/lib/utils";
 
 type TrackApi = {
   token?: string;
   number?: string;
-  bills?: TrackBillSummary[];
   error?: string;
 };
 
@@ -29,7 +24,6 @@ export function TrackOrderForm({
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [bills, setBills] = useState<TrackBillSummary[] | null>(null);
 
   const portal = variant === "portal";
   const numberId = portal ? "portal-bill" : "number";
@@ -44,7 +38,6 @@ export function TrackOrderForm({
     e.preventDefault();
     setLoading(true);
     setError("");
-    setBills(null);
     const fd = new FormData(e.currentTarget);
     const number = String(fd.get("number") ?? "").trim();
     const phone = String(fd.get("phone") ?? "").trim();
@@ -59,10 +52,6 @@ export function TrackOrderForm({
       if (data.token) {
         if (data.number) saveLastBill(data.token, data.number);
         router.push(`/bill/${data.token}`);
-        return;
-      }
-      if (data.bills?.length) {
-        setBills(data.bills);
         return;
       }
       throw new Error("ไม่พบออเดอร์");
@@ -129,6 +118,7 @@ export function TrackOrderForm({
             <input
               id={numberId}
               name="number"
+              required
               autoComplete="off"
               autoCapitalize="characters"
               spellCheck={false}
@@ -144,7 +134,7 @@ export function TrackOrderForm({
       {error ? (
         portal ? (
           <p id={errorId} role="alert" className="mt-3 text-sm font-medium text-red-700">
-            {error} — ตรวจเบอร์อีกครั้ง หรือทักไลน์ร้าน
+            {error} — ตรวจเลขบิลกับเบอร์อีกครั้ง หรือทักไลน์ร้าน
           </p>
         ) : (
           <div
@@ -153,33 +143,9 @@ export function TrackOrderForm({
             className="mt-4 rounded-[3px] border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-800"
           >
             <p className="font-semibold">{error}</p>
-            <p className="mt-1">ตรวจเบอร์อีกครั้ง ลองใส่เลขบิลเพิ่ม หรือทักไลน์ร้านให้ช่วยเช็ค</p>
+            <p className="mt-1">ตรวจเลขบิลกับเบอร์อีกครั้ง หรือทักไลน์ร้านให้ช่วยเช็ค</p>
           </div>
         )
-      ) : null}
-
-      {bills?.length ? (
-        <ul className="mt-4 space-y-2" aria-label="บิลของเบอร์นี้">
-          <li className="text-xs font-semibold text-navy">พบ {bills.length} บิล — กดเปิดใบที่ต้องการ</li>
-          {bills.map((bill) => (
-            <li key={bill.token}>
-              <Link
-                href={`/bill/${bill.token}`}
-                onClick={() => saveLastBill(bill.token, bill.number)}
-                className="flex min-w-0 items-center justify-between gap-3 rounded-[3px] border border-steel bg-white px-3 py-2.5 hover:border-navy"
-              >
-                <span className="min-w-0">
-                  <span className="block font-latin text-sm font-semibold tracking-wide text-navy">{bill.number}</span>
-                  <span className="mt-0.5 block text-xs text-muted">
-                    {formatDate(bill.createdAt)} · {ORDER_STATUS_LABEL[bill.status] ?? bill.status}
-                    {bill.itemCount ? ` · ${bill.itemCount} ชิ้น` : ""}
-                  </span>
-                </span>
-                <span className="shrink-0 text-sm font-semibold tabular-nums text-navy">{formatTHB(bill.grandTotal)}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
       ) : null}
 
       <button type="submit" className={`btn btn-primary w-full ${portal ? "mt-4" : "mt-6"}`} disabled={loading}>
@@ -191,7 +157,7 @@ export function TrackOrderForm({
 
       {lineUrl ? (
         <p className={portal ? "mt-3 text-center text-xs leading-relaxed text-muted" : "mt-4 text-center text-sm leading-relaxed text-muted"}>
-          จำเบอร์ไม่ได้?{" "}
+          จำเลขบิลไม่ได้?{" "}
           <a
             href={lineUrl}
             target="_blank"

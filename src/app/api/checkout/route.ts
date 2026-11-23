@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { clientIp, rateLimited } from "@/lib/rate-limit";
 import { z } from "zod";
-import { createOrder, getOrCreateCart, updateCart } from "@/lib/db";
+import { createOrder } from "@/lib/db";
 import { getActivePaymentProviders } from "@/lib/payments/adapters";
 import { createPaysoPayment, newPaysoRef, postbackToken } from "@/lib/payments/payso";
 import { attachPaysoRef } from "@/lib/db";
@@ -26,14 +27,14 @@ const billingSchema = z.object({
 
 const schema = z
   .object({
-    cartId: z.string().min(1),
+    cartId: z.string().optional().nullable(),
     items: z.array(
       z.object({
         productId: z.string(),
         variantId: z.string().optional(),
-        quantity: z.number().int().positive(),
+        quantity: z.number().int().positive().max(99),
       }),
-    ),
+    ).min(1).max(50),
     paymentMethod: z.enum(["mock", "payso", "bank_transfer", "promptpay_qr"]),
     customerNote: z.string().max(500).optional().or(z.literal("")),
     wantReceipt: z.boolean().optional(),
@@ -59,6 +60,9 @@ const schema = z
   });
 
 export async function POST(req: Request) {
+  if (rateLimited(`checkout:${clientIp(req)}`, 5, 10 * 60_000)) {
+    return NextResponse.json({ error: "สั่งซื้อบ่อยเกินไป รอ 10 นาทีหรือทัก LINE ร้าน" }, { status: 429 });
+  }
   try {
     const json = await req.json();
     const data = schema.parse(json);
@@ -74,9 +78,6 @@ export async function POST(req: Request) {
         { status: 400 },
       );
     }
-
-    await getOrCreateCart(data.cartId);
-    await updateCart(data.cartId, data.items);
 
     const shippingLocality = completeThaiAddress(data.address);
     if (!shippingLocality.subdistrict || !shippingLocality.postalCode) {
@@ -108,7 +109,7 @@ export async function POST(req: Request) {
       : undefined;
 
     const { order } = await createOrder({
-      cartId: data.cartId,
+      items: data.items,
       address: {
         ...data.address,
         ...shippingLocality,

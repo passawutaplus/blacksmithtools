@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCartStore } from "@/lib/cart-store";
-import { cartLineKey } from "@/lib/product";
+import { cartLineKey, shortProductName } from "@/lib/product";
 import { formatTHB } from "@/lib/utils";
 import { PageHeader } from "@/components/PageHeader";
 import { saveLastBill } from "@/lib/last-bill";
@@ -494,7 +494,7 @@ export default function CheckoutPage() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-2 text-sm font-semibold leading-snug text-navy">
-                        {line.product.nameTh}
+                        {shortProductName(line.product.nameTh)}
                       </p>
                       {line.variantName ? (
                         <p className="mt-0.5 text-xs text-muted">{line.variantName}</p>

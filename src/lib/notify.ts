@@ -2,6 +2,7 @@ import "server-only";
 import { after } from "next/server";
 import type { Order } from "./types";
 import { formatTHB } from "./utils";
+import { baseItemName } from "./item-name";
 
 /**
  * Shop alerts via LINE Messaging API (LINE Notify was shut down in 2025).
@@ -55,7 +56,7 @@ export function orderAlertText(kind: "new" | "slip" | "paid", order: Order) {
     kind === "new" ? "🛒 ออเดอร์ใหม่" : kind === "slip" ? "🧾 ลูกค้าส่งสลิปแล้ว รอตรวจ" : "✅ ชำระเงินแล้ว";
   const items = order.items
     .slice(0, 5)
-    .map((i) => `• ${i.name}${i.variantName ? ` (${i.variantName})` : ""} × ${i.quantity}`)
+    .map((i) => `• ${baseItemName(i)}${i.variantName ? ` (${i.variantName})` : ""} × ${i.quantity}`)
     .join("\n");
   const more = order.items.length > 5 ? `\n…และอีก ${order.items.length - 5} รายการ` : "";
   const link = siteUrl() ? `\n${siteUrl()}/admin/orders/${order.id}` : "";

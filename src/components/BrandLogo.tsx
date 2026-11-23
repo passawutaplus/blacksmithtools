@@ -1,5 +1,8 @@
 import type { Brand } from "@/lib/types";
 
+/** Logos with white artwork that disappear on light backgrounds. */
+const DARK_PLATE = new Set(["blacksmith", "pumpkin"]);
+
 export function BrandLogo({
   brand,
   className = "h-8 w-full max-w-[120px]",
@@ -10,7 +13,7 @@ export function BrandLogo({
   decorative?: boolean;
 }) {
   if (brand.logoUrl) {
-    if (brand.slug === "blacksmith") {
+    if (DARK_PLATE.has(brand.slug)) {
       return (
         <span
           className={`inline-flex items-center justify-center overflow-hidden rounded-[3px] bg-navy p-[12%] ${className}`}

@@ -12,8 +12,7 @@ import {
   resolveVariant,
   selectableVariants,
   uniqueGallery,
-  variantAxes,
-} from "@/lib/product";
+  variantAxes, shortProductName } from "@/lib/product";
 import { getProductDetailSections } from "@/lib/parse-product-details";
 import { useCartStore } from "@/lib/cart-store";
 import { MarketplaceButtons } from "@/components/MarketplaceButtons";
@@ -139,29 +138,8 @@ export function ProductDetail({
       </div>
 
       <div>
-        <nav className="text-xs text-muted">
-          <Link href="/shop" className="hover:text-navy hover:underline">
-            สินค้า
-          </Link>
-          {categories[0] ? (
-            <>
-              <span className="px-1.5">/</span>
-              <Link href={`/shop?category=${categories[0].slug}`} className="hover:text-navy hover:underline">
-                {categories[0].nameTh}
-              </Link>
-            </>
-          ) : null}
-          {brands[0] ? (
-            <>
-              <span className="px-1.5">/</span>
-              <Link href={`/shop/${brands[0].slug}`} className="hover:text-navy hover:underline">
-                {brands[0].name}
-              </Link>
-            </>
-          ) : null}
-        </nav>
-
-        <h1 className="mt-5 text-2xl font-bold leading-snug text-navy md:text-3xl">{product.nameTh}</h1>
+        <h1 className="text-2xl font-bold leading-snug text-navy md:text-3xl">{shortProductName(product.nameTh)}</h1>
+        <p className="num mt-3 text-2xl font-semibold leading-none text-navy md:hidden">{formatTHB(price)}</p>
 
         {fitBrands.length > 0 ? (
           <p className="mt-4 inline-flex items-center bg-navy px-3 py-1.5 text-sm font-medium text-white">

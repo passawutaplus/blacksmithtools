@@ -118,3 +118,8 @@ export function linePricing(product: Product, variantId?: string | null) {
   const name = variantName ? `${product.nameTh} — ${variantName}` : product.nameTh;
   return { variant, price, sku, stock, imageUrl, variantName, name };
 }
+
+/** Marketplace titles end with "BlackSmith-แบรนด์คนไทย"; the site already says that, so drop it on screen. */
+export function shortProductName(name: string) {
+  return name.replace(/\s*(BlackSmith(?:\s*[-–—]\s*แบรนด์คน(?:ไทย)?)?|แบรนด์คนไทย)\s*$/u, "").trim() || name;
+}

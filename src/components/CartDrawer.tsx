@@ -8,7 +8,7 @@ import { X, Minus, Plus, Trash2 } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
 import { formatTHB } from "@/lib/utils";
 import type { Product } from "@/lib/types";
-import { cartLineKey } from "@/lib/product";
+import { cartLineKey, shortProductName } from "@/lib/product";
 import { CartVariantSelect } from "@/components/CartVariantSelect";
 
 type Line = {
@@ -80,6 +80,9 @@ export function CartDrawer() {
   if (!open) return null;
 
   const total = subtotal + shipping;
+  // Until the first price check returns, show placeholders instead of ฿0 / "ฟรี".
+  const pending = loading && lines.length === 0;
+  const money = (n: number) => (pending ? "—" : formatTHB(n));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end overscroll-none">
@@ -89,7 +92,7 @@ export function CartDrawer() {
         aria-label="ปิดตะกร้า"
         onClick={() => setOpen(false)}
       />
-      <aside className="relative flex h-dvh max-h-dvh w-full min-w-0 max-w-md flex-col bg-white shadow-[0_8px_40px_rgba(35,50,61,0.18)] sm:rounded-l-3xl">
+      <aside className="relative flex h-dvh max-h-dvh w-full min-w-0 max-w-md flex-col border-l border-navy/15 bg-white">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5">
           <h2 className="truncate text-base font-bold text-navy sm:text-lg">ตะกร้าสินค้า</h2>
           <button
@@ -126,7 +129,7 @@ export function CartDrawer() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-2 text-sm font-semibold leading-snug text-navy">
-                        {line.product.nameTh}
+                        {shortProductName(line.product.nameTh)}
                       </p>
                       <CartVariantSelect
                         product={line.product}
@@ -183,22 +186,28 @@ export function CartDrawer() {
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted">ยอดสินค้า</span>
-              <span className="tabular-nums">{formatTHB(subtotal)}</span>
+              <span className="tabular-nums">{money(subtotal)}</span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted">ค่าส่ง (โดยประมาณ)</span>
-              <span className="tabular-nums">{shipping === 0 ? "ฟรี" : formatTHB(shipping)}</span>
+              <span className="tabular-nums">{pending ? "—" : shipping === 0 ? "ฟรี" : formatTHB(shipping)}</span>
             </div>
           </div>
-          <FreeShipMeter subtotal={subtotal} min={freeShippingMin} />
+          {pending ? null : <FreeShipMeter subtotal={subtotal} min={freeShippingMin} />}
           <div className="mt-3 flex items-center justify-between gap-4 border-t border-gray-100 pt-3 font-bold">
             <span>รวม</span>
-            <span className="text-base tabular-nums text-navy sm:text-lg">{formatTHB(total)}</span>
+            <span className="text-base tabular-nums text-navy sm:text-lg">{money(total)}</span>
           </div>
           <div className="mt-4 grid gap-2">
-            <Link href="/checkout" className="btn btn-primary w-full" onClick={() => setOpen(false)}>
-              สั่งซื้อ
-            </Link>
+            {pending || lines.length === 0 ? (
+              <span className="btn btn-primary w-full cursor-not-allowed opacity-50" aria-disabled="true">
+                สั่งซื้อ
+              </span>
+            ) : (
+              <Link href="/checkout" className="btn btn-primary w-full" onClick={() => setOpen(false)}>
+                สั่งซื้อ
+              </Link>
+            )}
             <Link href="/cart" className="btn btn-secondary w-full" onClick={() => setOpen(false)}>
               ดูตะกร้าเต็ม
             </Link>

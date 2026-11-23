@@ -7,6 +7,8 @@ import { pickCollectionProducts, storefrontCategories } from "@/lib/collections"
 import { CategoryShowcase } from "@/components/CategoryShowcase";
 import { HeroBrandSlider } from "@/components/HeroBrandSlider";
 
+export const metadata = { alternates: { canonical: "/" } };
+
 export default async function HomePage() {
   const [{ products: all, categories }, settings, reviews] = await Promise.all([
     listProducts(),
@@ -74,7 +76,7 @@ export default async function HomePage() {
           sizes="100vw"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-navy via-navy/75 to-navy/35 md:bg-gradient-to-r md:from-navy md:via-navy/70 md:to-navy/10" />
-        <div className="container-bs relative flex min-h-dvh items-end pb-48 pt-28 md:items-center md:pb-56 md:pt-32">
+        <div className="container-bs relative flex min-h-[78svh] items-end pb-44 pt-24 md:min-h-dvh md:items-center md:pb-56 md:pt-32">
           <div className="max-w-xl text-white">
             <p className="eyebrow !text-steel before:!bg-forge">Thai-made · 3D printed PETG</p>
             <h1 className="mt-3 text-3xl font-bold leading-tight md:text-5xl">

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clientIp, rateLimited } from "@/lib/rate-limit";
 import { z } from "zod";
 import { createWholesaleLead } from "@/lib/db";
 import { notifyShop } from "@/lib/notify";
@@ -12,6 +13,9 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
+  if (rateLimited(`wholesale:${clientIp(req)}`, 3, 10 * 60_000)) {
+    return NextResponse.json({ error: "ส่งข้อมูลบ่อยเกินไป รอสักครู่แล้วลองใหม่" }, { status: 429 });
+  }
   try {
     const json = await req.json();
     const data = schema.parse(json);

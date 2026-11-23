@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
+import { clientIp, rateLimited } from "@/lib/rate-limit";
 import { getOrderByToken, submitSlip } from "@/lib/db";
 import { notifyShop, orderAlertText } from "@/lib/notify";
 import { saveSlipUpload } from "@/lib/save-image-upload";
 
 export async function POST(req: Request) {
+  if (rateLimited(`slip:${clientIp(req)}`, 10, 10 * 60_000)) {
+    return NextResponse.json({ error: "ส่งสลิปบ่อยเกินไป รอสักครู่แล้วลองใหม่" }, { status: 429 });
+  }
   const form = await req.formData();
   const token = String(form.get("token") ?? "");
   const file = form.get("slip");
