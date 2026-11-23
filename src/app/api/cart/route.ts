@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getActivePaymentProviders } from "@/lib/payments/adapters";
 import { getCartWithProducts, getOrCreateCart, getSettings, updateCart } from "@/lib/db";
 
 export async function POST(req: Request) {
@@ -33,5 +34,6 @@ export async function POST(req: Request) {
     shippingFee,
     freeShippingMin: settings.freeShippingMin,
     flatShippingFee: settings.flatShippingFee,
+    paymentMethods: getActivePaymentProviders(settings.paymentsLive),
   });
 }

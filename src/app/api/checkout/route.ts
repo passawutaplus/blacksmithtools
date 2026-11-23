@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createOrder, getOrCreateCart, updateCart } from "@/lib/db";
 import { getActivePaymentProviders } from "@/lib/payments/adapters";
+import { createPaysoPayment, newPaysoRef, postbackToken } from "@/lib/payments/payso";
+import { attachPaysoRef } from "@/lib/db";
 import { getSettings } from "@/lib/db";
 import { completeThaiAddress } from "@/lib/thai-address";
 
@@ -64,9 +66,10 @@ export async function POST(req: Request) {
     if (!allowed.includes(data.paymentMethod)) {
       return NextResponse.json({ error: "ช่องทางชำระเงินไม่พร้อมใช้งาน" }, { status: 400 });
     }
-    if (!settings.paymentsLive && data.paymentMethod === "payso") {
+    const payEmail = (data.address.email || data.billing?.email || "").trim();
+    if (data.paymentMethod === "payso" && !payEmail) {
       return NextResponse.json(
-        { error: "ยังไม่เปิดรับชำระผ่าน Payso — ใช้โหมดทดสอบหรือโอนสลิป" },
+        { error: "ชำระผ่านบัตร/QR ต้องใส่อีเมลเพื่อรับใบเสร็จจาก Payso" },
         { status: 400 },
       );
     }
@@ -117,8 +120,30 @@ export async function POST(req: Request) {
       billing,
     });
 
+    let redirectUrl: string | undefined;
+    if (data.paymentMethod === "payso") {
+      const site = (process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin).replace(/\/$/, "");
+      const ref = newPaysoRef();
+      try {
+        const pay = await createPaysoPayment({
+          referenceNo: ref,
+          amount: order.grandTotal,
+          customerEmail: payEmail,
+          description: `BlackSmith ${order.number}`,
+          returnUrl: `${site}/bill/${order.token}?payso=1`,
+          postbackUrl: `${site}/api/payments/payso/webhook?ref=${ref}&k=${postbackToken(ref)}`,
+        });
+        await attachPaysoRef(order.id, ref, pay.transactionId);
+        redirectUrl = pay.redirectUrl;
+      } catch (e) {
+        console.error("[payso] create payment failed", e instanceof Error ? e.message : e);
+        // Order stays pending; the bill page lets the customer transfer + upload a slip instead.
+      }
+    }
+
     return NextResponse.json({
       ok: true,
+      redirectUrl,
       orderNumber: order.number,
       token: order.token,
       billUrl: `/bill/${order.token}`,

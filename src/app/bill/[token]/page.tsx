@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getOrderByToken } from "@/lib/db";
+import { verifyPaysoRef } from "@/lib/payments/payso-confirm";
 import { formatThaiLocality } from "@/lib/thai-address-format";
 import { formatTHB } from "@/lib/utils";
 import { ORDER_STATUS_LABEL, carrierLabel, trackingLinkLabel, trackingUrl } from "@/lib/shipping";
@@ -17,12 +18,22 @@ export default async function BillPage({
   searchParams,
 }: {
   params: Promise<{ token: string }>;
-  searchParams: Promise<{ paid?: string }>;
+  searchParams: Promise<{ paid?: string; payso?: string }>;
 }) {
   const { token } = await params;
   const sp = await searchParams;
-  const detail = await getOrderByToken(token);
+  let detail = await getOrderByToken(token);
   if (!detail) notFound();
+  // Back from Payso: ask Payso directly instead of waiting for the postback.
+  if (
+    sp.payso &&
+    detail.order.paymentMethod === "payso" &&
+    detail.order.status === "pending_payment" &&
+    detail.payment?.paysoRef
+  ) {
+    const r = await verifyPaysoRef(detail.payment.paysoRef).catch(() => null);
+    if (r?.ok) detail = (await getOrderByToken(token)) ?? detail;
+  }
   const { order, payment, document, shipments, settings } = detail;
 
   const stepIndex = Math.max(
@@ -33,7 +44,12 @@ export default async function BillPage({
   return (
     <div className="container-bs py-8 md:py-10">
       <RememberBill token={order.token} number={order.number} />
-      {sp.paid ? (
+      {sp.payso && order.status === "pending_payment" ? (
+        <div className="mb-4 border-l-4 border-forge bg-white px-4 py-3 text-sm">
+          ยังไม่ได้รับยืนยันการชำระจาก Payso ถ้าจ่ายแล้ว รอสักครู่แล้วรีเฟรชหน้านี้ หรือกดจ่ายอีกครั้งด้านล่าง
+        </div>
+      ) : null}
+      {sp.paid || (sp.payso && order.status === "paid") ? (
         <div className="mb-4 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
           ชำระเงินสำเร็จ — ระบบออกบิลเงินสดให้อัตโนมัติแล้ว
         </div>

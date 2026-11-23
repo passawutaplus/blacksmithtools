@@ -1477,30 +1477,36 @@ export async function updateWholesaleLead(
   return lead;
 }
 
-export async function applyPaysoWebhook(payload: {
-  refno: string;
-  amount: number;
-  status: string;
-  providerRef: string;
-}) {
+export async function attachPaysoRef(orderId: string, paysoRef: string, transactionId: string) {
   const db = await ensureDb();
-  const order = db.orders.find((o) => o.number === payload.refno || o.id === payload.refno);
-  if (!order) throw new Error("order not found");
-  const payment = db.payments.find((p) => p.id === order.paymentId);
-  if (!payment) throw new Error("payment not found");
-  if (payment.providerRef === payload.providerRef && payment.status === "paid") {
-    return { order, payment, duplicate: true };
+  const order = db.orders.find((o) => o.id === orderId);
+  const payment = order && db.payments.find((p) => p.id === order.paymentId);
+  if (!order || !payment) throw new Error("ไม่พบออเดอร์");
+  payment.paysoRef = paysoRef;
+  payment.providerRef = transactionId || undefined;
+  payment.updatedAt = new Date().toISOString();
+  pushEvent(order, "payso_created", "สร้างรายการชำระเงิน Payso แล้ว");
+  await saveDb(db);
+}
+
+export async function findOrderByPaysoRef(paysoRef: string) {
+  const db = await ensureDb();
+  const payment = db.payments.find((p) => p.paysoRef === paysoRef);
+  const order = payment && db.orders.find((o) => o.id === payment.orderId);
+  return order && payment ? { order, payment } : null;
+}
+
+/** Call only with a result verified via Payso inquiry (never trust the postback body). */
+export async function confirmPaysoPaid(paysoRef: string, verifiedTotal: number, paysoOrderNo?: string) {
+  const found = await findOrderByPaysoRef(paysoRef);
+  if (!found) throw new Error("order not found");
+  const { order } = found;
+  if (order.status !== "pending_payment" && order.status !== "payment_submitted") {
+    return { order, duplicate: true };
   }
-  if (Math.round(payload.amount) !== Math.round(order.grandTotal)) {
+  if (Math.round(verifiedTotal * 100) !== Math.round(order.grandTotal * 100)) {
     throw new Error("amount mismatch");
   }
-  if (payload.status !== "success" && payload.status !== "paid") {
-    payment.status = "failed";
-    payment.updatedAt = new Date().toISOString();
-    await saveDb(db);
-    return { order, payment, duplicate: false };
-  }
-  payment.providerRef = payload.providerRef;
-  await saveDb(db);
-  return { ...(await markOrderPaid(order.id, "payso")), duplicate: false };
+  const result = await markOrderPaid(order.id, paysoOrderNo ? `payso #${paysoOrderNo}` : "payso");
+  return { order: result.order, duplicate: false };
 }

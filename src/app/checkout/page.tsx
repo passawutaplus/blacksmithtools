@@ -25,6 +25,15 @@ type CheckoutLine = {
   product: { nameTh: string; slug: string };
 };
 
+type PayMethod = "mock" | "payso" | "bank_transfer" | "promptpay_qr";
+
+const PAY_LABEL: Record<PayMethod, { title: string; note: string }> = {
+  payso: { title: "บัตรเครดิต / QR PromptPay / Mobile Banking", note: "จ่ายผ่าน Payso ยืนยันอัตโนมัติทันที" },
+  bank_transfer: { title: "โอนเข้าบัญชีร้าน", note: "โอนแล้วอัปโหลดสลิปที่หน้าบิล ทีมงานตรวจในเวลาทำการ" },
+  promptpay_qr: { title: "สแกน PromptPay ของร้าน", note: "QR แสดงบนหน้าบิล แล้วอัปโหลดสลิป" },
+  mock: { title: "ทดสอบชำระเงิน (เฉพาะเครื่องพัฒนา)", note: "ไม่มีเงินจริง" },
+};
+
 type BillingForm = {
   name: string;
   email: string;
@@ -68,9 +77,8 @@ export default function CheckoutPage() {
   const [shipping, setShipping] = useState(0);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<"mock" | "bank_transfer" | "promptpay_qr">(
-    "bank_transfer",
-  );
+  const [paymentMethod, setPaymentMethod] = useState<PayMethod>("bank_transfer");
+  const [methods, setMethods] = useState<PayMethod[]>(["bank_transfer", "promptpay_qr"]);
   const [wantReceipt, setWantReceipt] = useState(false);
   const [billing, setBilling] = useState<BillingForm>(emptyBilling);
   const [address, setAddress] = useState({
@@ -141,6 +149,11 @@ export default function CheckoutPage() {
       setLines(data.lines ?? []);
       setSubtotal(data.subtotal ?? 0);
       setShipping(data.shippingFee ?? 0);
+      if (Array.isArray(data.paymentMethods) && data.paymentMethods.length) {
+        const list = data.paymentMethods as PayMethod[];
+        setMethods(list);
+        setPaymentMethod((cur) => (list.includes(cur) ? cur : list.includes("payso") ? "payso" : list[0]));
+      }
     }
     void sync();
   }, [items, cartId, setCartId]);
@@ -187,6 +200,10 @@ export default function CheckoutPage() {
       });
       if (data.token && data.orderNumber) saveLastBill(data.token, data.orderNumber);
       clear();
+      if (data.redirectUrl) {
+        window.location.assign(data.redirectUrl);
+        return;
+      }
       router.push(data.billUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "เกิดข้อผิดพลาด");
@@ -431,30 +448,31 @@ export default function CheckoutPage() {
             ) : null}
 
             <h2 className="pt-4 font-bold">ช่องทางชำระเงิน</h2>
-            <p className="text-xs text-muted">
-              โอนแล้วอัปโหลดสลิปที่หน้าบิล ทีมงานตรวจและยืนยันภายในเวลาทำการ
-            </p>
-            <div className="space-y-2">
-              {(
-                [
-                  ...(process.env.NODE_ENV !== "production"
-                    ? ([["mock", "ทดสอบชำระเงิน (เดโม่)"]] as const)
-                    : []),
-                  ["bank_transfer", "โอนธนาคาร + อัปโหลดสลิป"],
-                  ["promptpay_qr", "PromptPay QR (แสดงบนบิล)"],
-                ] as const
-              ).map(([value, label]) => (
-                <label key={value} className="card flex items-center gap-2 p-3">
+            <div className="space-y-2" role="radiogroup" aria-label="ช่องทางชำระเงิน">
+              {methods.map((value) => (
+                <label
+                  key={value}
+                  className={`flex cursor-pointer items-start gap-3 border p-3 transition-colors ${
+                    paymentMethod === value ? "border-forge bg-forge/5" : "border-navy/15 bg-white hover:border-navy/40"
+                  }`}
+                >
                   <input
                     type="radio"
                     name="paymentMethod"
+                    className="mt-1 accent-[var(--forge)]"
                     checked={paymentMethod === value}
                     onChange={() => setPaymentMethod(value)}
                   />
-                  <span className="text-sm">{label}</span>
+                  <span>
+                    <span className="block text-sm font-medium">{PAY_LABEL[value].title}</span>
+                    <span className="block text-xs text-muted">{PAY_LABEL[value].note}</span>
+                  </span>
                 </label>
               ))}
             </div>
+            {paymentMethod === "payso" && !address.email.trim() ? (
+              <p className="text-xs text-forge">ใส่อีเมลด้านบนด้วย เพื่อรับใบเสร็จจาก Payso</p>
+            ) : null}
           </div>
 
           <aside className="card h-fit p-5 lg:sticky lg:top-24">
