@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   // Articles are read from content/ at runtime by routes that are not prerendered (e.g. sitemap).
   outputFileTracingIncludes: {
     "/sitemap.xml": ["./content/articles/**/*"],
@@ -31,7 +32,8 @@ const nextConfig: NextConfig = {
             value: [
               "default-src 'self'",
               "img-src 'self' data: blob: https://cf.shopee.co.th https://*.susercontent.com",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              // unsafe-eval is only needed by the dev server (React Refresh).
+              `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"}`,
               "style-src 'self' 'unsafe-inline'",
               "font-src 'self' data:",
               "connect-src 'self'",

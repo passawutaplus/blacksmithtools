@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { clientIp, rateLimited } from "@/lib/rate-limit";
 import { z } from "zod";
 import { createOrder, getOrCreateCart, updateCart } from "@/lib/db";
 import { getActivePaymentProviders } from "@/lib/payments/adapters";
@@ -59,6 +60,9 @@ const schema = z
   });
 
 export async function POST(req: Request) {
+  if (rateLimited(`checkout:${clientIp(req)}`, 5, 10 * 60_000)) {
+    return NextResponse.json({ error: "สั่งซื้อบ่อยเกินไป รอ 10 นาทีหรือทัก LINE ร้าน" }, { status: 429 });
+  }
   try {
     const json = await req.json();
     const data = schema.parse(json);

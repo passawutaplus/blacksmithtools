@@ -1,25 +1,9 @@
 import { NextResponse } from "next/server";
 import { replyToChat, type ChatMessage } from "@/lib/assistant";
-
-const hits = new Map<string, number[]>();
-
-function rateLimited(ip: string) {
-  const now = Date.now();
-  const windowMs = 60_000;
-  const max = 20;
-  const recent = (hits.get(ip) ?? []).filter((t) => now - t < windowMs);
-  if (recent.length >= max) {
-    hits.set(ip, recent);
-    return true;
-  }
-  recent.push(now);
-  hits.set(ip, recent);
-  return false;
-}
+import { clientIp, rateLimited } from "@/lib/rate-limit";
 
 export async function POST(req: Request) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  if (rateLimited(ip)) {
+  if (rateLimited(`chat:${clientIp(req)}`, 20, 60_000)) {
     return NextResponse.json({ error: "ถามถี่ไป ลองใหม่ในอีกครู่" }, { status: 429 });
   }
 

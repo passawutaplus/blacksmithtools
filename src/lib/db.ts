@@ -15,7 +15,6 @@ import { StateConflictError, readState, withStateRetry, writeState } from "./sta
 const loadedVersion = new WeakMap<object, number | null>();
 
 export { safeUploadName };
-import { filterBillsByPhone, toTrackBillSummary } from "./track-bills";
 import type { TrackBillSummary } from "./track-types";
 import { mapTrack17ToShop, normalizeTrackingNo, type Track17Snapshot } from "./track17";
 import { ORDER_STATUS_LABEL, CARRIERS, carrierLabel } from "./shipping";
@@ -767,11 +766,6 @@ export async function getOrderByNumberAndPhone(number: string, phone: string) {
   );
   if (!order) return null;
   return getOrderByToken(order.token);
-}
-
-export async function listBillsByPhone(phone: string, limit = 20): Promise<TrackBillSummary[]> {
-  const db = await ensureDb();
-  return filterBillsByPhone(db.orders, phone, limit).map(toTrackBillSummary);
 }
 
 export type { AdminOrderRow, TrackBillSummary };
