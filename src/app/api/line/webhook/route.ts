@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { NextResponse } from "next/server";
+import { isNotifyIdRequest } from "@/lib/line-keyword";
 
 /**
  * LINE OA webhook — only used for setup: send "รหัสแจ้งเตือน" to the OA
@@ -34,8 +35,11 @@ export async function POST(req: Request) {
     `[line-webhook] ${events.length} event(s): ${events.map((e) => `${e.type}/${e.source?.type ?? "?"}`).join(", ") || "none"}; token ${token ? "set" : "MISSING"}`,
   );
   for (const ev of events) {
-    const text = ev.message?.text?.replace(/\s+/g, "");
-    if (ev.type !== "message" || !ev.replyToken || !token || text !== "รหัสแจ้งเตือน") continue;
+    if (ev.type !== "message" || ev.message?.type !== "text" || !ev.replyToken || !token) continue;
+    if (!isNotifyIdRequest(ev.message.text ?? "")) {
+      console.info(`[line-webhook] text did not match keyword (${(ev.message.text ?? "").length} chars)`);
+      continue;
+    }
     const id = ev.source?.groupId ?? ev.source?.roomId ?? ev.source?.userId ?? "";
     await fetch("https://api.line.me/v2/bot/message/reply", {
       method: "POST",
