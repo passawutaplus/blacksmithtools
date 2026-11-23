@@ -42,7 +42,7 @@ const CHANNEL_BADGE: Record<PortalChannelId, { className: string; icon: Componen
 
 function rowClassName() {
   return [
-    "flex min-h-14 w-full items-center gap-3 rounded-2xl bg-white px-3 py-2 text-left text-navy",
+    "flex min-h-14 w-full items-center gap-3 rounded-[3px] bg-white px-3 py-2 text-left text-navy",
     "shadow-[0_8px_24px_rgba(0,0,0,0.18)]",
     "transition-[transform,background-color] duration-150 active:scale-[0.99] hover:bg-steel/80",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forge",
@@ -95,7 +95,7 @@ function HomeTile({ link }: { link: ShopChannelLink }) {
   const { className, icon: Icon } = CHANNEL_BADGE[link.channel];
   const inner = (
     <>
-      <ChannelBadge className={`${className} h-12 w-12 rounded-2xl`}>
+      <ChannelBadge className={`${className} h-12 w-12 rounded-[3px]`}>
         <Icon className={link.channel === "lazada" ? "h-6 w-auto" : "h-6 w-6"} />
       </ChannelBadge>
       <span className="min-w-0 text-sm font-semibold leading-tight text-navy">{link.shortLabel ?? link.label}</span>
@@ -103,7 +103,7 @@ function HomeTile({ link }: { link: ShopChannelLink }) {
   );
   const href = link.external ? withPortalUtm(link.href) : link.href;
   const cls = [
-    "flex w-full min-h-14 items-center justify-center gap-2.5 rounded-2xl bg-white px-3 py-2.5",
+    "flex w-full min-h-14 items-center justify-center gap-2.5 rounded-[3px] bg-white px-3 py-2.5",
     "shadow-[0_8px_24px_rgba(0,0,0,0.18)]",
     "transition-[transform,background-color] duration-150 active:scale-[0.99] hover:bg-steel/80",
     "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-forge",
@@ -126,7 +126,7 @@ function ShopTile({ link }: { link: ShopChannelLink }) {
   const { className, icon: Icon } = CHANNEL_BADGE[link.channel];
   const inner = (
     <>
-      <ChannelBadge className={`${className} h-14 w-14 rounded-2xl`}>
+      <ChannelBadge className={`${className} h-14 w-14 rounded-[3px]`}>
         <Icon className={link.channel === "lazada" ? "h-7 w-auto" : "h-7 w-7"} />
       </ChannelBadge>
       <span className="text-[12px] font-semibold text-white">{link.shortLabel ?? link.label}</span>
@@ -182,7 +182,7 @@ function ServiceCard({ link }: { link: PortalLink }) {
             <span className="mt-0.5 block text-sm font-medium leading-relaxed text-white/85">{link.hint}</span>
           ) : null}
         </span>
-        <span className="inline-flex min-h-8 shrink-0 items-center gap-0.5 rounded-full bg-white px-3 text-[11px] font-semibold text-navy">
+        <span className="inline-flex min-h-8 shrink-0 items-center gap-0.5 rounded-[2px] bg-white px-3 text-[11px] font-semibold text-navy">
           เปิด
           <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
         </span>
@@ -297,9 +297,9 @@ export function LinkPortal({
         </header>
 
         {product ? (
-          <section className="mt-6 rounded-2xl bg-white/8 p-3 ring-1 ring-white/10">
+          <section className="mt-6 rounded-[3px] bg-white/8 p-3 ring-1 ring-white/10">
             <div className="flex gap-3">
-              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white">
+              <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-[3px] bg-white">
                 <Image src={product.imageUrl} alt={product.nameTh} fill sizes="80px" className="object-cover" />
               </div>
               <div className="min-w-0 flex-1">

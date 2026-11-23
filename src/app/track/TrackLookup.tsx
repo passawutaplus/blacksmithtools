@@ -45,7 +45,7 @@ export function TrackLookup({
             {PIPELINE.map((label, i) => (
               <li
                 key={label}
-                className="min-w-0 rounded-2xl border border-steel bg-white px-2 py-2.5 text-center"
+                className="min-w-0 rounded-[3px] border border-steel bg-white px-2 py-2.5 text-center"
               >
                 <span className="block text-[10px] font-medium text-muted">{i + 1}</span>
                 <span className="block text-xs font-semibold leading-snug text-navy">{label}</span>

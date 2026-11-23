@@ -142,6 +142,8 @@ export interface Payment {
   amount: number;
   status: PaymentStatus;
   providerRef?: string;
+  /** Payso referenceNo (12 digits) sent when creating the hosted payment */
+  paysoRef?: string;
   slipPath?: string;
   transferredAt?: string;
   createdAt: string;

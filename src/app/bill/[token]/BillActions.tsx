@@ -33,6 +33,29 @@ export function BillActions({
     window.location.href = `/api/payments/mock/complete?orderId=${encodeURIComponent(orderId)}`;
   }
 
+  async function paysoRetry() {
+    setUploading(true);
+    setMsg("");
+    try {
+      const res = await fetch("/api/payments/payso/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "ลองใหม่ไม่สำเร็จ");
+      if (data.redirectUrl) {
+        window.location.assign(data.redirectUrl);
+        return;
+      }
+      router.refresh();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function onSlip(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setUploading(true);
@@ -62,6 +85,15 @@ export function BillActions({
         <button type="button" className="btn btn-primary w-full" onClick={mockPay}>
           จำลองชำระเงิน (เดโม่)
         </button>
+      ) : null}
+
+      {paymentMethod === "payso" && status === "pending_payment" ? (
+        <div className="space-y-2">
+          <button type="button" className="btn btn-primary w-full" onClick={paysoRetry} disabled={uploading}>
+            {uploading ? "กำลังเชื่อมต่อ…" : `จ่าย ${formatTHB(settings.grandTotal)} ผ่าน Payso`}
+          </button>
+          <p className="text-xs text-muted">บัตรเครดิต · QR PromptPay · Mobile Banking</p>
+        </div>
       ) : null}
 
       {(paymentMethod === "bank_transfer" || paymentMethod === "promptpay_qr") && (

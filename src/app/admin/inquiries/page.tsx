@@ -75,7 +75,7 @@ export default function AdminInquiriesPage() {
           <button
             key={f.id}
             type="button"
-            className={`shrink-0 rounded-full border px-3 py-1.5 text-sm ${
+            className={`shrink-0 rounded-[2px] border px-3 py-1.5 text-sm ${
               status === f.id ? "border-navy bg-navy text-white" : "border-gray-200 bg-white"
             }`}
             onClick={() => setStatus(f.id)}

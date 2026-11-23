@@ -17,10 +17,10 @@ export default function AssistantMapPage() {
       </div>
 
       <p className="flex flex-wrap gap-2 text-sm">
-        <Link href="/assistant" className="rounded-full border border-steel px-3 py-1.5 font-medium text-navy hover:border-navy/30">
+        <Link href="/assistant" className="rounded-[2px] border border-steel px-3 py-1.5 font-medium text-navy hover:border-navy/30">
           หน้าแรกผู้ช่วย
         </Link>
-        <Link href="/assistant/tables" className="rounded-full border border-steel px-3 py-1.5 font-medium text-navy hover:border-navy/30">
+        <Link href="/assistant/tables" className="rounded-[2px] border border-steel px-3 py-1.5 font-medium text-navy hover:border-navy/30">
           ตารางอ้างอิง
         </Link>
       </p>

@@ -13,7 +13,7 @@ export function BrandLogo({
     if (brand.slug === "blacksmith") {
       return (
         <span
-          className={`inline-flex items-center justify-center overflow-hidden rounded-xl bg-navy p-[12%] ${className}`}
+          className={`inline-flex items-center justify-center overflow-hidden rounded-[3px] bg-navy p-[12%] ${className}`}
         >
           <img
             src={brand.logoUrl}

@@ -114,7 +114,7 @@ export default async function AboutPage() {
         </div>
         <div className="container-bs relative py-14 md:py-20">
           <p className="text-sm font-semibold tracking-wide text-forge">แบรนด์คนไทย</p>
-          <h1 className="mt-2 max-w-2xl text-3xl font-black leading-tight md:text-5xl">เกี่ยวกับเรา</h1>
+          <h1 className="mt-2 max-w-2xl text-3xl font-bold leading-tight md:text-5xl">เกี่ยวกับเรา</h1>
           <p className="mt-4 max-w-xl text-base text-white/85 md:text-lg">
             อุปกรณ์เสริมเครื่องมือช่าง ออกแบบและผลิตในไทย ให้ช่างจัดของได้ หยิบง่าย ทำงานเร็วขึ้น
           </p>
@@ -138,7 +138,7 @@ export default async function AboutPage() {
 
       <section id="who" className="scroll-mt-24">
         <div className="container-bs grid gap-8 py-12 md:grid-cols-2 md:items-center md:py-16">
-          <figure className="relative aspect-[3/2] overflow-hidden rounded-3xl bg-navy-deep">
+          <figure className="relative aspect-[3/2] overflow-hidden rounded-[3px] bg-navy-deep">
             <Image
               src="/about/workshop.jpg"
               alt="ฟาร์มเครื่องพิมพ์ 3D ของร้าน ที่พิมพ์อุปกรณ์เสริมเครื่องมือช่าง"
@@ -190,7 +190,7 @@ export default async function AboutPage() {
           <p className="mt-2 max-w-2xl text-sm text-muted">กดหมวดเพื่อดูของที่เข้ากับงานพี่</p>
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {WORKS.map((item) => (
-              <Link key={item.href} href={item.href} className="group overflow-hidden rounded-3xl bg-navy-deep">
+              <Link key={item.href} href={item.href} className="group overflow-hidden rounded-[3px] bg-navy-deep">
                 <span className="relative block aspect-[4/3]">
                   <Image
                     src={item.src}
@@ -235,7 +235,7 @@ export default async function AboutPage() {
           </div>
           <div className="grid grid-cols-3 gap-3">
             {["/print/jig.png", "/print/part.png", "/print/proto.png"].map((src) => (
-              <div key={src} className="relative aspect-[3/4] overflow-hidden rounded-2xl ring-1 ring-white/10">
+              <div key={src} className="relative aspect-[3/4] overflow-hidden rounded-[3px] ring-1 ring-white/10">
                 <Image src={src} alt="" fill className="object-cover" sizes="180px" />
               </div>
             ))}
@@ -257,7 +257,7 @@ export default async function AboutPage() {
               เปิดผู้ช่วยงานช่าง
             </Link>
           </div>
-          <figure className="relative aspect-[3/2] overflow-hidden rounded-3xl bg-steel">
+          <figure className="relative aspect-[3/2] overflow-hidden rounded-[3px] bg-steel">
             <Image
               src="/assistant/covers/tile.webp"
               alt="ตัวอย่างหน้าผู้ช่วยงานช่าง สำหรับคิดวัสดุกระเบื้อง"
@@ -282,7 +282,7 @@ export default async function AboutPage() {
             <li key={brand.id}>
               <Link
                 href={`/shop/${brand.slug}`}
-                className="flex h-20 items-center justify-center rounded-3xl border border-steel bg-white px-3 hover:border-navy"
+                className="flex h-20 items-center justify-center rounded-[3px] border border-steel bg-white px-3 hover:border-navy"
               >
                 <BrandLogo
                   brand={brand}
@@ -374,7 +374,7 @@ export default async function AboutPage() {
               พอยท์สมาชิก: ยอดสั่งซื้อ 25 บาท = 1 พอยท์ สมัครผ่าน LINE ร้าน
             </p>
           </div>
-          <aside className="rounded-3xl border border-steel bg-white p-5">
+          <aside className="rounded-[3px] border border-steel bg-white p-5">
             <h2 className="flex items-center gap-2 text-xl font-bold text-navy">
               <ShieldCheck className="h-5 w-5 text-forge" aria-hidden />
               รับประกัน

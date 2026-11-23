@@ -174,7 +174,7 @@ export function OrdersClient() {
           <button
             key={key}
             type="button"
-            className={`h-11 shrink-0 rounded-full border px-3 text-sm ${
+            className={`h-11 shrink-0 rounded-[2px] border px-3 text-sm ${
               rangeKey === key ? "border-navy bg-navy text-white" : "border-gray-200 bg-white"
             }`}
             onClick={() => setRange(nextFrom, nextTo)}
@@ -266,7 +266,7 @@ export function OrdersClient() {
           <button
             key={f.id}
             type="button"
-            className={`shrink-0 rounded-full border px-3 py-1.5 text-sm ${
+            className={`shrink-0 rounded-[2px] border px-3 py-1.5 text-sm ${
               status === f.id ? "border-navy bg-navy text-white" : "border-gray-200 bg-white"
             }`}
             onClick={() => setStatus(f.id)}
@@ -277,7 +277,7 @@ export function OrdersClient() {
       </div>
 
       {selectedIds.length > 0 ? (
-        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-navy/15 bg-white px-4 py-3">
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-[3px] border border-navy/15 bg-white px-4 py-3">
           <p className="mr-auto text-sm font-semibold text-navy">เลือก {selectedIds.length} บิล</p>
           <button
             type="button"

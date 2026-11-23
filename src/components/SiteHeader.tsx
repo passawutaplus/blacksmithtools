@@ -99,8 +99,8 @@ export function SiteHeader({
   const brandActive = pathname.startsWith("/shop/");
   const overHero = home && !scrolled && !mobileOpen && !searchOpen;
   const iconBtn = overHero
-    ? "inline-flex h-11 w-11 items-center justify-center rounded-full text-white hover:bg-white/10"
-    : "inline-flex h-11 w-11 items-center justify-center rounded-full text-navy hover:bg-steel";
+    ? "inline-flex h-11 w-11 items-center justify-center rounded-[2px] text-white hover:bg-white/10"
+    : "inline-flex h-11 w-11 items-center justify-center rounded-[2px] text-navy hover:bg-steel";
 
   return (
     <header
@@ -142,7 +142,7 @@ export function SiteHeader({
             </label>
             <div
               className={cn(
-                "mx-auto flex max-w-xl overflow-hidden rounded-full border",
+                "mx-auto flex max-w-xl overflow-hidden rounded-[2px] border",
                 overHero ? "border-white/30 bg-white/10" : "border-gray-200 bg-white",
               )}
             >
@@ -247,7 +247,7 @@ export function SiteHeader({
               </button>
               {openMenu === "products" ? (
                 <div id={productsId} className="absolute left-0 top-full z-50 min-w-[260px] pt-1">
-                  <div className="rounded-3xl border border-gray-200 bg-white p-3 text-navy shadow-[0_8px_30px_rgba(35,50,61,0.12)]">
+                  <div className="rounded-[3px] border border-gray-200 bg-white p-3 text-navy">
                     <Link
                       href="/shop"
                       className="block rounded px-2 py-2 text-sm font-semibold hover:bg-steel"
@@ -284,7 +284,7 @@ export function SiteHeader({
               </button>
               {openMenu === "brands" ? (
                 <div id={brandsId} className="absolute left-0 top-full z-50 w-[420px] max-w-[90vw] pt-1">
-                  <div className="rounded-3xl border border-gray-200 bg-white p-3 text-navy shadow-[0_8px_30px_rgba(35,50,61,0.12)]">
+                  <div className="rounded-[3px] border border-gray-200 bg-white p-3 text-navy">
                     <p className="mb-2 px-1 text-xs font-semibold text-muted">เลือกสินค้าตามยี่ห้อที่เข้ากันได้</p>
                     <div className="grid grid-cols-2 gap-2">
                       {brands.map((b) => (
@@ -386,7 +386,7 @@ export function SiteHeader({
                   <Link
                     key={b.id}
                     href={`/shop/${b.slug}`}
-                    className="flex min-h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-2xl bg-white px-2 py-2.5"
+                    className="flex min-h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 overflow-hidden rounded-[3px] bg-white px-2 py-2.5"
                     onClick={closeAll}
                   >
                     <span className="flex h-11 w-full items-center justify-center overflow-hidden">

@@ -66,7 +66,7 @@ export function ProductAddPopup({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 w-full max-w-md rounded-3xl bg-white p-5 shadow-[0_8px_40px_rgba(35,50,61,0.28)]"
+        className="relative z-10 w-full max-w-md rounded-[3px] bg-white p-5 shadow-[0_8px_40px_rgba(35,50,61,0.28)]"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -117,7 +117,7 @@ export function ProductAddPopup({
 
         <div className="mt-4 flex items-center justify-between">
           <p className="text-sm font-semibold text-navy">จำนวน</p>
-          <div className="inline-flex items-center rounded-full bg-steel">
+          <div className="inline-flex items-center border border-navy/20 bg-white">
             <button
               type="button"
               className="inline-flex h-10 w-10 items-center justify-center"

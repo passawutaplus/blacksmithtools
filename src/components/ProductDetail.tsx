@@ -100,7 +100,7 @@ export function ProductDetail({
   return (
     <div className="grid min-w-0 gap-8 lg:grid-cols-2 lg:items-start lg:gap-14">
       <div className="min-w-0">
-        <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-steel md:aspect-square md:rounded-3xl">
+        <div className="relative aspect-[4/3] overflow-hidden rounded-[3px] bg-steel md:aspect-square md:rounded-[3px]">
           {main ? (
             <Image
               src={main}
@@ -124,7 +124,7 @@ export function ProductDetail({
                 key={`${src}-${i}`}
                 type="button"
                 onClick={() => setMain(src)}
-                className={`relative aspect-square w-[4.75rem] shrink-0 snap-start overflow-hidden rounded-xl bg-steel md:w-auto md:min-w-0 ${
+                className={`relative aspect-square w-[4.75rem] shrink-0 snap-start overflow-hidden rounded-[3px] bg-steel md:w-auto md:min-w-0 ${
                   src === main ? "ring-2 ring-navy" : "ring-1 ring-transparent"
                 }`}
                 aria-label="ดูรูปนี้"
@@ -160,14 +160,14 @@ export function ProductDetail({
           ) : null}
         </nav>
 
-        <h1 className="mt-5 text-2xl font-black leading-snug text-navy md:text-3xl">{product.nameTh}</h1>
+        <h1 className="mt-5 text-2xl font-bold leading-snug text-navy md:text-3xl">{product.nameTh}</h1>
 
         {tags.length > 0 ? (
           <ul className="mt-5 flex flex-wrap gap-2.5">
             {tags.slice(0, 6).map((tag) => (
               <li
                 key={tag}
-                className="rounded-full bg-steel px-3.5 py-1.5 text-xs font-semibold text-navy"
+                className="rounded-[2px] bg-steel px-3.5 py-1.5 text-xs font-semibold text-navy"
               >
                 {tag}
               </li>
@@ -259,7 +259,7 @@ export function ProductDetail({
           </div>
           <div>
             <p className="text-xs font-semibold text-muted">ราคา</p>
-            <p className="mt-1 text-3xl font-black text-navy">{formatTHB(price)}</p>
+            <p className="mt-1 text-3xl font-bold text-navy">{formatTHB(price)}</p>
             {product.compareAtPrice && product.compareAtPrice > price ? (
               <p className="mt-1 text-sm text-muted line-through">{formatTHB(product.compareAtPrice)}</p>
             ) : null}
@@ -270,7 +270,7 @@ export function ProductDetail({
           {stock > 0 ? `พร้อมสั่ง ${stock} ชิ้น` : "รอคิวพิมพ์"} · SKU {sku}
         </p>
 
-        <div className="mt-6 rounded-2xl bg-steel px-5 py-4 text-sm text-navy">
+        <div className="mt-6 rounded-[3px] bg-steel px-5 py-4 text-sm text-navy">
           <p className="font-bold">ส่งฟรี เมื่อยอดครบ 1,000 บาท</p>
           <p className="mt-1.5 text-muted">ค่าส่ง 35 บาท · พิมพ์ตามออเดอร์ เตรียมส่งใน 2 วัน</p>
         </div>

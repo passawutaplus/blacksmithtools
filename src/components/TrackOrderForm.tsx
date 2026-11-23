@@ -100,7 +100,7 @@ export function TrackOrderForm({
             เบอร์โทรที่ใช้สั่ง
           </label>
           <div
-            className={`flex min-h-11 items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 focus-within:outline-2 focus-within:outline-offset-1 ${ring}`}
+            className={`flex min-h-11 items-center gap-2 rounded-[2px] border border-gray-200 bg-white px-3.5 focus-within:outline-2 focus-within:outline-offset-1 ${ring}`}
           >
             <Smartphone className="h-4 w-4 shrink-0 text-muted" aria-hidden />
             <input
@@ -123,7 +123,7 @@ export function TrackOrderForm({
             เลขบิล
           </label>
           <div
-            className={`flex min-h-11 items-center gap-2 rounded-full border border-gray-200 bg-white px-3.5 focus-within:outline-2 focus-within:outline-offset-1 ${ring}`}
+            className={`flex min-h-11 items-center gap-2 rounded-[2px] border border-gray-200 bg-white px-3.5 focus-within:outline-2 focus-within:outline-offset-1 ${ring}`}
           >
             <Receipt className="h-4 w-4 shrink-0 text-muted" aria-hidden />
             <input
@@ -150,7 +150,7 @@ export function TrackOrderForm({
           <div
             id={errorId}
             role="alert"
-            className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-800"
+            className="mt-4 rounded-[3px] border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-800"
           >
             <p className="font-semibold">{error}</p>
             <p className="mt-1">ตรวจเบอร์อีกครั้ง ลองใส่เลขบิลเพิ่ม หรือทักไลน์ร้านให้ช่วยเช็ค</p>
@@ -166,7 +166,7 @@ export function TrackOrderForm({
               <Link
                 href={`/bill/${bill.token}`}
                 onClick={() => saveLastBill(bill.token, bill.number)}
-                className="flex min-w-0 items-center justify-between gap-3 rounded-2xl border border-steel bg-white px-3 py-2.5 hover:border-navy"
+                className="flex min-w-0 items-center justify-between gap-3 rounded-[3px] border border-steel bg-white px-3 py-2.5 hover:border-navy"
               >
                 <span className="min-w-0">
                   <span className="block font-latin text-sm font-semibold tracking-wide text-navy">{bill.number}</span>

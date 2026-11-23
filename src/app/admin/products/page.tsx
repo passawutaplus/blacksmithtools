@@ -179,7 +179,7 @@ export default function AdminProductsPage() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className={`rounded-full border px-3 py-1.5 text-sm ${
+            className={`rounded-[2px] border px-3 py-1.5 text-sm ${
               category === "" ? "border-navy bg-navy text-white" : "border-gray-200 bg-white"
             }`}
             onClick={() => setCategory("")}
@@ -192,7 +192,7 @@ export default function AdminProductsPage() {
               <button
                 key={c.id}
                 type="button"
-                className={`rounded-full border px-3 py-1.5 text-sm ${
+                className={`rounded-[2px] border px-3 py-1.5 text-sm ${
                   category === c.id ? "border-navy bg-navy text-white" : "border-gray-200 bg-white"
                 }`}
                 onClick={() => setCategory(c.id)}

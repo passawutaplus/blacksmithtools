@@ -61,7 +61,7 @@ function ShipmentCard({
   }, [shipment.id, shipment.carrier, shipment.trackingNo]);
 
   return (
-    <li className="min-w-0 rounded-2xl border border-gray-100 p-3">
+    <li className="min-w-0 rounded-[3px] border border-gray-100 p-3">
       {editing ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="min-w-0">
@@ -180,7 +180,7 @@ function ShipmentCard({
           type="file"
           accept="image/jpeg,image/png"
           multiple
-          className="mt-1 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-steel file:px-3 file:py-1.5"
+          className="mt-1 block w-full text-sm file:mr-3 file:rounded-[2px] file:border-0 file:bg-steel file:px-3 file:py-1.5"
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
             e.target.value = "";
@@ -541,10 +541,10 @@ export default function AdminOrderDetailPage() {
                   )}
                 </>
               ) : order.paymentMethod === "mock" && order.paidAt ? (
-                <div className="rounded-2xl border border-gray-200 bg-steel p-4">
+                <div className="rounded-[3px] border border-gray-200 bg-steel p-4">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted">หลักฐานการจ่าย</p>
                   <p className="mt-1 text-sm font-bold text-navy">เดโม่ — จำลองโอนสำเร็จ</p>
-                  <p className="mt-3 text-2xl font-black text-forge">{formatTHB(order.grandTotal)}</p>
+                  <p className="mt-3 text-2xl font-bold text-forge">{formatTHB(order.grandTotal)}</p>
                   <p className="mt-1 text-sm">
                     อ้างอิง {order.number}
                     <br />
@@ -562,7 +562,7 @@ export default function AdminOrderDetailPage() {
                   type="file"
                   accept="image/jpeg,image/png,application/pdf"
                   disabled={busy === "slip"}
-                  className="mt-1 block w-full text-sm file:mr-3 file:rounded-full file:border-0 file:bg-steel file:px-3 file:py-1.5"
+                  className="mt-1 block w-full text-sm file:mr-3 file:rounded-[2px] file:border-0 file:bg-steel file:px-3 file:py-1.5"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     e.target.value = "";
@@ -655,13 +655,13 @@ export default function AdminOrderDetailPage() {
                   type="file"
                   accept="image/jpeg,image/png"
                   multiple
-                  className="block w-full min-w-0 text-sm file:mr-3 file:rounded-full file:border-0 file:bg-steel file:px-3 file:py-2 file:text-sm"
+                  className="block w-full min-w-0 text-sm file:mr-3 file:rounded-[2px] file:border-0 file:bg-steel file:px-3 file:py-2 file:text-sm"
                   onChange={(e) => setPhotos(Array.from(e.target.files ?? []).slice(0, 8))}
                 />
                 {photos.length > 0 ? (
                   <ul className="mt-2 grid grid-cols-3 gap-2">
                     {photos.map((f) => (
-                      <li key={`${f.name}-${f.size}-${f.lastModified}`} className="overflow-hidden rounded-xl bg-steel">
+                      <li key={`${f.name}-${f.size}-${f.lastModified}`} className="overflow-hidden rounded-[3px] bg-steel">
                         <PhotoThumb file={f} />
                       </li>
                     ))}

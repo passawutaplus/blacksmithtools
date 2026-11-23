@@ -197,7 +197,7 @@ export function AssistantHome() {
                 <div
                   id="assistant-search-suggestions"
                   role="listbox"
-                  className="absolute inset-x-0 top-full z-20 mt-2 max-h-80 overflow-auto rounded-2xl bg-white p-2 text-navy shadow-[0_18px_45px_rgba(15,23,32,0.35)]"
+                  className="absolute inset-x-0 top-full z-20 mt-2 max-h-80 overflow-auto rounded-[3px] bg-white p-2 text-navy shadow-[0_18px_45px_rgba(15,23,32,0.35)]"
                 >
                   {suggestionCount === 0 ? (
                     <p className="px-3 py-2.5 text-sm text-muted">
@@ -216,7 +216,7 @@ export function AssistantHome() {
                           type="button"
                           role="option"
                           aria-selected={activeIndex === i}
-                          className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition ${
+                          className={`flex w-full items-center gap-2 rounded-[3px] px-3 py-2 text-left transition ${
                             activeIndex === i ? "bg-navy/10" : "hover:bg-navy/5"
                           }`}
                           onMouseEnter={() => setActiveIndex(i)}
@@ -244,7 +244,7 @@ export function AssistantHome() {
                             type="button"
                             role="option"
                             aria-selected={activeIndex === idx}
-                            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left transition ${
+                            className={`flex w-full items-center gap-2 rounded-[3px] px-3 py-2 text-left transition ${
                               activeIndex === idx ? "bg-navy/10" : "hover:bg-navy/5"
                             }`}
                             onMouseEnter={() => setActiveIndex(idx)}
@@ -268,7 +268,7 @@ export function AssistantHome() {
           </div>
           <ul className="grid gap-2.5">
             {HERO_POINTS.map(({ icon: Icon, title, text }) => (
-              <li key={title} className="flex items-start gap-3 rounded-2xl bg-white/[0.07] px-4 py-3">
+              <li key={title} className="flex items-start gap-3 rounded-[3px] bg-white/[0.07] px-4 py-3">
                 <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-forge/90">
                   <Icon className="h-4 w-4" aria-hidden />
                 </span>
@@ -291,7 +291,7 @@ export function AssistantHome() {
             <Link
               key={t.href}
               href={t.href}
-              className="rounded-full border border-steel bg-white px-3 py-1.5 text-sm font-medium text-navy hover:border-navy/30"
+              className="rounded-[2px] border border-steel bg-white px-3 py-1.5 text-sm font-medium text-navy hover:border-navy/30"
             >
               {t.label}
             </Link>
@@ -311,7 +311,7 @@ export function AssistantHome() {
                 <Link
                   key={`${item.tradeId}/${item.toolId}`}
                   href={`/assistant/${item.tradeId}/${item.toolId}`}
-                  className="rounded-full border border-steel bg-white px-3 py-1.5 text-sm"
+                  className="rounded-[2px] border border-steel bg-white px-3 py-1.5 text-sm"
                 >
                   {foundTool.tool.name}
                 </Link>
@@ -333,7 +333,7 @@ export function AssistantHome() {
                 <Link
                   key={`${item.tradeId}/${item.toolId}`}
                   href={`/assistant/${item.tradeId}/${item.toolId}`}
-                  className="rounded-full bg-navy px-3 py-1.5 text-sm text-white"
+                  className="rounded-[2px] bg-navy px-3 py-1.5 text-sm text-white"
                 >
                   {foundTool.tool.name}
                 </Link>

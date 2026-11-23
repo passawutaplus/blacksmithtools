@@ -43,14 +43,14 @@ export function AssistantChrome() {
       <button
         type="button"
         onClick={back}
-        className="inline-flex min-h-11 items-center gap-2 rounded-full border border-steel bg-white px-3.5 text-sm font-semibold text-navy transition hover:border-navy/30 hover:bg-navy/5"
+        className="inline-flex min-h-11 items-center gap-2 rounded-[2px] border border-steel bg-white px-3.5 text-sm font-semibold text-navy transition hover:border-navy/30 hover:bg-navy/5"
       >
         <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
         ย้อนกลับ
       </button>
       <Link
         href="/assistant/map"
-        className={`inline-flex min-h-11 items-center gap-2 rounded-full px-3.5 text-sm font-semibold transition ${
+        className={`inline-flex min-h-11 items-center gap-2 rounded-[2px] px-3.5 text-sm font-semibold transition ${
           onMap
             ? "bg-navy text-white"
             : "border border-steel bg-white text-navy hover:border-navy/30 hover:bg-navy/5"

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { mockPay } from "@/lib/db";
 
 export async function GET(req: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   const { searchParams } = new URL(req.url);
   const orderId = searchParams.get("orderId");
   if (!orderId) {

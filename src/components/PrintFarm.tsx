@@ -28,7 +28,7 @@ export function PrintFarm() {
           ปริมาตรต่อชิ้นเท่ากับหมวดพิมพ์เส้นด้านล่าง
         </p>
 
-        <div className="mt-6 overflow-hidden rounded-3xl border border-gray-200">
+        <div className="mt-6 overflow-hidden rounded-[3px] border border-gray-200">
           <div className="relative aspect-[16/9] bg-navy">
             <Image
               src="/print/farm-racks.png"
@@ -66,7 +66,7 @@ export function PrintFarm() {
         </div>
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr_1.1fr] lg:items-start">
-          <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-gray-200 bg-steel">
+          <div className="relative aspect-[4/3] overflow-hidden rounded-[3px] border border-gray-200 bg-steel">
             <Image
               src="/print/p2s-close.png"
               alt="เครื่อง Bambu Lab P2S ใกล้ ๆ พร้อมกล่องเส้นด้านบน"
@@ -75,7 +75,7 @@ export function PrintFarm() {
               sizes="(min-width: 1024px) 360px, 100vw"
             />
           </div>
-          <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-gray-200 bg-steel">
+          <div className="relative aspect-[4/3] overflow-hidden rounded-[3px] border border-gray-200 bg-steel">
             <Image
               src="/print/p2s-print.png"
               alt="งานพิมพ์เส้นกำลังขึ้นในห้องเครื่อง P2S"
@@ -84,7 +84,7 @@ export function PrintFarm() {
               sizes="(min-width: 1024px) 360px, 100vw"
             />
           </div>
-          <div className="overflow-hidden rounded-3xl border border-gray-200">
+          <div className="overflow-hidden rounded-[3px] border border-gray-200">
             <table className="data-table">
               <thead>
                 <tr>

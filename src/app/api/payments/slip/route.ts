@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getOrderByToken, submitSlip } from "@/lib/db";
+import { notifyShop, orderAlertText } from "@/lib/notify";
 import { saveSlipUpload } from "@/lib/save-image-upload";
 
 export async function POST(req: Request) {
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
   try {
     const filename = await saveSlipUpload(file);
     const { order } = await submitSlip(detail.order.id, filename);
+    notifyShop(orderAlertText("slip", order));
     return NextResponse.json({ ok: true, status: order.status });
   } catch (e) {
     return NextResponse.json(

@@ -25,7 +25,7 @@ export function CartVariantSelect({
     <label className="mt-1.5 block min-w-0">
       <span className="sr-only">ตัวเลือกสินค้า</span>
       <select
-        className="block h-9 min-h-9 w-full min-w-0 max-w-full truncate rounded-full border border-gray-200 bg-white px-3 text-[13px] leading-tight text-navy focus:outline-2 focus:outline-offset-1 focus:outline-navy"
+        className="block h-9 min-h-9 w-full min-w-0 max-w-full truncate rounded-[2px] border border-gray-200 bg-white px-3 text-[13px] leading-tight text-navy focus:outline-2 focus:outline-offset-1 focus:outline-navy"
         value={variantId || options[0]?.id}
         onChange={(e) => onChange(e.target.value)}
       >

@@ -73,6 +73,10 @@ export const useCartStore = create<CartState>()(
       clear: () => set({ items: [] }),
       count: () => get().items.reduce((s, i) => s + i.quantity, 0),
     }),
-    { name: "bs-cart" },
+    {
+      name: "bs-cart",
+      // The drawer's open state is per page view; persisting it reopened the drawer on every page.
+      partialize: (s) => ({ cartId: s.cartId, items: s.items }),
+    },
   ),
 );
