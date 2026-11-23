@@ -35,7 +35,12 @@ export async function POST(req: Request) {
     `[line-webhook] ${events.length} event(s): ${events.map((e) => `${e.type}/${e.source?.type ?? "?"}`).join(", ") || "none"}; token ${token ? "set" : "MISSING"}`,
   );
   for (const ev of events) {
-    if (ev.type !== "message" || ev.message?.type !== "text" || !ev.replyToken || !token) continue;
+    if (ev.type !== "message" || ev.message?.type !== "text" || !ev.replyToken || !token) {
+      console.info(
+        `[line-webhook] skipped: type=${ev.type} msg=${ev.message?.type ?? "-"} replyToken=${ev.replyToken ? "yes" : "no"} token=${token ? "yes" : "no"}`,
+      );
+      continue;
+    }
     if (!isNotifyIdRequest(ev.message.text ?? "")) {
       console.info(`[line-webhook] text did not match keyword (${(ev.message.text ?? "").length} chars)`);
       continue;
