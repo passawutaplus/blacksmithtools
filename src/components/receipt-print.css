@@ -10,7 +10,7 @@
   margin-inline: auto;
   padding: 14mm 16mm 16mm;
   background: #fff;
-  color: #23323d;
+  color: #253641;
   box-shadow: 0 8px 30px rgba(35, 50, 61, 0.12);
   print-color-adjust: exact;
   -webkit-print-color-adjust: exact;
@@ -38,7 +38,7 @@
 }
 
 .a4-invoice thead th {
-  border-bottom: 0.4mm solid #23323d;
+  border-bottom: 0.4mm solid #253641;
 }
 
 .a4-invoice tbody td {

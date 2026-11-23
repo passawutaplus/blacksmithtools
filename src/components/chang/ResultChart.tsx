@@ -4,7 +4,7 @@ const TONE: Record<ChartTone, { solid: string; tint: string }> = {
   good: { solid: "#16a34a", tint: "#dcfce7" },
   warn: { solid: "#d97706", tint: "#fef3c7" },
   bad: { solid: "#dc2626", tint: "#fee2e2" },
-  accent: { solid: "#c24b32", tint: "#f6e3de" },
+  accent: { solid: "#C14D35", tint: "#f6e3de" },
   mute: { solid: "#9aa8b4", tint: "#eef0f2" },
 };
 
@@ -63,7 +63,7 @@ function StepsChart({ spec }: { spec: Extract<ChartSpec, { kind: "steps" }> }) {
                 y={y + 9}
                 textAnchor="end"
                 fontSize="12"
-                fill={item.state === "chosen" ? "#23323d" : "#6b7280"}
+                fill={item.state === "chosen" ? "#253641" : "#6b7280"}
                 fontWeight={item.state === "chosen" ? 700 : 400}
               >
                 {item.label}
@@ -83,7 +83,7 @@ function StepsChart({ spec }: { spec: Extract<ChartSpec, { kind: "steps" }> }) {
                   x={TRACK_X + TRACK_W + 6}
                   y={y + 9}
                   fontSize="12"
-                  fill={item.state === "chosen" ? "#23323d" : "#6b7280"}
+                  fill={item.state === "chosen" ? "#253641" : "#6b7280"}
                   fontWeight={item.state === "chosen" ? 700 : 400}
                 >
                   {fmtNum(item.value)}

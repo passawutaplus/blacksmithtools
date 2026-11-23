@@ -1,14 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --forge: #c24b32;
-  --forge-hover: #a83f2a;
-  --navy: #23323d;
-  --navy-deep: #1a252e;
-  --steel: #e8eaec;
+  --forge: #C14D35;
+  --forge-hover: #a63f2b;
+  --navy: #253641;
+  --navy-deep: #1b2831;
+  --steel: #E6E6E6;
   --muted: #6b7280;
   --background: #f5f6f7;
-  --foreground: #23323d;
+  --foreground: #253641;
   --radius: 1.5rem;
 }
 
@@ -273,16 +273,16 @@ select.input:disabled {
   text-align: left;
   font-weight: 600;
   padding: 0.7rem 1rem;
-  background: #23323d;
+  background: #253641;
   color: white;
   white-space: nowrap;
 }
 
 .data-table td {
   padding: 0.7rem 1rem;
-  border-bottom: 1px solid #e8eaec;
+  border-bottom: 1px solid #E6E6E6;
   vertical-align: top;
-  color: #23323d;
+  color: #253641;
 }
 
 .data-table tr:last-child td {
@@ -383,7 +383,7 @@ select.input:disabled {
     page: label-100;
   }
   .cash-receipt {
-    color: #23323d;
+    color: #253641;
   }
   .reveal,
   .reveal-fade,

@@ -69,7 +69,7 @@ export default function CheckoutPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"mock" | "bank_transfer" | "promptpay_qr">(
-    "mock",
+    "bank_transfer",
   );
   const [wantReceipt, setWantReceipt] = useState(false);
   const [billing, setBilling] = useState<BillingForm>(emptyBilling);
@@ -432,12 +432,14 @@ export default function CheckoutPage() {
 
             <h2 className="pt-4 font-bold">ช่องทางชำระเงิน</h2>
             <p className="text-xs text-muted">
-              ขณะนี้ยังไม่เปิด Payso production — ใช้โหมดทดสอบหรือโอน+อัปโหลดสลิปได้
+              โอนแล้วอัปโหลดสลิปที่หน้าบิล ทีมงานตรวจและยืนยันภายในเวลาทำการ
             </p>
             <div className="space-y-2">
               {(
                 [
-                  ["mock", "ทดสอบชำระเงิน (เดโม่)"],
+                  ...(process.env.NODE_ENV !== "production"
+                    ? ([["mock", "ทดสอบชำระเงิน (เดโม่)"]] as const)
+                    : []),
                   ["bank_transfer", "โอนธนาคาร + อัปโหลดสลิป"],
                   ["promptpay_qr", "PromptPay QR (แสดงบนบิล)"],
                 ] as const

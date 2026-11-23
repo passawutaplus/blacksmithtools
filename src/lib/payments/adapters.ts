@@ -63,7 +63,7 @@ export function getActivePaymentProviders(paymentsLive: boolean): PaymentProvide
   const list: PaymentProvider[] = ["bank_transfer", "promptpay_qr"];
   if (paymentsLive && process.env.PAYSO_MERCHANT_ID) {
     list.unshift("payso");
-  } else {
+  } else if (process.env.NODE_ENV !== "production") {
     list.unshift("mock");
   }
   return list;

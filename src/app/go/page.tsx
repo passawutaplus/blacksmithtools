@@ -4,7 +4,7 @@ import { LinkPortal } from "@/components/LinkPortal";
 import { portalChemSlides, portalPrintSlides } from "@/lib/portal-links";
 
 export const viewport: Viewport = {
-  themeColor: "#23323d",
+  themeColor: "#253641",
   viewportFit: "cover",
 };
 

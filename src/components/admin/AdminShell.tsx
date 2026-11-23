@@ -127,6 +127,16 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
           <a href="/" className="block rounded px-3 py-2 text-sm text-white/70 hover:bg-white/10">
             ดูหน้าร้าน
           </a>
+          <button
+            type="button"
+            className="block w-full rounded px-3 py-2 text-left text-sm text-white/70 hover:bg-white/10"
+            onClick={async () => {
+              await fetch("/api/admin-auth/logout", { method: "POST" });
+              window.location.href = "/admin/login";
+            }}
+          >
+            ออกจากระบบ
+          </button>
         </div>
       </aside>
 
