@@ -35,10 +35,8 @@ export async function POST(req: Request) {
     `[line-webhook] ${events.length} event(s): ${events.map((e) => `${e.type}/${e.source?.type ?? "?"}`).join(", ") || "none"}; token ${token ? "set" : "MISSING"}`,
   );
   for (const ev of events) {
-    if (ev.type !== "message" || ev.message?.type !== "text" || !ev.replyToken || !token) {
-      console.info(
-        `[line-webhook] skipped: type=${ev.type} msg=${ev.message?.type ?? "-"} replyToken=${ev.replyToken ? "yes" : "no"} token=${token ? "yes" : "no"}`,
-      );
+    if (ev.type !== "message" || ev.message?.type !== "text" || !token) {
+      console.info(`[line-webhook] skipped: type=${ev.type} msg=${ev.message?.type ?? "-"} token=${token ? "yes" : "no"}`);
       continue;
     }
     if (!isNotifyIdRequest(ev.message.text ?? "")) {
@@ -46,20 +44,24 @@ export async function POST(req: Request) {
       continue;
     }
     const id = ev.source?.groupId ?? ev.source?.roomId ?? ev.source?.userId ?? "";
-    await fetch("https://api.line.me/v2/bot/message/reply", {
+    if (!id) continue;
+    // When the OA also uses manual chat in LINE OA Manager, LINE sends no replyToken,
+    // so fall back to a push message to the same chat.
+    const text = `รหัสสำหรับ LINE_NOTIFY_TO:\n${id}`;
+    const [endpoint, body] = ev.replyToken
+      ? ["reply", { replyToken: ev.replyToken, messages: [{ type: "text", text }] }]
+      : ["push", { to: id, messages: [{ type: "text", text }] }];
+    await fetch(`https://api.line.me/v2/bot/message/${endpoint}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        replyToken: ev.replyToken,
-        messages: [{ type: "text", text: `รหัสสำหรับ LINE_NOTIFY_TO:\n${id}` }],
-      }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000),
     })
       .then(async (r) => {
-        if (!r.ok) console.error(`[line-webhook] reply failed ${r.status}: ${(await r.text()).slice(0, 200)}`);
-        else console.info("[line-webhook] replied with notify id");
+        if (!r.ok) console.error(`[line-webhook] ${endpoint} failed ${r.status}: ${(await r.text()).slice(0, 200)}`);
+        else console.info(`[line-webhook] sent notify id via ${endpoint}`);
       })
-      .catch((e) => console.error("[line-webhook] reply error", String(e)));
+      .catch((e) => console.error(`[line-webhook] ${endpoint} error`, String(e)));
   }
   return NextResponse.json({ ok: true });
 }
