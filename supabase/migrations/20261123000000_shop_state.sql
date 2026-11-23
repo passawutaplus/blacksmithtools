@@ -43,3 +43,7 @@ drop trigger if exists shop_state_history on public.shop_state;
 create trigger shop_state_history
 before update on public.shop_state
 for each row execute function public.shop_state_keep_history();
+
+revoke all on function public.shop_state_keep_history() from public, anon, authenticated;
+comment on table public.shop_state is 'BlackSmith shop (blacksmithtools): whole store state as one versioned JSONB row. Server (service role) only.';
+comment on table public.shop_state_history is 'BlackSmith shop: last 200 previous versions of shop_state. Server only.';
