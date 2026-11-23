@@ -1,7 +1,11 @@
 import { getSettings } from "@/lib/db";
 import { PageHeader } from "@/components/PageHeader";
 
-export const metadata = { title: "รับประกัน / เคลม" };
+export const metadata = {
+  title: "รับประกัน / เคลม",
+  description: "เงื่อนไขรับประกันและวิธีเคลมสินค้า BlackSmith Tools งานพิมพ์มีปัญหา แจ้งรูปทาง LINE แล้วร้านพิมพ์ใหม่ให้",
+  alternates: { canonical: "/warranty" },
+};
 
 export default async function WarrantyPage() {
   const settings = await getSettings();

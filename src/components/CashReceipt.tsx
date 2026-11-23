@@ -1,4 +1,5 @@
 import { ShopLogo } from "@/components/ShopLogo";
+import { baseItemName } from "@/lib/item-name";
 import { buyerOnBill } from "@/lib/billing";
 import { PAYMENT_METHOD_LABEL } from "@/lib/shipping";
 import { formatThaiLocality } from "@/lib/thai-address-format";
@@ -120,7 +121,7 @@ export function CashReceipt({
             <tr key={`${item.productId}-${item.variantId ?? item.sku}-${i}`}>
               <td className="py-2 align-top tabular-nums text-muted">{i + 1}</td>
               <td className="py-2 align-top">
-                <p className="font-semibold leading-snug">{item.name}</p>
+                <p className="font-semibold leading-snug">{baseItemName(item)}</p>
                 {!manual && item.sku ? (
                   <p className="mt-0.5 font-latin text-[10px] tracking-wide text-muted">{item.sku}</p>
                 ) : null}

@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from "react";
 import { createPortal } from "react-dom";
 import { Minus, Plus, X } from "lucide-react";
 import type { Product } from "@/lib/types";
-import { selectableVariants } from "@/lib/product";
+import { selectableVariants, shortProductName } from "@/lib/product";
 import { formatTHB } from "@/lib/utils";
 import { useCartStore } from "@/lib/cart-store";
 
@@ -73,7 +73,7 @@ export function ProductAddPopup({
             <p id={titleId} className="font-bold text-navy">
               ใส่ตะกร้า
             </p>
-            <p className="mt-1 line-clamp-2 text-sm text-muted">{product.nameTh}</p>
+            <p className="mt-1 line-clamp-2 text-sm text-muted">{shortProductName(product.nameTh)}</p>
           </div>
           <button
             type="button"

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useCartStore } from "@/lib/cart-store";
 import { formatTHB } from "@/lib/utils";
-import { cartLineKey } from "@/lib/product";
+import { cartLineKey, shortProductName } from "@/lib/product";
 import type { Product } from "@/lib/types";
 import { Minus, Plus } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
@@ -91,7 +91,7 @@ export default function CartPage() {
                       href={`/product/${line.product.slug}`}
                       className="line-clamp-2 text-sm font-semibold leading-snug text-navy hover:underline sm:text-base"
                     >
-                      {line.product.nameTh}
+                      {shortProductName(line.product.nameTh)}
                     </Link>
                     <CartVariantSelect
                       product={line.product}

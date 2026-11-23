@@ -1,4 +1,5 @@
 import { jsonLd as toJsonLd } from "@/lib/json-ld";
+import { shortProductName } from "@/lib/product";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -23,13 +24,13 @@ export async function generateMetadata({
   const blurb = getProductBlurb(product, 180);
   const brandNames = brands.map((b) => b.name).join(", ");
   return {
-    title: `${product.nameTh} | ${formatTHB(product.price)}`,
+    title: `${shortProductName(product.nameTh)} | ${formatTHB(product.price)}`,
     description: product.compatibilities.length
       ? `${blurb} ใช้กับ: ${product.compatibilities.join(", ")}. ${brandNames}`
       : `${blurb} ${brandNames}`.trim(),
     alternates: { canonical: `/product/${product.slug}` },
     openGraph: {
-      title: product.nameTh,
+      title: shortProductName(product.nameTh),
       description: blurb,
       images: [{ url: product.imageUrl }],
     },
@@ -101,7 +102,7 @@ export default async function ProductPage({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: toJsonLd(jsonLd) }}
       />
-      <nav aria-label="เส้นทาง" className="mb-8 text-sm text-muted">
+      <nav aria-label="เส้นทาง" className="mb-4 text-sm text-muted md:mb-8">
         <Link href="/" className="hover:text-navy">
           หน้าแรก
         </Link>
@@ -117,8 +118,9 @@ export default async function ProductPage({
             </Link>
           </>
         ) : null}
-        <span className="mx-2">/</span>
-        <span className="text-navy">{product.nameTh}</span>
+        {/* The H1 right below names the product; on phones the crumb stops at the category. */}
+        <span className="mx-2 hidden md:inline">/</span>
+        <span className="hidden text-navy md:inline">{shortProductName(product.nameTh)}</span>
       </nav>
       <ProductDetail product={product} brands={brands} categories={shopCats.length ? shopCats : categories} />
 

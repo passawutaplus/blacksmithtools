@@ -1,18 +1,11 @@
+import { baseItemName } from "@/lib/item-name";
 import { formatPhoneDisplay } from "@/lib/phone";
 import { formatThaiLocalityOnLabel } from "@/lib/thai-address-format";
 import type { Order, OrderItem, SiteSettings } from "@/lib/types";
 
 const MAX_LABEL_ITEMS = 4;
 
-function productNameOnLabel(item: OrderItem) {
-  const variant = item.variantName?.trim();
-  if (!variant) return item.name;
-  const suffixes = [` — ${variant}`, ` – ${variant}`, ` - ${variant}`];
-  for (const suffix of suffixes) {
-    if (item.name.endsWith(suffix)) return item.name.slice(0, -suffix.length).trim();
-  }
-  return item.name;
-}
+const productNameOnLabel = baseItemName;
 
 export function ShippingLabel({ order, settings }: { order: Order; settings: SiteSettings }) {
   const addr = order.address;

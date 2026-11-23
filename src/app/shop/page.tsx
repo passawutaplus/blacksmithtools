@@ -101,8 +101,8 @@ export default async function ShopPage({
 
           <div>
             <form className="flex flex-col gap-3 sm:flex-row lg:max-w-xl" action="/shop">
-              <input name="q" defaultValue={sp.q} placeholder="ค้นหา เช่น Milwaukee M18" className="input" />
-              <select name="brand" defaultValue={sp.brand ?? ""} className="input sm:max-w-[180px] lg:hidden">
+              <input name="q" defaultValue={sp.q} placeholder="ค้นหา เช่น Milwaukee M18" aria-label="ค้นหาสินค้า" className="input" />
+              <select name="brand" aria-label="กรองตามแบรนด์" defaultValue={sp.brand ?? ""} className="input sm:max-w-[180px] lg:hidden">
                 <option value="">ทุกยี่ห้อ</option>
                 {brands.map((b) => (
                   <option key={b.id} value={b.slug}>
@@ -110,7 +110,7 @@ export default async function ShopPage({
                   </option>
                 ))}
               </select>
-              <select name="category" defaultValue={sp.category ?? ""} className="input sm:max-w-[200px] lg:hidden">
+              <select name="category" aria-label="กรองตามหมวดหมู่" defaultValue={sp.category ?? ""} className="input sm:max-w-[200px] lg:hidden">
                 <option value="">ทุกประเภท</option>
                 {navCategories.map((c) => (
                   <option key={c.id} value={c.slug}>

@@ -10,6 +10,7 @@ import { PrintFileGuide } from "@/components/PrintFileGuide";
 
 export const metadata = {
   title: "บริการพิมพ์ 3D",
+  alternates: { canonical: "/custom-print" },
   description:
     "รับพิมพ์ 3D FDM เส้น และ SLA เรซิ่น ตามสั่ง ส่งไฟล์ STL, 3MF, OBJ หรือ STEP ให้ร้านประเมินในโปรแกรมเตรียมพิมพ์ก่อนจึงแจ้งราคาแม่น",
 };

@@ -18,6 +18,7 @@ import { WholesaleInquiry } from "@/components/WholesaleInquiry";
 
 export const metadata = {
   title: "เกี่ยวกับเรา",
+  alternates: { canonical: "/about" },
   description:
     "BlackSmith Tools & Supplies แบรนด์คนไทย ออกแบบอุปกรณ์เสริมเครื่องมือช่างให้เข้ากับ Milwaukee, Dewalt, Makita และอื่น ๆ พร้อมบริการพิมพ์ 3D และรับร้านที่อยากขายส่ง",
 };

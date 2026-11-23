@@ -4,6 +4,7 @@ import { TrackLookup } from "./TrackLookup";
 
 export const metadata = {
   title: "ติดตามออเดอร์",
+  robots: { index: false, follow: true },
   description: "ใส่เลขบิลและเบอร์โทรที่ใช้สั่งเพื่อดูบิล สถานะ เลขพัสดุ และพิมพ์ใบเสร็จ — ไม่ต้องสมัครสมาชิก",
 };
 

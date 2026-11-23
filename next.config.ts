@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "susercontent.com" },
     ],
   },
+  async redirects() {
+    return [{ source: "/wholesale", destination: "/about#wholesale", permanent: true }];
+  },
   async headers() {
     return [
       {

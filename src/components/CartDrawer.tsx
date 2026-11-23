@@ -8,7 +8,7 @@ import { X, Minus, Plus, Trash2 } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
 import { formatTHB } from "@/lib/utils";
 import type { Product } from "@/lib/types";
-import { cartLineKey } from "@/lib/product";
+import { cartLineKey, shortProductName } from "@/lib/product";
 import { CartVariantSelect } from "@/components/CartVariantSelect";
 
 type Line = {
@@ -92,7 +92,7 @@ export function CartDrawer() {
         aria-label="ปิดตะกร้า"
         onClick={() => setOpen(false)}
       />
-      <aside className="relative flex h-dvh max-h-dvh w-full min-w-0 max-w-md flex-col bg-white shadow-[0_8px_40px_rgba(35,50,61,0.18)] sm:rounded-l-3xl">
+      <aside className="relative flex h-dvh max-h-dvh w-full min-w-0 max-w-md flex-col border-l border-navy/15 bg-white">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-gray-100 px-4 py-2.5">
           <h2 className="truncate text-base font-bold text-navy sm:text-lg">ตะกร้าสินค้า</h2>
           <button
@@ -129,7 +129,7 @@ export function CartDrawer() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-2 text-sm font-semibold leading-snug text-navy">
-                        {line.product.nameTh}
+                        {shortProductName(line.product.nameTh)}
                       </p>
                       <CartVariantSelect
                         product={line.product}

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { shortProductName } from "@/lib/product";
 import Link from "next/link";
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
@@ -73,7 +74,7 @@ export function ProductCard({
       <div className="flex flex-1 flex-col border-t border-navy/10 px-3.5 pb-3.5 pt-3">
         <Link href={href} className="min-w-0">
           <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-navy group-hover:text-forge">
-            {product.nameTh}
+            {shortProductName(product.nameTh)}
           </h3>
           {!compact ? (
             <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted">{getProductBlurb(product)}</p>
