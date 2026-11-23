@@ -16,6 +16,8 @@ const loadedVersion = new WeakMap<object, number | null>();
 
 export { safeUploadName };
 import type { TrackBillSummary } from "./track-types";
+import { cleanCartItems, type CartItemInput } from "./cart-items";
+export type { CartItemInput } from "./cart-items";
 import { mapTrack17ToShop, normalizeTrackingNo, type Track17Snapshot } from "./track17";
 import { ORDER_STATUS_LABEL, CARRIERS, carrierLabel } from "./shipping";
 import type {
@@ -429,45 +431,13 @@ async function setProductStock__impl(id: string, stock: number) {
   return product;
 }
 
-async function getOrCreateCart__impl(cartId?: string | null) {
+/**
+ * Price a cart from the browser's item list. Read-only: carts live in the
+ * customer's browser, so opening the cart never writes the shop state.
+ */
+export async function priceCart(items: CartItemInput[]) {
   const db = await ensureDb();
-  if (cartId) {
-    const existing = db.carts.find((c) => c.id === cartId);
-    if (existing) return existing;
-  }
-  const cart: Cart = { id: nanoid(16), items: [], updatedAt: new Date().toISOString() };
-  db.carts.push(cart);
-  await saveDb(db);
-  return cart;
-}
-
-async function updateCart__impl(
-  cartId: string,
-  items: { productId: string; variantId?: string; quantity: number }[],
-) {
-  const db = await ensureDb();
-  let cart = db.carts.find((c) => c.id === cartId);
-  if (!cart) {
-    cart = { id: cartId, items: [], updatedAt: new Date().toISOString() };
-    db.carts.push(cart);
-  }
-  cart.items = items
-    .filter((i) => i.quantity > 0)
-    .map((i) => ({
-      productId: i.productId,
-      variantId: i.variantId || undefined,
-      quantity: i.quantity,
-    }));
-  cart.updatedAt = new Date().toISOString();
-  await saveDb(db);
-  return cart;
-}
-
-export async function getCartWithProducts(cartId: string) {
-  const db = await ensureDb();
-  const cart = db.carts.find((c) => c.id === cartId);
-  if (!cart) return null;
-  const lines = cart.items
+  const lines = cleanCartItems(items)
     .map((item) => {
       const product = db.products.find((p) => p.id === item.productId);
       if (!product) return null;
@@ -496,7 +466,29 @@ export async function getCartWithProducts(cartId: string) {
     lineTotal: number;
   }[];
   const subtotal = lines.reduce((s, l) => s + l.lineTotal, 0);
-  return { cart, lines, subtotal, settings: db.settings };
+  return { lines, subtotal, settings: db.settings };
+}
+
+/** Bank-transfer / PromptPay orders with no slip after their 24 h hold go back to stock. */
+const EXPIRABLE: PaymentProvider[] = ["bank_transfer", "promptpay_qr"];
+
+function expireUnpaidOrders(db: DbShape, now = Date.now()) {
+  let changed = 0;
+  for (const order of db.orders) {
+    if (order.status !== "pending_payment" || !EXPIRABLE.includes(order.paymentMethod)) continue;
+    if (!order.stockReservedUntil || Date.parse(order.stockReservedUntil) > now) continue;
+    restoreStock(db, order);
+    order.status = "cancelled";
+    order.updatedAt = new Date(now).toISOString();
+    const payment = db.payments.find((p) => p.id === order.paymentId);
+    if (payment && payment.status !== "paid") {
+      payment.status = "cancelled";
+      payment.updatedAt = order.updatedAt;
+    }
+    pushEvent(order, "cancelled", "ยกเลิกอัตโนมัติ: ไม่ได้ชำระภายใน 24 ชั่วโมง คืนสต็อกแล้ว");
+    changed += 1;
+  }
+  return changed;
 }
 
 function calcShipping(subtotal: number, settings: SiteSettings) {
@@ -505,7 +497,7 @@ function calcShipping(subtotal: number, settings: SiteSettings) {
 }
 
 async function createOrder__impl(input: {
-  cartId: string;
+  items: CartItemInput[];
   address: ShippingAddress;
   paymentMethod: PaymentProvider;
   shippingMethod?: string;
@@ -514,10 +506,12 @@ async function createOrder__impl(input: {
   billing?: BillingInfo;
 }) {
   const db = await ensureDb();
-  const cart = db.carts.find((c) => c.id === input.cartId);
-  if (!cart || cart.items.length === 0) throw new Error("ตะกร้าว่าง");
+  const cartItems = cleanCartItems(input.items);
+  if (cartItems.length === 0) throw new Error("ตะกร้าว่าง");
+  // Free stock held by abandoned transfer orders before checking what is left.
+  expireUnpaidOrders(db);
 
-  const items = cart.items.map((ci) => {
+  const items = cartItems.map((ci) => {
     const p = db.products.find((x) => x.id === ci.productId);
     if (!p) throw new Error("ไม่พบสินค้า");
     const priced = linePricing(p, ci.variantId);
@@ -587,8 +581,8 @@ async function createOrder__impl(input: {
   };
   order.paymentId = payment.id;
 
-  cart.items = [];
-  cart.updatedAt = now;
+  // Carts used to be stored server-side; they now live in the browser.
+  db.carts = [];
   db.orders.push(order);
   db.payments.push(payment);
   await saveDb(db);
@@ -1533,8 +1527,6 @@ export const upsertProduct = withStateRetry(upsertProduct__impl);
 export const deleteProducts = withStateRetry(deleteProducts__impl);
 export const setProductsFeatured = withStateRetry(setProductsFeatured__impl);
 export const setProductStock = withStateRetry(setProductStock__impl);
-export const getOrCreateCart = withStateRetry(getOrCreateCart__impl);
-export const updateCart = withStateRetry(updateCart__impl);
 export const createOrder = withStateRetry(createOrder__impl);
 export const createManualOrder = withStateRetry(createManualOrder__impl);
 export const deleteManualOrder = withStateRetry(deleteManualOrder__impl);

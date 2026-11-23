@@ -6,5 +6,8 @@
       "path": "/api/cron/track-sync",
       "schedule": "15 2 * * *"
     }
+  ],
+  "regions": [
+    "sin1"
   ]
 }

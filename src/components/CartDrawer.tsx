@@ -80,6 +80,9 @@ export function CartDrawer() {
   if (!open) return null;
 
   const total = subtotal + shipping;
+  // Until the first price check returns, show placeholders instead of ฿0 / "ฟรี".
+  const pending = loading && lines.length === 0;
+  const money = (n: number) => (pending ? "—" : formatTHB(n));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end overscroll-none">
@@ -183,22 +186,28 @@ export function CartDrawer() {
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted">ยอดสินค้า</span>
-              <span className="tabular-nums">{formatTHB(subtotal)}</span>
+              <span className="tabular-nums">{money(subtotal)}</span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="text-muted">ค่าส่ง (โดยประมาณ)</span>
-              <span className="tabular-nums">{shipping === 0 ? "ฟรี" : formatTHB(shipping)}</span>
+              <span className="tabular-nums">{pending ? "—" : shipping === 0 ? "ฟรี" : formatTHB(shipping)}</span>
             </div>
           </div>
-          <FreeShipMeter subtotal={subtotal} min={freeShippingMin} />
+          {pending ? null : <FreeShipMeter subtotal={subtotal} min={freeShippingMin} />}
           <div className="mt-3 flex items-center justify-between gap-4 border-t border-gray-100 pt-3 font-bold">
             <span>รวม</span>
-            <span className="text-base tabular-nums text-navy sm:text-lg">{formatTHB(total)}</span>
+            <span className="text-base tabular-nums text-navy sm:text-lg">{money(total)}</span>
           </div>
           <div className="mt-4 grid gap-2">
-            <Link href="/checkout" className="btn btn-primary w-full" onClick={() => setOpen(false)}>
-              สั่งซื้อ
-            </Link>
+            {pending || lines.length === 0 ? (
+              <span className="btn btn-primary w-full cursor-not-allowed opacity-50" aria-disabled="true">
+                สั่งซื้อ
+              </span>
+            ) : (
+              <Link href="/checkout" className="btn btn-primary w-full" onClick={() => setOpen(false)}>
+                สั่งซื้อ
+              </Link>
+            )}
             <Link href="/cart" className="btn btn-secondary w-full" onClick={() => setOpen(false)}>
               ดูตะกร้าเต็ม
             </Link>
