@@ -4,6 +4,7 @@ import { createOrder, getOrCreateCart, updateCart } from "@/lib/db";
 import { getActivePaymentProviders } from "@/lib/payments/adapters";
 import { createPaysoPayment, newPaysoRef, postbackToken } from "@/lib/payments/payso";
 import { attachPaysoRef } from "@/lib/db";
+import { notifyShop, orderAlertText } from "@/lib/notify";
 import { getSettings } from "@/lib/db";
 import { completeThaiAddress } from "@/lib/thai-address";
 
@@ -119,6 +120,8 @@ export async function POST(req: Request) {
       wantReceipt: data.wantReceipt || undefined,
       billing,
     });
+
+    notifyShop(orderAlertText("new", order));
 
     let redirectUrl: string | undefined;
     if (data.paymentMethod === "payso") {

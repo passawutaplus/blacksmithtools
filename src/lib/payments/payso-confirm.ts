@@ -1,5 +1,6 @@
 import "server-only";
 import { confirmPaysoPaid, findOrderByPaysoRef } from "@/lib/db";
+import { notifyShop, orderAlertText } from "@/lib/notify";
 import { inquirePayso, paysoReady, sameAmount } from "./payso";
 
 /** Look up the ref at Payso and mark the order paid only if Payso says it is complete and the amount matches. */
@@ -16,5 +17,6 @@ export async function verifyPaysoRef(ref: string) {
     return { ok: false as const, reason: "amount_mismatch" };
   }
   const done = await confirmPaysoPaid(ref, result.total, result.orderNo);
+  if (!done.duplicate) notifyShop(orderAlertText("paid", done.order));
   return { ok: true as const, duplicate: done.duplicate, order: done.order };
 }

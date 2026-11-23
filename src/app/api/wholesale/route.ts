@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createWholesaleLead } from "@/lib/db";
+import { notifyShop } from "@/lib/notify";
 
 const schema = z.object({
   shopName: z.string().min(2).max(80),
@@ -15,6 +16,7 @@ export async function POST(req: Request) {
     const json = await req.json();
     const data = schema.parse(json);
     const lead = await createWholesaleLead(data);
+    notifyShop(`🤝 ลูกค้าขายส่งใหม่ ${lead.number}\n${data.shopName} · ${data.province}\n${data.channel} · ${data.contact}`);
     return NextResponse.json({ ok: true, number: lead.number });
   } catch (e) {
     if (e instanceof z.ZodError) {
