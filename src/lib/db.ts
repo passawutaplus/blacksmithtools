@@ -8,7 +8,11 @@ import type { AdminOrderRow } from "./admin-types";
 import { phonesMatch } from "./phone";
 import { completeThaiAddress } from "./thai-address";
 import { normalizeShopReview, sortShopReviews } from "./reviews";
-import { readRuntimeBytes, readRuntimeText, runtimeRoot, safeUploadName, writeRuntimeText } from "./runtime-store";
+import { readRuntimeBytes, runtimeRoot, safeUploadName } from "./runtime-store";
+import { StateConflictError, readState, withStateRetry, writeState } from "./state-store";
+
+/** Version each loaded state object was read at, for compare-and-swap saves. */
+const loadedVersion = new WeakMap<object, number | null>();
 
 export { safeUploadName };
 import { filterBillsByPhone, toTrackBillSummary } from "./track-bills";
@@ -118,13 +122,20 @@ function applyShopAddress(db: DbShape): boolean {
 }
 
 async function ensureDb(): Promise<DbShape> {
-  const raw = await readRuntimeText("db.json");
+  const { raw, version } = await readState();
   if (!raw) {
     const db = emptyDb();
-    await saveDb(db);
+    loadedVersion.set(db, version);
+    try {
+      await saveDb(db);
+    } catch (e) {
+      if (e instanceof StateConflictError) return ensureDb(); // another request seeded it first
+      throw e;
+    }
     return db;
   }
   const db = JSON.parse(raw) as DbShape;
+  loadedVersion.set(db, version);
   if (!Array.isArray(db.inquiries)) db.inquiries = [];
   if (!Array.isArray(db.testimonials)) db.testimonials = [];
   if (typeof db.inquirySeq !== "number") db.inquirySeq = db.inquiries.length;
@@ -132,12 +143,20 @@ async function ensureDb(): Promise<DbShape> {
   const catalogChanged = applyCatalog(db);
   const shippingChanged = applyShippingPolicy(db);
   const addressChanged = applyShopAddress(db);
-  if (catalogChanged || shippingChanged || addressChanged) await saveDb(db);
+  if (catalogChanged || shippingChanged || addressChanged) {
+    try {
+      await saveDb(db);
+    } catch (e) {
+      if (e instanceof StateConflictError) return ensureDb(); // same migration already saved elsewhere
+      throw e;
+    }
+  }
   return db;
 }
 
 async function saveDb(db: DbShape) {
-  await writeRuntimeText("db.json", JSON.stringify(db, null, 2));
+  const next = await writeState(JSON.stringify(db), loadedVersion.get(db) ?? null);
+  loadedVersion.set(db, next);
 }
 
 export async function readSlipBytes(filename: string) {
@@ -174,7 +193,7 @@ function pushEvent(order: Order, type: string, message: string, by = "system") {
 
 const LEGACY_LINE_URL = "https://lin.ee/lgpCBi1";
 
-export async function getSettings() {
+async function getSettings__impl() {
   const db = await ensureDb();
   let dirty = false;
   if (!db.settings.lineUrl || db.settings.lineUrl === LEGACY_LINE_URL) {
@@ -202,7 +221,7 @@ export async function getSettings() {
   return { ...defaultSettings, ...db.settings };
 }
 
-export async function updateSettings(patch: Partial<SiteSettings>) {
+async function updateSettings__impl(patch: Partial<SiteSettings>) {
   const db = await ensureDb();
   if (patch.shopeeRating !== undefined) {
     patch.shopeeRating = Math.min(5, Math.max(0, Number(patch.shopeeRating) || 0));
@@ -227,7 +246,7 @@ export async function listPublishedReviews(productId?: string) {
   return matched.length ? matched : rows.filter((row) => !row.productId);
 }
 
-export async function saveShopReview(input: Partial<ShopReview> & { quote?: string }) {
+async function saveShopReview__impl(input: Partial<ShopReview> & { quote?: string }) {
   const db = await ensureDb();
   const id = String(input.id ?? "").trim();
   const existing = id ? db.testimonials.find((row) => row.id === id) : undefined;
@@ -249,7 +268,7 @@ export async function saveShopReview(input: Partial<ShopReview> & { quote?: stri
   return row;
 }
 
-export async function deleteShopReview(id: string) {
+async function deleteShopReview__impl(id: string) {
   const db = await ensureDb();
   const before = db.testimonials.length;
   db.testimonials = db.testimonials.filter((row) => row.id !== id);
@@ -356,7 +375,7 @@ export async function getProductById(id: string) {
   return db.products.find((p) => p.id === id) ?? null;
 }
 
-export async function upsertProduct(product: Product) {
+async function upsertProduct__impl(product: Product) {
   const db = await ensureDb();
   const idx = db.products.findIndex((p) => p.id === product.id);
   if (idx >= 0) db.products[idx] = product;
@@ -365,7 +384,7 @@ export async function upsertProduct(product: Product) {
   return product;
 }
 
-export async function deleteProducts(ids: string[]) {
+async function deleteProducts__impl(ids: string[]) {
   const unique = [...new Set(ids.filter(Boolean))];
   if (unique.length === 0) throw new Error("ยังไม่ได้เลือกสินค้า");
   const db = await ensureDb();
@@ -377,7 +396,7 @@ export async function deleteProducts(ids: string[]) {
   return { deleted: before - db.products.length };
 }
 
-export async function setProductsFeatured(ids: string[], featured: boolean) {
+async function setProductsFeatured__impl(ids: string[], featured: boolean) {
   const unique = [...new Set(ids.filter(Boolean))];
   if (unique.length === 0) throw new Error("ยังไม่ได้เลือกสินค้า");
   const db = await ensureDb();
@@ -394,7 +413,7 @@ export async function setProductsFeatured(ids: string[], featured: boolean) {
   return { updated: n };
 }
 
-export async function setProductStock(id: string, stock: number) {
+async function setProductStock__impl(id: string, stock: number) {
   if (!Number.isFinite(stock) || stock < 0) throw new Error("สต็อกไม่ถูกต้อง");
   const db = await ensureDb();
   const product = db.products.find((p) => p.id === id);
@@ -411,7 +430,7 @@ export async function setProductStock(id: string, stock: number) {
   return product;
 }
 
-export async function getOrCreateCart(cartId?: string | null) {
+async function getOrCreateCart__impl(cartId?: string | null) {
   const db = await ensureDb();
   if (cartId) {
     const existing = db.carts.find((c) => c.id === cartId);
@@ -423,7 +442,7 @@ export async function getOrCreateCart(cartId?: string | null) {
   return cart;
 }
 
-export async function updateCart(
+async function updateCart__impl(
   cartId: string,
   items: { productId: string; variantId?: string; quantity: number }[],
 ) {
@@ -486,7 +505,7 @@ function calcShipping(subtotal: number, settings: SiteSettings) {
   return settings.flatShippingFee;
 }
 
-export async function createOrder(input: {
+async function createOrder__impl(input: {
   cartId: string;
   address: ShippingAddress;
   paymentMethod: PaymentProvider;
@@ -582,7 +601,7 @@ const MANUAL_PAY: Record<"receipt" | "label", PaymentProvider> = {
   label: "cash",
 };
 
-export async function createManualOrder(input: {
+async function createManualOrder__impl(input: {
   kind: "receipt" | "label";
   address: ShippingAddress;
   items: Array<{
@@ -716,7 +735,7 @@ export async function createManualOrder(input: {
   return { order, payment, document: db.documents.find((d) => d.id === order.documentId) };
 }
 
-export async function deleteManualOrder(orderId: string) {
+async function deleteManualOrder__impl(orderId: string) {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบเอกสาร");
@@ -941,7 +960,7 @@ async function issueCashReceipt(db: DbShape, order: Order) {
   return doc;
 }
 
-export async function markOrderPaid(orderId: string, by = "system") {
+async function markOrderPaid__impl(orderId: string, by = "system") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -960,7 +979,7 @@ export async function markOrderPaid(orderId: string, by = "system") {
   return { order, payment, document };
 }
 
-export async function submitSlip(orderId: string, slipPath: string, transferredAt?: string) {
+async function submitSlip__impl(orderId: string, slipPath: string, transferredAt?: string) {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -976,7 +995,7 @@ export async function submitSlip(orderId: string, slipPath: string, transferredA
   return { order, payment };
 }
 
-export async function attachPaymentSlip(orderId: string, slipPath: string, by = "admin") {
+async function attachPaymentSlip__impl(orderId: string, slipPath: string, by = "admin") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1001,7 +1020,7 @@ export async function mockPay(orderId: string) {
   return markOrderPaid(orderId, "mock");
 }
 
-export async function setOrderStatus(orderId: string, status: OrderStatus, by = "admin") {
+async function setOrderStatus__impl(orderId: string, status: OrderStatus, by = "admin") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1039,7 +1058,7 @@ export async function startPacking(orderId: string) {
   return setOrderStatus(orderId, "packing");
 }
 
-export async function shipOrder(
+async function shipOrder__impl(
   orderId: string,
   input: { carrier: Carrier; trackingNo: string; note?: string; photoPaths?: string[] },
 ) {
@@ -1071,7 +1090,7 @@ export async function shipOrder(
   return { order, shipment };
 }
 
-export async function updateShipment(
+async function updateShipment__impl(
   orderId: string,
   shipmentId: string,
   input: { carrier: Carrier; trackingNo: string },
@@ -1116,7 +1135,7 @@ export async function updateShipment(
   return { order, shipment, changed: true as const };
 }
 
-export async function addShipmentPhotos(orderId: string, shipmentId: string, photoPaths: string[]) {
+async function addShipmentPhotos__impl(orderId: string, shipmentId: string, photoPaths: string[]) {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1138,7 +1157,7 @@ export async function getShipmentPhotoForToken(token: string, filename: string) 
   return safeUploadName(filename);
 }
 
-export async function markDelivered(orderId: string) {
+async function markDelivered__impl(orderId: string) {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1171,7 +1190,7 @@ export async function listTrackableShipments() {
   return (await listTrackableShipmentRows()).map((row) => row.shipment);
 }
 
-export async function markShipmentTrackMeta(
+async function markShipmentTrackMeta__impl(
   shipmentId: string,
   meta: { registered?: boolean; error?: string | null },
 ) {
@@ -1187,7 +1206,7 @@ export async function markShipmentTrackMeta(
   return shipment;
 }
 
-export async function applyCarrierTrackingUpdate(snapshot: Track17Snapshot) {
+async function applyCarrierTrackingUpdate__impl(snapshot: Track17Snapshot) {
   const db = await ensureDb();
   const normalized = normalizeTrackingNo(snapshot.trackingNo);
   const shipment = db.shipments.find((s) => {
@@ -1244,7 +1263,7 @@ export async function applyCarrierTrackingUpdate(snapshot: Track17Snapshot) {
   return { ok: true as const, orderId: order.id, status: order.status };
 }
 
-export async function incrementPrintCount(documentId: string) {
+async function incrementPrintCount__impl(documentId: string) {
   const db = await ensureDb();
   const doc = db.documents.find((d) => d.id === documentId);
   if (!doc) throw new Error("ไม่พบเอกสาร");
@@ -1272,7 +1291,7 @@ function restoreStock(db: DbShape, order: Order) {
   }
 }
 
-export async function rejectSlip(orderId: string, reason: string, by = "admin") {
+async function rejectSlip__impl(orderId: string, reason: string, by = "admin") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1289,7 +1308,7 @@ export async function rejectSlip(orderId: string, reason: string, by = "admin") 
   return toOrderRow(db, order);
 }
 
-export async function cancelOrder(orderId: string, reason: string, by = "admin") {
+async function cancelOrder__impl(orderId: string, reason: string, by = "admin") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1311,7 +1330,7 @@ export async function cancelOrder(orderId: string, reason: string, by = "admin")
   return toOrderRow(db, order);
 }
 
-export async function refundOrder(orderId: string, reason: string, by = "admin") {
+async function refundOrder__impl(orderId: string, reason: string, by = "admin") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1335,7 +1354,7 @@ export async function refundOrder(orderId: string, reason: string, by = "admin")
   return toOrderRow(db, order);
 }
 
-export async function completeOrder(orderId: string, by = "admin") {
+async function completeOrder__impl(orderId: string, by = "admin") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1346,7 +1365,7 @@ export async function completeOrder(orderId: string, by = "admin") {
   return toOrderRow(db, order);
 }
 
-export async function saveAdminNote(orderId: string, note: string, by = "admin") {
+async function saveAdminNote__impl(orderId: string, note: string, by = "admin") {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   if (!order) throw new Error("ไม่พบออเดอร์");
@@ -1409,7 +1428,7 @@ export async function saveProductInput(input: Partial<Product> & { id?: string }
   return upsertProduct(product);
 }
 
-export async function createWholesaleLead(input: {
+async function createWholesaleLead__impl(input: {
   shopName: string;
   province: string;
   channel: string;
@@ -1455,7 +1474,7 @@ export async function listWholesaleLeads(status?: string) {
   return items;
 }
 
-export async function updateWholesaleLead(
+async function updateWholesaleLead__impl(
   id: string,
   patch: { status?: WholesaleLeadStatus; adminNote?: string },
 ) {
@@ -1477,7 +1496,7 @@ export async function updateWholesaleLead(
   return lead;
 }
 
-export async function attachPaysoRef(orderId: string, paysoRef: string, transactionId: string) {
+async function attachPaysoRef__impl(orderId: string, paysoRef: string, transactionId: string) {
   const db = await ensureDb();
   const order = db.orders.find((o) => o.id === orderId);
   const payment = order && db.payments.find((p) => p.id === order.paymentId);
@@ -1510,3 +1529,37 @@ export async function confirmPaysoPaid(paysoRef: string, verifiedTotal: number, 
   const result = await markOrderPaid(order.id, paysoOrderNo ? `payso #${paysoOrderNo}` : "payso");
   return { order: result.order, duplicate: false };
 }
+
+// Every read-modify-write re-runs on a concurrent-save conflict (see state-store.ts).
+export const getSettings = withStateRetry(getSettings__impl);
+export const updateSettings = withStateRetry(updateSettings__impl);
+export const saveShopReview = withStateRetry(saveShopReview__impl);
+export const deleteShopReview = withStateRetry(deleteShopReview__impl);
+export const upsertProduct = withStateRetry(upsertProduct__impl);
+export const deleteProducts = withStateRetry(deleteProducts__impl);
+export const setProductsFeatured = withStateRetry(setProductsFeatured__impl);
+export const setProductStock = withStateRetry(setProductStock__impl);
+export const getOrCreateCart = withStateRetry(getOrCreateCart__impl);
+export const updateCart = withStateRetry(updateCart__impl);
+export const createOrder = withStateRetry(createOrder__impl);
+export const createManualOrder = withStateRetry(createManualOrder__impl);
+export const deleteManualOrder = withStateRetry(deleteManualOrder__impl);
+export const markOrderPaid = withStateRetry(markOrderPaid__impl);
+export const submitSlip = withStateRetry(submitSlip__impl);
+export const attachPaymentSlip = withStateRetry(attachPaymentSlip__impl);
+export const setOrderStatus = withStateRetry(setOrderStatus__impl);
+export const shipOrder = withStateRetry(shipOrder__impl);
+export const updateShipment = withStateRetry(updateShipment__impl);
+export const addShipmentPhotos = withStateRetry(addShipmentPhotos__impl);
+export const markDelivered = withStateRetry(markDelivered__impl);
+export const markShipmentTrackMeta = withStateRetry(markShipmentTrackMeta__impl);
+export const applyCarrierTrackingUpdate = withStateRetry(applyCarrierTrackingUpdate__impl);
+export const incrementPrintCount = withStateRetry(incrementPrintCount__impl);
+export const rejectSlip = withStateRetry(rejectSlip__impl);
+export const cancelOrder = withStateRetry(cancelOrder__impl);
+export const refundOrder = withStateRetry(refundOrder__impl);
+export const completeOrder = withStateRetry(completeOrder__impl);
+export const saveAdminNote = withStateRetry(saveAdminNote__impl);
+export const createWholesaleLead = withStateRetry(createWholesaleLead__impl);
+export const updateWholesaleLead = withStateRetry(updateWholesaleLead__impl);
+export const attachPaysoRef = withStateRetry(attachPaysoRef__impl);
