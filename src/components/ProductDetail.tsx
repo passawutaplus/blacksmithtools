@@ -91,6 +91,7 @@ export function ProductDetail({
     router.push("/checkout");
   }
 
+  const fitBrands = brands.filter((b) => b.slug !== "blacksmith");
   const tags = [
     ...brands.map((b) => b.name),
     ...categories.map((c) => c.nameTh),
@@ -162,12 +163,18 @@ export function ProductDetail({
 
         <h1 className="mt-5 text-2xl font-bold leading-snug text-navy md:text-3xl">{product.nameTh}</h1>
 
+        {fitBrands.length > 0 ? (
+          <p className="mt-4 inline-flex items-center bg-navy px-3 py-1.5 text-sm font-medium text-white">
+            ใช้ได้กับ {fitBrands.map((b) => b.name).join(" · ")}
+          </p>
+        ) : null}
+
         {tags.length > 0 ? (
           <ul className="mt-5 flex flex-wrap gap-2.5">
             {tags.slice(0, 6).map((tag) => (
               <li
                 key={tag}
-                className="rounded-[2px] bg-steel px-3.5 py-1.5 text-xs font-semibold text-navy"
+                className="border border-navy/20 bg-white px-3 py-1 text-xs font-medium text-navy"
               >
                 {tag}
               </li>
@@ -237,7 +244,7 @@ export function ProductDetail({
         <div className="mt-8 flex flex-wrap items-end gap-8">
           <div>
             <p className="text-xs font-semibold text-muted">จำนวน</p>
-            <div className="mt-2 inline-flex items-center rounded-none bg-steel">
+            <div className="mt-2 inline-flex items-center border border-navy/25 bg-white">
               <button
                 type="button"
                 className="inline-flex h-11 w-11 items-center justify-center"
@@ -259,26 +266,36 @@ export function ProductDetail({
           </div>
           <div>
             <p className="text-xs font-semibold text-muted">ราคา</p>
-            <p className="mt-1 text-3xl font-bold text-navy">{formatTHB(price)}</p>
-            {product.compareAtPrice && product.compareAtPrice > price ? (
-              <p className="mt-1 text-sm text-muted line-through">{formatTHB(product.compareAtPrice)}</p>
+            <p className="num mt-1 text-4xl font-semibold leading-none text-navy">{formatTHB(price)}</p>
+            {(product.variants?.length ?? 0) <= 1 && product.compareAtPrice && product.compareAtPrice > price ? (
+              <p className="num mt-1.5 text-sm text-muted">
+                <span className="line-through">{formatTHB(product.compareAtPrice)}</span>
+                <span className="ml-2 font-semibold text-forge">
+                  -{Math.round((1 - price / product.compareAtPrice) * 100)}%
+                </span>
+              </p>
             ) : null}
           </div>
         </div>
 
-        <p className="mt-4 text-sm text-muted">
-          {stock > 0 ? `พร้อมสั่ง ${stock} ชิ้น` : "รอคิวพิมพ์"} · SKU {sku}
-        </p>
-
-        <div className="mt-6 rounded-[3px] bg-steel px-5 py-4 text-sm text-navy">
-          <p className="font-bold">ส่งฟรี เมื่อยอดครบ 1,000 บาท</p>
-          <p className="mt-1.5 text-muted">ค่าส่ง 35 บาท · พิมพ์ตามออเดอร์ เตรียมส่งใน 2 วัน</p>
-        </div>
+        <dl className="mt-6 grid grid-cols-3 border border-navy/12 bg-white text-navy">
+          {[
+            ["สถานะ", stock > 0 ? `พร้อมสั่ง ${stock}` : "รอคิวพิมพ์"],
+            ["จัดส่ง", "ภายใน 2 วัน"],
+            ["ค่าส่ง", "฿35 · ฟรี ฿1,000+"],
+          ].map(([k, v]) => (
+            <div key={k} className="border-r border-navy/12 px-3 py-3 last:border-r-0">
+              <dt className="text-[11px] font-medium text-muted">{k}</dt>
+              <dd className="mt-1 text-sm font-semibold">{v}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="num mt-2 text-xs text-muted">SKU {sku}</p>
 
         <div className="safe-bottom sticky bottom-0 z-20 mt-6 grid grid-cols-2 gap-4 bg-background py-4 md:static md:bg-transparent md:py-0">
           <button
             type="button"
-            className="btn btn-navy"
+            className="btn btn-primary"
             disabled={!canBuy}
             onClick={buyNow}
           >

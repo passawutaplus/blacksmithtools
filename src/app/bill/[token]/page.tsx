@@ -11,6 +11,21 @@ import { CopyButton } from "@/components/CopyButton";
 import { PhotoThumbs } from "@/components/PhotoThumbs";
 import { RememberBill } from "@/components/RememberBill";
 
+const PAY_METHOD_LABEL: Record<string, string> = {
+  payso: "บัตร / QR ผ่าน Payso",
+  bank_transfer: "โอนเข้าบัญชีร้าน",
+  promptpay_qr: "PromptPay",
+  mock: "ทดสอบ",
+  cash: "เงินสด",
+};
+const PAY_STATUS_LABEL: Record<string, string> = {
+  pending: "รอชำระ",
+  submitted: "ส่งสลิปแล้ว รอตรวจ",
+  paid: "ชำระแล้ว",
+  failed: "ไม่สำเร็จ",
+  cancelled: "ยกเลิก",
+};
+
 const STEPS = ["pending_payment", "payment_submitted", "paid", "packing", "shipped", "delivered"];
 
 export default async function BillPage({
@@ -50,20 +65,17 @@ export default async function BillPage({
         </div>
       ) : null}
       {sp.paid || (sp.payso && order.status === "paid") ? (
-        <div className="mb-4 rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+        <div className="mb-4 border-l-4 border-green-700 bg-white px-4 py-3 text-sm text-green-800">
           ชำระเงินสำเร็จ — ระบบออกบิลเงินสดให้อัตโนมัติแล้ว
         </div>
       ) : null}
 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm text-muted">บิลออนไลน์</p>
-          <h1 className="text-2xl font-bold text-navy">{order.number}</h1>
-          <p className="mt-1 text-sm">
-            สถานะ:{" "}
-            <span className="font-semibold text-forge">
-              {ORDER_STATUS_LABEL[order.status] ?? order.status}
-            </span>
+          <p className="eyebrow">Online bill</p>
+          <h1 className="num mt-2 text-2xl font-semibold text-navy md:text-3xl">{order.number}</h1>
+          <p className="mt-2 inline-flex items-center bg-navy px-2.5 py-1 text-xs font-semibold text-white">
+            {ORDER_STATUS_LABEL[order.status] ?? order.status}
           </p>
         </div>
         {document ? (
@@ -73,15 +85,18 @@ export default async function BillPage({
         ) : null}
       </div>
 
-      <ol className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      <ol className="mt-6 grid grid-cols-3 gap-x-1 gap-y-3 sm:grid-cols-6" aria-label="ขั้นตอนคำสั่งซื้อ">
         {STEPS.map((s, i) => (
-          <li
-            key={s}
-            className={`rounded px-2 py-2 text-center text-xs font-semibold ${
-              i <= stepIndex ? "bg-forge text-white" : "bg-steel text-muted"
-            }`}
-          >
-            {ORDER_STATUS_LABEL[s]}
+          <li key={s} aria-current={i === stepIndex ? "step" : undefined}>
+            <span className={`block h-1.5 ${i <= stepIndex ? "bg-forge" : "bg-navy/10"}`} />
+            <span
+              className={`mt-1.5 flex items-baseline gap-1.5 text-xs ${
+                i === stepIndex ? "font-semibold text-navy" : i < stepIndex ? "text-navy/70" : "text-muted"
+              }`}
+            >
+              <span className="num">{String(i + 1).padStart(2, "0")}</span>
+              {ORDER_STATUS_LABEL[s]}
+            </span>
           </li>
         ))}
       </ol>
@@ -201,7 +216,8 @@ export default async function BillPage({
           <div className="card p-5">
             <h2 className="font-bold">การชำระเงิน</h2>
             <p className="mt-2 text-sm text-muted">
-              วิธี: {order.paymentMethod} · สถานะ: {payment?.status}
+              วิธี: {PAY_METHOD_LABEL[order.paymentMethod] ?? order.paymentMethod} · สถานะ:{" "}
+              {PAY_STATUS_LABEL[payment?.status ?? ""] ?? payment?.status}
             </p>
             <BillActions
               token={token}
