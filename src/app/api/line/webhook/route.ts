@@ -24,12 +24,17 @@ type LineEvent = {
 export async function POST(req: Request) {
   const raw = await req.text();
   if (!validSignature(raw, req.headers.get("x-line-signature"))) {
+    console.warn("[line-webhook] rejected: bad or missing signature");
     return NextResponse.json({ error: "bad signature" }, { status: 401 });
   }
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim();
   const { events = [] } = JSON.parse(raw) as { events?: LineEvent[] };
+  // Diagnostics only: event kinds, never message text or IDs.
+  console.info(
+    `[line-webhook] ${events.length} event(s): ${events.map((e) => `${e.type}/${e.source?.type ?? "?"}`).join(", ") || "none"}; token ${token ? "set" : "MISSING"}`,
+  );
   for (const ev of events) {
-    const text = ev.message?.text?.trim();
+    const text = ev.message?.text?.replace(/\s+/g, "");
     if (ev.type !== "message" || !ev.replyToken || !token || text !== "รหัสแจ้งเตือน") continue;
     const id = ev.source?.groupId ?? ev.source?.roomId ?? ev.source?.userId ?? "";
     await fetch("https://api.line.me/v2/bot/message/reply", {
@@ -40,7 +45,12 @@ export async function POST(req: Request) {
         messages: [{ type: "text", text: `รหัสสำหรับ LINE_NOTIFY_TO:\n${id}` }],
       }),
       signal: AbortSignal.timeout(8000),
-    }).catch(() => undefined);
+    })
+      .then(async (r) => {
+        if (!r.ok) console.error(`[line-webhook] reply failed ${r.status}: ${(await r.text()).slice(0, 200)}`);
+        else console.info("[line-webhook] replied with notify id");
+      })
+      .catch((e) => console.error("[line-webhook] reply error", String(e)));
   }
   return NextResponse.json({ ok: true });
 }
