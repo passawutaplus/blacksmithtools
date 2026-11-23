@@ -37,7 +37,7 @@ export function CategoryShowcase({
     <section className="container-bs pb-12 md:pb-16">
       <Link
         href={href}
-        className="group relative block overflow-hidden rounded-3xl bg-navy text-white"
+        className="group relative block overflow-hidden rounded-[3px] bg-navy text-white"
       >
         <div className="relative h-40 md:h-56">
           {banner ? (
@@ -52,9 +52,9 @@ export function CategoryShowcase({
           <div className="absolute inset-0 bg-gradient-to-r from-navy via-navy/75 to-navy/20" />
           <div className="relative flex h-full items-end justify-between gap-4 p-5 md:p-7">
             <div>
-              <p className="text-xs font-semibold tracking-wide text-forge">หมวดสินค้า</p>
-              <h2 className="mt-1 text-2xl font-black md:text-3xl">{category.name}</h2>
-              <p className="mt-1 text-sm text-white/75">{total} รายการ</p>
+              <p className="eyebrow !text-steel before:!bg-forge">Category</p>
+              <h2 className="mt-2 text-2xl font-bold text-white md:text-3xl">{category.name}</h2>
+              <p className="num mt-1 text-sm text-white/75">{total} items</p>
             </div>
             <span className="btn btn-primary shrink-0">ดูทั้งหมด</span>
           </div>

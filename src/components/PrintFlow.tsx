@@ -43,7 +43,7 @@ function StepCard({ step, icon: Icon }: { step: Step; icon: LucideIcon }) {
   return (
     <div className="card h-full p-4">
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-forge text-sm font-black text-white">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-forge text-sm font-bold text-white">
           {step.n}
         </span>
         <Icon className="h-4 w-4 text-navy" aria-hidden />
@@ -67,7 +67,7 @@ export function PrintFlow({ steps }: { steps: Step[] }) {
             <li key={step.n}>
               <div className="flex gap-3">
                 <div className="flex w-8 shrink-0 flex-col items-center">
-                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-forge text-sm font-black text-white">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-forge text-sm font-bold text-white">
                     {step.n}
                   </span>
                   {i < steps.length - 1 ? <div className="min-h-8 w-0.5 flex-1 bg-forge/30" /> : null}

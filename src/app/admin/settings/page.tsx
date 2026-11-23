@@ -177,7 +177,7 @@ export default function AdminSettingsPage() {
           <img
             src="/go/qr.svg"
             alt="QR ไปหน้าช่องทางร้าน"
-            className="h-40 w-40 rounded-lg bg-white p-2 ring-1 ring-navy/10"
+            className="h-40 w-40 rounded-[3px] bg-white p-2 ring-1 ring-navy/10"
           />
           <div className="space-y-2">
             <p className="font-latin text-sm text-navy">{GO_QR_URL}</p>

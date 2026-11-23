@@ -59,7 +59,7 @@ export default async function BrandShopPage({
               decorative
               className={
                 brand.slug === "blacksmith"
-                  ? "h-28 w-28 shadow-[0_8px_30px_rgba(35,50,61,0.12)]"
+                  ? "h-28 w-28"
                   : "h-10 w-auto max-w-[180px] object-contain"
               }
             />

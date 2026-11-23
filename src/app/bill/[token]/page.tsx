@@ -228,7 +228,7 @@ export default async function BillPage({
                 {shipments.map((s) => {
                   const url = trackingUrl(s.carrier, s.trackingNo);
                   return (
-                    <li key={s.id} className="min-w-0 rounded-2xl border border-gray-100 p-3">
+                    <li key={s.id} className="min-w-0 rounded-[3px] border border-gray-100 p-3">
                       <p className="font-semibold text-navy">{carrierLabel(s.carrier)}</p>
                       <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                         <p className="min-w-0 break-all text-sm">เลขพัสดุ {s.trackingNo || "-"}</p>

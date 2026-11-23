@@ -1,5 +1,6 @@
 "use client";
 
+import { FreeShipMeter } from "@/components/FreeShipMeter";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -76,7 +77,7 @@ export default function CartPage() {
                 className="card overflow-hidden p-3 sm:p-4"
               >
                 <div className="flex gap-3">
-                  <div className="relative h-16 w-16 shrink-0 self-start overflow-hidden rounded-xl bg-steel sm:h-24 sm:w-24 sm:rounded-2xl">
+                  <div className="relative h-16 w-16 shrink-0 self-start overflow-hidden rounded-[3px] bg-steel sm:h-24 sm:w-24 sm:rounded-[3px]">
                     <Image
                       src={line.imageUrl || line.product.imageUrl}
                       alt={line.product.nameTh}
@@ -102,10 +103,10 @@ export default function CartPage() {
                   </div>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
-                  <div className="inline-flex h-9 items-center rounded-full bg-steel">
+                  <div className="inline-flex h-9 items-center border border-navy/20 bg-white">
                     <button
                       type="button"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+                      className="inline-flex h-9 w-9 items-center justify-center hover:bg-steel"
                       onClick={() => setQty(line.productId, line.quantity - 1, line.variantId)}
                       aria-label="ลดจำนวน"
                     >
@@ -114,7 +115,7 @@ export default function CartPage() {
                     <span className="w-7 text-center text-sm tabular-nums">{line.quantity}</span>
                     <button
                       type="button"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+                      className="inline-flex h-9 w-9 items-center justify-center hover:bg-steel"
                       onClick={() => setQty(line.productId, line.quantity + 1, line.variantId)}
                       aria-label="เพิ่มจำนวน"
                     >
@@ -138,11 +139,7 @@ export default function CartPage() {
               <span className="text-muted">ค่าส่ง</span>
               <span className="tabular-nums">{shipping === 0 ? "ฟรี" : formatTHB(shipping)}</span>
             </div>
-            {subtotal > 0 && shipping > 0 ? (
-              <p className="mt-2 text-xs leading-snug text-muted">
-                ซื้อเพิ่มอีก {formatTHB(Math.max(0, freeShippingMin - subtotal))} ส่งฟรี
-              </p>
-            ) : null}
+            <FreeShipMeter subtotal={subtotal} min={freeShippingMin} />
             <div className="mt-4 flex items-center justify-between gap-4 border-t border-gray-100 pt-3 text-lg font-bold">
               <span>รวม</span>
               <span className="tabular-nums text-navy">{formatTHB(subtotal + shipping)}</span>

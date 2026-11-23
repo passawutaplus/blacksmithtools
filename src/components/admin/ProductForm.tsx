@@ -69,9 +69,9 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section id={id} className="scroll-mt-24 rounded-lg border border-gray-200 bg-white p-4 md:p-5">
+    <section id={id} className="scroll-mt-24 rounded-[3px] border border-gray-200 bg-white p-4 md:p-5">
       <div className="mb-4 flex items-start gap-3">
-        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-navy text-white">
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[3px] bg-navy text-white">
           <Icon className="h-5 w-5" aria-hidden />
         </span>
         <div>
@@ -95,7 +95,7 @@ function Chip({
 }) {
   return (
     <label
-      className={`inline-flex cursor-pointer items-center rounded-full border px-3 py-1.5 text-sm ${
+      className={`inline-flex cursor-pointer items-center rounded-[2px] border px-3 py-1.5 text-sm ${
         checked ? "border-navy bg-navy text-white" : "border-gray-200 bg-white text-navy hover:border-navy"
       }`}
     >
@@ -242,7 +242,7 @@ export function ProductForm({
           <a
             key={j.href}
             href={j.href}
-            className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-navy hover:border-navy"
+            className="rounded-[2px] border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-navy hover:border-navy"
           >
             {j.label}
           </a>
@@ -250,7 +250,7 @@ export function ProductForm({
       </div>
 
       {error ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+        <p className="rounded-[3px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
       ) : null}
 
       <Section id="info" icon={Package} title="ข้อมูลสินค้า" hint="ชื่อที่ลูกค้าเห็นบนหน้าร้าน และรหัสอ้างอิง">
@@ -291,7 +291,7 @@ export function ProductForm({
 
       <Section id="media" icon={ImageIcon} title="รูปสินค้า" hint="วางลิงก์รูปจาก Shopee ได้เลย ระบบจะพรีวิวให้">
         <div className="grid gap-4 lg:grid-cols-[160px_1fr]">
-          <div className="relative aspect-square overflow-hidden rounded-lg bg-steel ring-1 ring-gray-200">
+          <div className="relative aspect-square overflow-hidden rounded-[3px] bg-steel ring-1 ring-gray-200">
             {imageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imageUrl} alt="" className="h-full w-full object-contain p-2" />
@@ -331,7 +331,7 @@ export function ProductForm({
               <button
                 key={src}
                 type="button"
-                className={`h-16 w-16 overflow-hidden rounded-lg bg-steel ring-1 ${
+                className={`h-16 w-16 overflow-hidden rounded-[3px] bg-steel ring-1 ${
                   src === imageUrl ? "ring-navy" : "ring-gray-200"
                 }`}
                 onClick={() => setImageUrl(src)}
@@ -451,7 +451,7 @@ export function ProductForm({
           </button>
         </div>
         {variants.length === 0 ? (
-          <div className="mt-4 rounded-lg border border-dashed border-gray-300 bg-steel/50 px-4 py-8 text-center text-sm text-muted">
+          <div className="mt-4 rounded-[3px] border border-dashed border-gray-300 bg-steel/50 px-4 py-8 text-center text-sm text-muted">
             ยังไม่มีตัวเลือก — สินค้าจะขายเป็น SKU เดียวตามราคาด้านบน
           </div>
         ) : (
@@ -590,7 +590,7 @@ export function ProductForm({
           </div>
         </div>
         <label
-          className={`mt-5 flex cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 text-sm ${
+          className={`mt-5 flex cursor-pointer items-center gap-3 rounded-[3px] border px-4 py-3 text-sm ${
             featured ? "border-forge bg-forge/5 text-navy" : "border-gray-200 bg-white"
           }`}
         >

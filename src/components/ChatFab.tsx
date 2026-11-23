@@ -95,7 +95,7 @@ export function ChatFab({ lineUrl, lineId }: { lineUrl: string; lineId: string }
           <button
             key={item}
             type="button"
-            className="min-h-11 rounded-full border border-navy/10 bg-steel px-3 py-2 text-left text-sm font-semibold text-navy hover:bg-white"
+            className="min-h-11 rounded-[2px] border border-navy/10 bg-steel px-3 py-2 text-left text-sm font-semibold text-navy hover:bg-white"
             onClick={() => send(item)}
           >
             {item}
@@ -108,7 +108,7 @@ export function ChatFab({ lineUrl, lineId }: { lineUrl: string; lineId: string }
   return (
     <div className={`no-print fixed right-4 z-[45] ${fabBottom} sm:bottom-6`}>
       {open ? (
-        <div className="mb-3 flex h-[min(32rem,calc(100dvh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-3xl bg-white shadow-[0_8px_40px_rgba(35,50,61,0.18)]">
+        <div className="mb-3 flex h-[min(32rem,calc(100dvh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[3px] bg-white shadow-[0_8px_40px_rgba(35,50,61,0.18)]">
           <div className="flex items-center gap-2 bg-navy px-3 py-2.5 text-white">
             <img src="/brand/mark.png" alt="" className="h-9 w-9 shrink-0 rounded-full" />
             <div className="min-w-0 flex-1">
@@ -119,7 +119,7 @@ export function ChatFab({ lineUrl, lineId }: { lineUrl: string; lineId: string }
               href={lineUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex h-9 items-center rounded-full bg-[#06C755] px-3 text-xs font-bold text-white hover:brightness-110"
+              className="inline-flex h-9 items-center rounded-[2px] bg-[#06C755] px-3 text-xs font-bold text-white hover:brightness-110"
             >
               LINE
             </a>
@@ -137,7 +137,7 @@ export function ChatFab({ lineUrl, lineId }: { lineUrl: string; lineId: string }
             {messages.map((m, i) => (
               <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                 <div
-                  className={`max-w-[90%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap ${
+                  className={`max-w-[90%] rounded-[3px] px-3 py-2 text-sm whitespace-pre-wrap ${
                     m.role === "user" ? "bg-navy text-white" : "bg-white text-navy shadow-sm"
                   }`}
                 >

@@ -50,7 +50,7 @@ export default async function ShopPage({
                   <li>
                     <Link
                       href="/shop"
-                      className={`block rounded-full px-3 py-1.5 ${!sp.category ? "bg-steel font-semibold text-navy" : "text-muted hover:bg-steel/70 hover:text-navy"}`}
+                      className={`block rounded-[2px] px-3 py-1.5 ${!sp.category ? "bg-steel font-semibold text-navy" : "text-muted hover:bg-steel/70 hover:text-navy"}`}
                     >
                       ทั้งหมด
                     </Link>
@@ -59,7 +59,7 @@ export default async function ShopPage({
                     <li key={c.id}>
                       <Link
                         href={`/shop?category=${c.slug}`}
-                        className={`block rounded-full px-3 py-1.5 ${sp.category === c.slug ? "bg-steel font-semibold text-navy" : "text-muted hover:bg-steel/70 hover:text-navy"}`}
+                        className={`block rounded-[2px] px-3 py-1.5 ${sp.category === c.slug ? "bg-steel font-semibold text-navy" : "text-muted hover:bg-steel/70 hover:text-navy"}`}
                       >
                         {c.nameTh}
                       </Link>

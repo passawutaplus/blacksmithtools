@@ -104,7 +104,7 @@ export default async function CustomPrintPage() {
         <div className="container-bs relative grid gap-10 py-14 md:grid-cols-2 md:items-center md:py-20">
           <div>
             <p className="text-sm font-semibold tracking-wide text-forge">บริการ</p>
-            <h1 className="mt-2 text-3xl font-black leading-tight md:text-5xl">พิมพ์ 3D ตามสั่ง</h1>
+            <h1 className="mt-2 text-3xl font-bold leading-tight md:text-5xl">พิมพ์ 3D ตามสั่ง</h1>
             <p className="mt-4 max-w-lg text-base text-white/85 md:text-lg">
               จิ๊ก ที่เก็บเครื่องมือ และอะไหล่ที่ของแท้มักไม่มี — พิมพ์เส้นด้วย P2S 6 เครื่อง หรือเรซิ่น (SLA)
             </p>

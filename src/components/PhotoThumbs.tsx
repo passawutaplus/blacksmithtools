@@ -38,7 +38,7 @@ export function PhotoThumbs({
     <>
       <ul className={className}>
         {images.map((img, i) => (
-          <li key={img.src} className="overflow-hidden rounded-2xl bg-steel">
+          <li key={img.src} className="overflow-hidden rounded-[3px] bg-steel">
             <button
               type="button"
               className="block w-full cursor-zoom-in"
@@ -64,7 +64,7 @@ export function PhotoThumbs({
             <img
               src={current.src}
               alt={current.alt ?? "ภาพพัสดุจากร้าน"}
-              className="max-h-[88vh] max-w-[min(96vw,1100px)] rounded-lg object-contain"
+              className="max-h-[88vh] max-w-[min(96vw,1100px)] rounded-[3px] object-contain"
             />
             <button
               type="button"

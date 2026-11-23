@@ -237,7 +237,7 @@ export default function CheckoutPage() {
       <div className="container-bs py-8 md:py-10">
         <form onSubmit={onSubmit} className="mt-6 grid gap-8 lg:grid-cols-[1fr_340px]">
           <div className="card space-y-4 p-5">
-            <h2 className="font-bold">ที่อยู่จัดส่ง</h2>
+            <h2 className="flex items-center gap-2.5 font-bold"><span className="num inline-flex h-6 w-6 items-center justify-center bg-navy text-xs text-white">1</span>ที่อยู่จัดส่ง</h2>
             <p className="text-xs leading-relaxed text-muted">
               เลือกจังหวัด → เขต/อำเภอ → แขวง/ตำบล แล้วรหัสไปรษณีย์จะขึ้นเอง
             </p>
@@ -332,12 +332,12 @@ export default function CheckoutPage() {
               />
             </div>
 
-            <h2 className="pt-4 font-bold">บิลเงินสด</h2>
+            <h2 className="pt-4 flex items-center gap-2.5 font-bold"><span className="num inline-flex h-6 w-6 items-center justify-center bg-navy text-xs text-white">2</span>บิลเงินสด</h2>
             <p className="text-xs leading-relaxed text-muted">
               ร้านเป็นบุคคลธรรมดา ยังไม่ได้จด VAT จึงออกได้แค่บิลเงินสด ส่งทางอีเมลเมื่อชำระแล้ว — ไม่ใช่ใบกำกับภาษี
               และนำไปหักภาษีไม่ได้
             </p>
-            <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-gray-200 p-3">
+            <label className="flex cursor-pointer items-start gap-3 rounded-[3px] border border-gray-200 p-3">
               <input
                 type="checkbox"
                 className="mt-1 h-4 w-4 accent-forge"
@@ -350,7 +350,7 @@ export default function CheckoutPage() {
               </span>
             </label>
             {wantReceipt ? (
-              <div className="space-y-4 rounded-2xl border border-gray-200 p-4">
+              <div className="space-y-4 rounded-[3px] border border-gray-200 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-semibold">ข้อมูลออกบิล</p>
                   <button
@@ -447,7 +447,7 @@ export default function CheckoutPage() {
               </div>
             ) : null}
 
-            <h2 className="pt-4 font-bold">ช่องทางชำระเงิน</h2>
+            <h2 className="pt-4 flex items-center gap-2.5 font-bold"><span className="num inline-flex h-6 w-6 items-center justify-center bg-navy text-xs text-white">3</span>ช่องทางชำระเงิน</h2>
             <div className="space-y-2" role="radiogroup" aria-label="ช่องทางชำระเงิน">
               {methods.map((value) => (
                 <label
@@ -483,7 +483,7 @@ export default function CheckoutPage() {
               <ul className="mt-3 space-y-3">
                 {lines.map((line) => (
                   <li key={cartLineKey(line.productId, line.variantId)} className="flex gap-3">
-                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-steel">
+                    <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-[3px] bg-steel">
                       <Image
                         src={line.imageUrl}
                         alt={line.product.nameTh}

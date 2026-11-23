@@ -89,7 +89,10 @@ export async function writeRuntimeBytes(rel: string, buf: Buffer) {
   }
   const full = diskPath(rel);
   await fs.mkdir(path.dirname(full), { recursive: true });
-  await fs.writeFile(full, buf);
+  // Write to a temp file then rename, so a concurrent reader never sees a half-written file.
+  const tmp = `${full}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`;
+  await fs.writeFile(tmp, buf);
+  await fs.rename(tmp, full);
 }
 
 export async function readRuntimeText(rel: string) {

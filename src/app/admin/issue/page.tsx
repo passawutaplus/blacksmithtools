@@ -345,7 +345,7 @@ export default function AdminIssuePage() {
           <h2 className="font-semibold text-navy">จะพิมพ์อะไร</h2>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             <label
-              className={`flex cursor-pointer gap-3 rounded-2xl border p-3 text-sm ${
+              className={`flex cursor-pointer gap-3 rounded-[3px] border p-3 text-sm ${
                 kind === "receipt" ? "border-navy bg-steel" : "border-gray-200"
               }`}
             >
@@ -356,7 +356,7 @@ export default function AdminIssuePage() {
               </span>
             </label>
             <label
-              className={`flex cursor-pointer gap-3 rounded-2xl border p-3 text-sm ${
+              className={`flex cursor-pointer gap-3 rounded-[3px] border p-3 text-sm ${
                 kind === "label" ? "border-navy bg-steel" : "border-gray-200"
               }`}
             >
@@ -399,7 +399,7 @@ export default function AdminIssuePage() {
             </div>
             {preview ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="แคปออเดอร์ช้อปปี้" className="h-28 w-auto rounded-xl border object-contain" />
+              <img src={preview} alt="แคปออเดอร์ช้อปปี้" className="h-28 w-auto rounded-[3px] border object-contain" />
             ) : null}
           </div>
         </section>
@@ -520,7 +520,7 @@ export default function AdminIssuePage() {
                 placeholder="พิมพ์ชื่อหรือ SKU"
               />
               {hits.length > 0 ? (
-                <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-2xl border bg-white shadow-lg">
+                <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-[3px] border bg-white shadow-lg">
                   {hits.map((p) => {
                     const variants = selectableVariants(p);
                     return (
@@ -539,7 +539,7 @@ export default function AdminIssuePage() {
                               <button
                                 key={v.id}
                                 type="button"
-                                className="rounded-full border px-2 py-0.5 text-xs hover:border-navy"
+                                className="rounded-[2px] border px-2 py-0.5 text-xs hover:border-navy"
                                 onClick={() => addProduct(p, v.id)}
                               >
                                 {v.name} · {formatTHB(v.price)}
@@ -556,7 +556,7 @@ export default function AdminIssuePage() {
 
             <ul className="mt-4 space-y-3">
               {lines.map((line) => (
-                <li key={line.key} className="rounded-2xl border border-gray-200 p-3">
+                <li key={line.key} className="rounded-[3px] border border-gray-200 p-3">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                     <div className="sm:col-span-2 lg:col-span-5">
                       <label className="label">ชื่อสินค้า</label>
@@ -627,7 +627,7 @@ export default function AdminIssuePage() {
               เพิ่มรายการ
             </button>
 
-            <div className="mt-4 flex items-end justify-between rounded-2xl bg-steel px-4 py-3 text-sm">
+            <div className="mt-4 flex items-end justify-between rounded-[3px] bg-steel px-4 py-3 text-sm">
               <span>
                 ยอดสินค้า {formatTHB(subtotal)}
                 {discount ? ` − ส่วนลด ${formatTHB(discount)}` : ""}

@@ -33,7 +33,7 @@ export function CookieBanner() {
   if (!visible) return null;
 
   return (
-    <div className="safe-bottom fixed inset-x-3 bottom-3 z-50 rounded-3xl border border-black/5 bg-white p-4 shadow-[0_8px_40px_rgba(35,50,61,0.16)] md:inset-x-0 md:bottom-0 md:rounded-none md:rounded-t-3xl">
+    <div className="safe-bottom fixed inset-x-3 bottom-3 z-50 rounded-[3px] border border-black/5 bg-white p-4 shadow-[0_8px_40px_rgba(35,50,61,0.16)] md:inset-x-0 md:bottom-0 md:rounded-none md:rounded-t-3xl">
       <div className="container-bs flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div className="max-w-2xl text-sm text-navy">
           <p className="font-semibold">คุกกี้และความเป็นส่วนตัว</p>

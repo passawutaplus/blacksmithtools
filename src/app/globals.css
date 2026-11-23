@@ -9,7 +9,7 @@
   --muted: #6b7280;
   --background: #f5f6f7;
   --foreground: #253641;
-  --radius: 1.5rem;
+  --radius: 3px;
 }
 
 @theme inline {
@@ -22,8 +22,8 @@
   --color-steel: var(--steel);
   --color-muted: var(--muted);
   --font-sans: var(--font-prompt), var(--font-outfit), sans-serif;
-  --radius-sm: 0.75rem;
-  --radius-md: 1.5rem;
+  --radius-sm: 2px;
+  --radius-md: 3px;
 }
 
 * {
@@ -97,7 +97,7 @@ img {
   background: var(--forge);
   color: white;
   padding: 0.5rem 1rem;
-  border-radius: 999px;
+  border-radius: 2px;
 }
 
 .skip-link:focus {
@@ -112,8 +112,9 @@ img {
   gap: 0.5rem;
   min-height: 44px;
   padding: 0.625rem 1.25rem;
-  border-radius: 999px;
+  border-radius: 2px;
   font-weight: 600;
+  letter-spacing: 0.01em;
   font-size: 0.9375rem;
   transition: background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s;
   cursor: pointer;
@@ -135,7 +136,7 @@ img {
   min-height: 36px;
   min-width: 36px;
   padding: 0.35rem;
-  border-radius: 999px;
+  border-radius: 2px;
 }
 
 .btn-primary {
@@ -150,7 +151,7 @@ img {
 .btn-secondary {
   background: white;
   color: var(--navy);
-  border-color: #d1d5db;
+  border-color: rgba(37, 54, 65, 0.35);
 }
 
 .btn-secondary:hover:not(:disabled) {
@@ -205,8 +206,8 @@ img {
 .badge {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
-  padding: 0.15rem 0.55rem;
+  border-radius: 2px;
+  padding: 0.15rem 0.5rem;
   font-size: 0.75rem;
   font-weight: 600;
   white-space: nowrap;
@@ -216,8 +217,8 @@ img {
   width: 100%;
   min-height: 44px;
   padding: 0.5rem 1rem;
-  border: 1px solid #d1d5db;
-  border-radius: 999px;
+  border: 1px solid rgba(37, 54, 65, 0.25);
+  border-radius: 2px;
   background: white;
   /* ต้องกำหนดสีเอง เพราะถ้าไปวางบนพื้นมืดที่ตั้ง text-white ตัวหนังสือและ placeholder จะกลายเป็นขาวบนขาว */
   color: var(--foreground);
@@ -225,7 +226,7 @@ img {
 }
 
 textarea.input {
-  border-radius: 1.25rem;
+  border-radius: 2px;
   min-height: 6rem;
   padding: 0.75rem 1rem;
 }
@@ -258,9 +259,8 @@ select.input:disabled {
 
 .card {
   background: white;
-  border: 1px solid rgba(35, 50, 61, 0.06);
-  border-radius: 1.5rem;
-  box-shadow: 0 8px 30px rgba(35, 50, 61, 0.08);
+  border: 1px solid rgba(37, 54, 65, 0.12);
+  border-radius: 3px;
 }
 
 .data-table {
@@ -716,4 +716,27 @@ summary::-webkit-details-marker {
       transform: scale(1);
     }
   }
+}
+/* Spec-sheet eyebrow: short rust rule + small Latin caps, used above section titles */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-outfit), var(--font-prompt), sans-serif;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--forge);
+}
+.eyebrow::before {
+  content: "";
+  width: 1.5rem;
+  height: 2px;
+  background: currentColor;
+}
+
+.num {
+  font-family: var(--font-outfit), sans-serif;
+  font-variant-numeric: tabular-nums;
 }

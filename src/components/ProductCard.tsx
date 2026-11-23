@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowUpRight, ShoppingCart } from "lucide-react";
+import { ShoppingCart } from "lucide-react";
 import type { Brand, Product } from "@/lib/types";
 import { brands } from "@/lib/seed";
 import { formatTHB } from "@/lib/utils";
@@ -30,88 +30,74 @@ export function ProductCard({
   const brand = productBrand(product);
   const compact = layout === "related";
 
+  const onSale = Boolean(product.compareAtPrice && product.compareAtPrice > product.price);
+  const fitsLabel = brand && brand.slug !== "blacksmith" ? `ใช้ได้กับ ${brand.name}` : "BlackSmith Original";
+
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-3xl bg-white shadow-[0_8px_30px_rgba(35,50,61,0.08)] ring-1 ring-black/5">
+    <article className="group flex h-full flex-col border border-navy/12 bg-white transition-colors hover:border-navy/40">
       <Link href={href} className="relative block overflow-hidden">
-        <div className={`relative bg-steel/50 ${compact ? "aspect-[4/3]" : "aspect-square"}`}>
+        <div className={`relative bg-[#f1f1f1] ${compact ? "aspect-[4/3]" : "aspect-square"}`}>
           <Image
             src={product.imageUrl}
             alt={product.nameTh}
             fill
             sizes={compact ? "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 20vw" : "(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"}
-            className="object-contain p-5 transition group-hover:scale-[1.03]"
+            className="object-contain p-5 transition-transform duration-300 group-hover:scale-[1.03]"
           />
-          {product.featured ? (
-            <span className="absolute left-3 top-3 rounded-full bg-navy/80 px-2.5 py-1 text-[11px] font-semibold text-white">
-              แนะนำ
-            </span>
-          ) : null}
-          {brand ? (
+          {brand && brand.slug !== "blacksmith" ? (
             <span
-              className={
-                brand.slug === "blacksmith"
-                  ? "absolute right-3 top-3"
-                  : "absolute right-2.5 top-2.5 overflow-hidden rounded-md bg-white p-1 shadow-md ring-1 ring-black/10"
-              }
+              className="absolute right-2 top-2 bg-white p-1 ring-1 ring-navy/10"
               title={brand.name}
             >
               <BrandLogo
                 brand={brand}
                 decorative
-                className={
-                  brand.slug === "blacksmith"
-                    ? "h-[4.5rem] w-[4.5rem] shadow-md"
-                    : "block h-8 w-auto max-h-8 max-w-[5rem] object-contain"
-                }
+                className="block h-7 w-auto max-h-7 max-w-[4.5rem] object-contain"
               />
+            </span>
+          ) : null}
+          <span className="absolute bottom-0 left-0 bg-navy px-2 py-1 text-[11px] font-medium leading-none text-white">
+            {fitsLabel}
+          </span>
+          {product.featured ? (
+            <span className="absolute left-0 top-0 bg-forge px-2 py-1 text-[11px] font-semibold leading-none text-white">
+              แนะนำ
             </span>
           ) : null}
         </div>
       </Link>
 
-      <div className="flex flex-1 flex-col px-4 pb-4 pt-3">
+      <div className="flex flex-1 flex-col border-t border-navy/10 px-3.5 pb-3.5 pt-3">
         <Link href={href} className="min-w-0">
-          <h3 className="line-clamp-2 text-sm font-bold leading-snug text-navy">{product.nameTh}</h3>
+          <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-navy group-hover:text-forge">
+            {product.nameTh}
+          </h3>
           {!compact ? (
-            <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-muted">{getProductBlurb(product)}</p>
+            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted">{getProductBlurb(product)}</p>
           ) : null}
         </Link>
 
-        <div className="mt-auto pt-3">
-          <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-            <span className="text-base font-bold tabular-nums leading-none text-navy">{formatTHB(product.price)}</span>
-            {product.compareAtPrice && product.compareAtPrice > product.price ? (
-              <span className="text-xs font-medium text-muted line-through tabular-nums">
-                {formatTHB(product.compareAtPrice)}
+        <div className="mt-auto flex items-end justify-between gap-2 pt-3">
+          <p className="flex flex-col">
+            {onSale ? (
+              <span className="num text-[11px] text-muted">
+                <span className="line-through">{formatTHB(product.compareAtPrice!)}</span>
+                <span className="ml-1.5 font-semibold text-forge">
+                  -{Math.round((1 - product.price / product.compareAtPrice!) * 100)}%
+                </span>
               </span>
             ) : null}
+            <span className="num text-lg font-semibold leading-none text-navy">{formatTHB(product.price)}</span>
           </p>
-          <div className="mt-2.5 flex items-center justify-between gap-1.5">
-            <button
-              type="button"
-              aria-label="ใส่ตะกร้า"
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-steel text-navy hover:bg-forge hover:text-white"
-              onClick={() => setAddOpen(true)}
-            >
-              <ShoppingCart className="h-4 w-4" aria-hidden />
-            </button>
-            <Link
-              href={href}
-              className="group/view inline-flex min-h-9 w-1/2 shrink-0 items-center justify-center gap-1 rounded-full bg-navy px-3 py-1.5 text-xs font-semibold text-white hover:bg-navy-deep hover:text-white"
-            >
-              <span className="text-white">ดูสินค้า</span>
-              <span className="relative inline-flex h-5 w-5 shrink-0 overflow-hidden rounded-full bg-white text-navy">
-                <ArrowUpRight
-                  className="absolute inset-0 m-auto h-3 w-3 transition-transform duration-300 ease-out group-hover/view:translate-x-3.5 group-hover/view:-translate-y-3.5"
-                  aria-hidden
-                />
-                <ArrowUpRight
-                  className="absolute inset-0 m-auto h-3 w-3 translate-x-[-14px] translate-y-[14px] transition-transform duration-300 ease-out group-hover/view:translate-x-0 group-hover/view:translate-y-0"
-                  aria-hidden
-                />
-              </span>
-            </Link>
-          </div>
+          <button
+            type="button"
+            aria-label={`ใส่ตะกร้า ${product.nameTh}`}
+            className="inline-flex h-10 shrink-0 items-center gap-1.5 bg-forge px-3 text-xs font-semibold text-white hover:bg-forge-hover"
+            onClick={() => setAddOpen(true)}
+          >
+            <ShoppingCart className="h-4 w-4" aria-hidden />
+            <span className="hidden sm:inline">ใส่ตะกร้า</span>
+          </button>
         </div>
       </div>
 

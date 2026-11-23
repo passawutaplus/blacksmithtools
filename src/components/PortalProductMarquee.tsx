@@ -18,7 +18,7 @@ function ProductSlideCard({ item, duplicate }: { item: PortalSlide; duplicate: b
       className="relative h-[9.5rem] w-[9.5rem] shrink-0 overflow-hidden rounded-[1.35rem] bg-white shadow-[0_8px_24px_rgba(0,0,0,0.22)]"
     >
       <Image src={item.imageUrl} alt={duplicate ? "" : item.name} fill sizes="152px" className="object-cover" />
-      <span className="absolute inset-x-2 bottom-2 truncate rounded-full bg-white/95 px-2.5 py-1 text-center text-[11px] font-semibold text-navy">
+      <span className="absolute inset-x-2 bottom-2 truncate rounded-[2px] bg-white/95 px-2.5 py-1 text-center text-[11px] font-semibold text-navy">
         {item.name}
       </span>
     </Link>

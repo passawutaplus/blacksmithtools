@@ -1,6 +1,5 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Printer, ShieldCheck, Truck, Wrench } from "lucide-react";
 import { listProducts, getSettings, listPublishedReviews } from "@/lib/db";
 import { ReviewSection } from "@/components/ReviewSection";
 import { pickCollectionProducts, storefrontCategories } from "@/lib/collections";
@@ -76,8 +75,8 @@ export default async function HomePage() {
         <div className="absolute inset-0 bg-gradient-to-t from-navy via-navy/75 to-navy/35 md:bg-gradient-to-r md:from-navy md:via-navy/70 md:to-navy/10" />
         <div className="container-bs relative flex min-h-dvh items-end pb-48 pt-28 md:items-center md:pb-56 md:pt-32">
           <div className="max-w-xl text-white">
-            <p className="text-sm font-semibold tracking-wide text-forge">แบรนด์คนไทย</p>
-            <h1 className="mt-2 text-3xl font-black leading-tight md:text-5xl">
+            <p className="eyebrow !text-steel before:!bg-forge">Thai-made · 3D printed PETG</p>
+            <h1 className="mt-3 text-3xl font-bold leading-tight md:text-5xl">
               อุปกรณ์เสริมเครื่องมือช่าง
             </h1>
             <p className="mt-4 text-base text-white/85 md:text-lg">
@@ -100,41 +99,41 @@ export default async function HomePage() {
         <HeroBrandSlider />
       </section>
 
-      <section className="border-y border-steel bg-white">
-        <div className="container-bs grid gap-6 py-8 sm:grid-cols-2 lg:grid-cols-4">
+      <section className="bg-navy text-white">
+        <div className="container-bs grid grid-cols-2 divide-white/15 lg:grid-cols-4 lg:divide-x">
           {[
-            { icon: Truck, t: "ส่งใน 2 วัน", d: "พิมพ์ตามออเดอร์ ค่าส่ง 35 บาท ส่งฟรีครบ 1,000" },
-            { icon: ShieldCheck, t: "เคลมทาง LINE", d: "งานพิมพ์มีปัญหา แจ้งรูปแล้วร้านพิมพ์ใหม่" },
-            { icon: Printer, t: "P2S 6 เครื่อง", d: "พิมพ์เส้นพร้อมกันได้ ไม่รอคิวเครื่องเดียว" },
-            { icon: Wrench, t: "เข้ากับรุ่นจริง", d: "ระบุ M18, TStak, Packout บนหน้าสินค้า" },
+            { k: "2 วัน", t: "ส่งไว", d: "พิมพ์ตามออเดอร์ ค่าส่ง 35 บาท ส่งฟรีครบ 1,000" },
+            { k: "LINE", t: "เคลมง่าย", d: "งานพิมพ์มีปัญหา แจ้งรูปแล้วร้านพิมพ์ใหม่" },
+            { k: "× 6", t: "เครื่องพิมพ์ P2S", d: "พิมพ์พร้อมกันได้ ไม่รอคิวเครื่องเดียว" },
+            { k: "M18", t: "เข้ากับรุ่นจริง", d: "ระบุรุ่น TStak, Packout บนหน้าสินค้า" },
           ].map((item) => (
-            <div key={item.t} className="flex gap-3">
-              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-steel">
-                <item.icon className="h-5 w-5 text-forge" aria-hidden />
-              </span>
-              <div>
-                <p className="font-semibold text-navy">{item.t}</p>
-                <p className="mt-0.5 text-sm text-muted">{item.d}</p>
-              </div>
+            <div key={item.t} className="border-b border-white/10 px-1 py-6 lg:border-b-0 lg:px-6 lg:first:pl-0">
+              <p className="num text-3xl font-semibold leading-none text-white">{item.k}</p>
+              <p className="mt-3 text-sm font-semibold text-steel">{item.t}</p>
+              <p className="mt-1 text-xs leading-relaxed text-white/65">{item.d}</p>
             </div>
           ))}
         </div>
+        <div className="h-1 bg-forge" aria-hidden />
       </section>
 
       <ReviewSection reviews={reviews.slice(0, 6)} settings={settings} />
 
       <section className="container-bs py-10 md:py-12">
-        <p className="text-sm font-semibold text-forge">หมวดสินค้า</p>
-        <h2 className="mt-1 text-2xl font-bold text-navy">เลือกงานที่ใช่</h2>
-        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <p className="eyebrow">Categories</p>
+        <h2 className="mt-2 text-2xl font-bold text-navy">เลือกตามงาน</h2>
+        <div className="mt-5 grid grid-cols-2 border-l border-t border-navy/12 sm:grid-cols-3 lg:grid-cols-5">
           {modules.map(({ category, total, products }) => (
             <Link
               key={category.id}
               href={`/shop?category=${category.slug}`}
-              className="card overflow-hidden px-3 py-3 text-center hover:ring-1 hover:ring-navy/20"
+              className="group flex items-center justify-between gap-2 border-b border-r border-navy/12 bg-white px-4 py-4 hover:bg-navy"
             >
-              <p className="line-clamp-2 text-sm font-bold text-navy">{category.name}</p>
-              <p className="mt-1 text-xs text-muted">{total || products.length} รายการ</p>
+              <span>
+                <span className="line-clamp-2 text-sm font-semibold text-navy group-hover:text-white">{category.name}</span>
+                <span className="num mt-0.5 block text-xs text-muted group-hover:text-white/70">{total || products.length} items</span>
+              </span>
+              <span aria-hidden className="num text-forge group-hover:text-white">→</span>
             </Link>
           ))}
         </div>
@@ -153,8 +152,8 @@ export default async function HomePage() {
         <Link href="/custom-print" className="card relative flex min-h-40 overflow-hidden bg-navy text-white">
           <Image src="/print/p2s-farm.png" alt="" fill className="object-cover opacity-35" sizes="1200px" />
           <div className="relative flex flex-col justify-end p-6 md:p-8">
-            <p className="text-xs font-semibold text-forge">งานพิมพ์</p>
-            <p className="mt-1 text-2xl font-black">พิมพ์ 3D ตามสั่ง</p>
+            <p className="eyebrow !text-steel before:!bg-forge">Custom print</p>
+            <p className="mt-2 text-2xl font-bold">พิมพ์ 3D ตามสั่ง</p>
             <p className="mt-1 max-w-xl text-sm text-white/80">จิ๊ก ที่เก็บ และอะไหล่ที่ของแท้มักไม่มี — P2S 6 เครื่องพร้อมรับงาน</p>
           </div>
         </Link>

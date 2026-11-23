@@ -1,5 +1,6 @@
 "use client";
 
+import { FreeShipMeter } from "@/components/FreeShipMeter";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -93,7 +94,7 @@ export function CartDrawer() {
           <h2 className="truncate text-base font-bold text-navy sm:text-lg">ตะกร้าสินค้า</h2>
           <button
             type="button"
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full hover:bg-steel"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] hover:bg-steel"
             aria-label="ปิด"
             onClick={() => setOpen(false)}
           >
@@ -111,10 +112,10 @@ export function CartDrawer() {
               {lines.map((line) => (
                 <li
                   key={cartLineKey(line.productId, line.variantId)}
-                  className="overflow-hidden rounded-2xl border border-navy/10 bg-white p-3"
+                  className="overflow-hidden rounded-[3px] border border-navy/10 bg-white p-3"
                 >
                   <div className="flex gap-3">
-                    <div className="relative h-16 w-16 shrink-0 self-start overflow-hidden rounded-xl bg-steel sm:h-20 sm:w-20 sm:rounded-2xl">
+                    <div className="relative h-16 w-16 shrink-0 self-start overflow-hidden rounded-[3px] bg-steel sm:h-20 sm:w-20 sm:rounded-[3px]">
                       <Image
                         src={line.imageUrl || line.product.imageUrl}
                         alt={line.product.nameTh}
@@ -144,10 +145,10 @@ export function CartDrawer() {
                   </div>
 
                   <div className="mt-3 flex items-center justify-between gap-3 border-t border-gray-100 pt-3">
-                    <div className="inline-flex h-9 items-center rounded-full bg-steel">
+                    <div className="inline-flex h-9 items-center border border-navy/20 bg-white">
                       <button
                         type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+                        className="inline-flex h-9 w-9 items-center justify-center hover:bg-steel"
                         onClick={() => setQty(line.productId, line.quantity - 1, line.variantId)}
                         aria-label="ลดจำนวน"
                       >
@@ -156,7 +157,7 @@ export function CartDrawer() {
                       <span className="w-7 text-center text-sm tabular-nums">{line.quantity}</span>
                       <button
                         type="button"
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full"
+                        className="inline-flex h-9 w-9 items-center justify-center hover:bg-steel"
                         onClick={() => setQty(line.productId, line.quantity + 1, line.variantId)}
                         aria-label="เพิ่มจำนวน"
                       >
@@ -165,7 +166,7 @@ export function CartDrawer() {
                     </div>
                     <button
                       type="button"
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted hover:bg-steel hover:text-navy"
+                      className="inline-flex h-9 w-9 items-center justify-center hover:bg-steel text-muted hover:bg-steel hover:text-navy"
                       onClick={() => removeItem(line.productId, line.variantId)}
                       aria-label="ลบ"
                     >
@@ -189,16 +190,7 @@ export function CartDrawer() {
               <span className="tabular-nums">{shipping === 0 ? "ฟรี" : formatTHB(shipping)}</span>
             </div>
           </div>
-          {subtotal > 0 && shipping > 0 ? (
-            <p className="mt-2 text-xs leading-snug text-muted">
-              ซื้อเพิ่มอีก {formatTHB(Math.max(0, freeShippingMin - subtotal))} ส่งฟรี (ค่าส่ง{" "}
-              {formatTHB(flatShippingFee)})
-            </p>
-          ) : subtotal > 0 && shipping === 0 ? (
-            <p className="mt-2 text-xs leading-snug text-muted">
-              ส่งฟรีเมื่อยอดครบ {formatTHB(freeShippingMin)}
-            </p>
-          ) : null}
+          <FreeShipMeter subtotal={subtotal} min={freeShippingMin} />
           <div className="mt-3 flex items-center justify-between gap-4 border-t border-gray-100 pt-3 font-bold">
             <span>รวม</span>
             <span className="text-base tabular-nums text-navy sm:text-lg">{formatTHB(total)}</span>
