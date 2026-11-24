@@ -37,6 +37,7 @@ const schema = z
     ).min(1).max(50),
     paymentMethod: z.enum(["mock", "payso", "bank_transfer", "promptpay_qr"]),
     customerNote: z.string().max(500).optional().or(z.literal("")),
+    voucherCode: z.string().max(30).optional().or(z.literal("")),
     wantReceipt: z.boolean().optional(),
     billing: billingSchema.optional(),
     address: z.object({
@@ -120,6 +121,7 @@ export async function POST(req: Request) {
       customerNote: data.customerNote?.trim() || undefined,
       wantReceipt: data.wantReceipt || undefined,
       billing,
+      voucherCode: data.voucherCode || undefined,
     });
 
     notifyShop(orderAlertText("new", order));

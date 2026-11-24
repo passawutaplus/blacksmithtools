@@ -14,6 +14,7 @@ import {
   Settings,
   Star,
   X,
+  Ticket,
 } from "lucide-react";
 import { adminJson } from "@/lib/admin-client";
 import { cn } from "@/lib/utils";
@@ -26,6 +27,7 @@ const NAV = [
   { href: "/admin/slips", label: "สลิป", icon: ImageIcon },
   { href: "/admin/products", label: "สินค้า", icon: Package },
   { href: "/admin/reviews", label: "รีวิว", icon: Star },
+  { href: "/admin/vouchers", label: "คูปอง", icon: Ticket },
   { href: "/admin/settings", label: "ตั้งค่า", icon: Settings },
 ];
 
