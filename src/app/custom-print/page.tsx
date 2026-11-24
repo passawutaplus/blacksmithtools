@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Layers, Droplets, ListOrdered, MessageCircle, Truck, RotateCcw, ShieldCheck, Printer, FileDown } from "lucide-react";
+import { Calculator, Layers, Droplets, ListOrdered, MessageCircle, Truck, RotateCcw, ShieldCheck, Printer, FileDown } from "lucide-react";
 import { getSettings } from "@/lib/db";
 import { PrintQuoteForm } from "@/components/PrintQuoteForm";
 import { PrintGuide } from "@/components/PrintGuide";
@@ -122,6 +122,10 @@ export default async function CustomPrintPage() {
                 <MessageCircle className="h-4 w-4" aria-hidden />
                 คุยผ่าน LINE
               </a>
+              <Link href="/custom-print/quote" className="btn btn-secondary text-navy">
+                <Calculator className="h-4 w-4" aria-hidden />
+                ประเมินราคาจากไฟล์
+              </Link>
               <a href="#quote" className="btn btn-secondary text-navy">
                 กรอกสเปกงาน
               </a>

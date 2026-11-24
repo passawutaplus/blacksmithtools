@@ -1,0 +1,88 @@
+import { NextResponse, after } from "next/server";
+import { customAlphabet } from "nanoid";
+import { quoteRequestSchema, type QuoteRequest } from "@/lib/print-quote/request";
+import { PRINT_CONFIG } from "@/lib/print-quote/pricing";
+import { clientIp, rateLimited } from "@/lib/rate-limit";
+import { hasBlobStore, writeRuntimeBytes } from "@/lib/runtime-store";
+import { pushLine } from "@/lib/notify";
+
+export const dynamic = "force-dynamic";
+
+const quoteId = customAlphabet("ABCDEFGHJKLMNPQRSTUVWXYZ23456789", 5);
+
+function siteUrl() {
+  return (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
+}
+
+function alertText(id: string, q: QuoteRequest) {
+  const proc = PRINT_CONFIG[q.process];
+  const files = q.files
+    .slice(0, 15)
+    .map((f) => {
+      const size = f.dims ? ` ${f.dims.map((n) => n.toFixed(0)).join("×")}มม.` : "";
+      const flag = f.status === "ok" ? "" : f.status === "warn" ? " ⚠" : " ✕";
+      const want = f.wantMm?.some(Boolean) ? `\n   ต้องการ ${f.wantMm.map((n) => n || "-").join("×")} มม.` : "";
+      const note = f.note?.trim() ? `\n   📝 ${f.note.trim().slice(0, 200)}` : "";
+      const link = f.blobPath && siteUrl()
+        ? `\n   ${siteUrl()}/api/admin/print-file?path=${encodeURIComponent(f.blobPath)}`
+        : "";
+      return `• ${f.name} × ${f.qty}${size}${flag}${want}${note}${link}`;
+    })
+    .join("\n");
+  const price = q.estimate.printTHB != null ? `฿${q.estimate.printTHB.toLocaleString("th-TH")}` : "ยังไม่มีสูตร";
+  const c = q.contact;
+  return [
+    `🧊 ขอใบเสนอราคาพิมพ์ 3D #${id}`,
+    `${proc.label} · layer ${proc.layerMm[q.quality]} มม.`,
+    files,
+    `ราคาประเมิน: ${price} + ส่ง ${q.shipping === "parcel" ? `฿${PRINT_CONFIG.shippingTHB}` : "ไรเดอร์ เก็บปลายทาง"}`,
+    `👤 ${c.name} · ${c.phone}${c.lineId ? ` · LINE ${c.lineId}` : ""}`,
+    `📦 ${c.address} ${c.district} ${c.province} ${c.zip}`,
+    c.wantDate ? `📅 ต้องการรับ ${c.wantDate}` : "",
+    q.keepFiles ? "ไฟล์: ใช้เพื่องานนี้ ลบอัตโนมัติใน 30 วัน" : "ไฟล์: ลูกค้าไม่ให้เก็บไฟล์ ขอไฟล์ทางแชท",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export async function POST(req: Request) {
+  if (rateLimited(`pq:${clientIp(req)}`, 6, 10 * 60_000)) {
+    return NextResponse.json({ error: "ส่งคำขอถี่ไป ลองใหม่ในอีกครู่" }, { status: 429 });
+  }
+  let json: unknown;
+  try {
+    json = await req.json();
+  } catch {
+    return NextResponse.json({ error: "ข้อมูลไม่ถูกต้อง" }, { status: 400 });
+  }
+  const parsed = quoteRequestSchema.safeParse(json);
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message;
+    return NextResponse.json({ error: msg && !msg.startsWith("Invalid") ? msg : "ข้อมูลไม่ครบ" }, { status: 400 });
+  }
+  const q = parsed.data;
+
+  // Files are only kept when the customer agreed.
+  if (!q.keepFiles) q.files.forEach((f) => delete f.blobPath);
+
+  // Make sure every referenced file really exists in our private store.
+  if (hasBlobStore() && q.files.some((f) => f.blobPath)) {
+    const { head } = await import("@vercel/blob");
+    for (const f of q.files) {
+      if (!f.blobPath) continue;
+      try {
+        await head(f.blobPath);
+      } catch {
+        delete f.blobPath;
+      }
+    }
+  }
+
+  const id = `Q${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${quoteId()}`;
+  await writeRuntimeBytes(
+    `print-quotes/requests/${id}.json`,
+    Buffer.from(JSON.stringify({ id, createdAt: new Date().toISOString(), ...q }, null, 2)),
+  );
+  after(() => pushLine(alertText(id, q)));
+  return NextResponse.json({ ok: true, id });
+}
