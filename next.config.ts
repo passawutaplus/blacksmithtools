@@ -2,12 +2,6 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
-  // Articles are read from content/ at runtime by routes that are not prerendered (e.g. sitemap).
-  outputFileTracingIncludes: {
-    "/sitemap.xml": ["./content/articles/**/*"],
-    "/tools-lab": ["./content/articles/**/*"],
-    "/tools-lab/[slug]": ["./content/articles/**/*"],
-  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "cf.shopee.co.th" },
