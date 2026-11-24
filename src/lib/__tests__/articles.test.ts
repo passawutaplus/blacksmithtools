@@ -5,12 +5,9 @@ import { readFileSync, readdirSync } from "fs";
 import path from "path";
 import bundledJson from "../../data/articles.json";
 const bundled = bundledJson as { slug: string; raw: string }[];
-<<<<<<< HEAD
 import { extractFaq, parseArticle, renderMarkdown, shortProductName } from "../articles";
 import catalog from "../../data/shopee-catalog.json";
-=======
 import { extractFaq, parseArticle, renderMarkdown } from "../articles";
->>>>>>> origin/master
 
 describe("articles", () => {
   it("parses front matter", () => {
@@ -50,7 +47,6 @@ describe("articles", () => {
     expect(bundled.map((b) => b.slug)).toEqual(files.map((f) => f.replace(/\.md$/, "")));
     for (const b of bundled) expect(b.raw).toBe(readFileSync(path.join(dir, `${b.slug}.md`), "utf8"));
   });
-<<<<<<< HEAD
   it("renders [[products: ...]] as product cards without prices and skips unknown ids", () => {
     const id = (catalog.products as { id: string }[])[0].id;
     const html = renderMarkdown(`[[products: ${id}, p-does-not-exist]]`);
@@ -70,6 +66,4 @@ describe("articles", () => {
       for (const m of b.raw.matchAll(/^\[\[products:\s*([^\]]+)\]\]$/gm))
         for (const id of m[1].split(",").map((x) => x.trim())) expect(ids.has(id), `${b.slug}: ${id}`).toBe(true);
   });
-=======
->>>>>>> origin/master
 });
