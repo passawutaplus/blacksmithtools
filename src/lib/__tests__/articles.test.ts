@@ -7,7 +7,6 @@ import bundledJson from "../../data/articles.json";
 const bundled = bundledJson as { slug: string; raw: string }[];
 import { extractFaq, parseArticle, renderMarkdown, shortProductName } from "../articles";
 import catalog from "../../data/shopee-catalog.json";
-import { extractFaq, parseArticle, renderMarkdown } from "../articles";
 
 describe("articles", () => {
   it("parses front matter", () => {
