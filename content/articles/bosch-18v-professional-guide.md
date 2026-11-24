@@ -4,7 +4,7 @@ description: Bosch 18V สีน้ำเงิน Professional กับสี�
 date: 2026-11-24
 pillar: product
 cover: /articles/brand-bosch.webp
-coverAlt: ปกบทความ Bosch 18V: สว่านสีน้ำเงิน Professional กับสีเขียว DIY วางคู่กัน กล่อง L-BOXX และภาพขาวดำช่างกลึงยุคเก่า
+coverAlt: ปกบทความ Bosch 18V: คอลลาจสว่านสีน้ำเงิน Professional กับสีเขียว DIY แบต ProCORE18V กล่อง L-BOXX เวอร์เนียร์ และภาพขาวดำช่างกลึงยุคเก่า
 keywords: Bosch 18V, Bosch สีน้ำเงิน สีเขียว ต่างกัน, Bosch Professional, แบต Bosch 18V, Bosch 12V, กล่อง L-BOXX, ที่เก็บแบต Bosch
 ---
 

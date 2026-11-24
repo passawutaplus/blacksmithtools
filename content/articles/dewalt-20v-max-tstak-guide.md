@@ -4,7 +4,7 @@ description: DeWalt 20V MAX, 12V MAX และ FLEXVOLT ต่างกันย
 date: 2026-11-24
 pillar: product
 cover: /articles/brand-dewalt.webp
-coverAlt: ปกบทความ DeWalt 20V MAX: สว่าน 20V MAX XR แบต 20V MAX 5Ah กล่อง TSTAK และภาพขาวดำช่างไม้กับเลื่อยแขนยุคเก่า
+coverAlt: ปกบทความ DeWalt 20V MAX: คอลลาจสว่าน 20V MAX XR ไขควงกระแทก แบต 20V MAX 5Ah กล่อง TSTAK ดอกสว่าน และภาพขาวดำช่างไม้กับเลื่อยแขนยุคเก่า
 keywords: DeWalt 20V, DeWalt 20V MAX, TSTAK, ToughSystem 2.0, DeWalt FLEXVOLT, DeWalt 12V, กล่องเครื่องมือ DeWalt, ที่เก็บแบต DeWalt
 ---
 

@@ -4,7 +4,7 @@ description: แบต Makita 18V LXT, XGT 40V max และ CXT 12V max ต่�
 date: 2026-11-24
 pillar: product
 cover: /articles/brand-makita.webp
-coverAlt: ปกบทความแบต Makita 3 ระบบ: แบต CXT 12V max, LXT 18V และ XGT 40V max วางเทียบขนาด และภาพขาวดำช่างซ่อมมอเตอร์ยุคเก่า
+coverAlt: ปกบทความแบต Makita 3 ระบบ: คอลลาจแบต CXT 12V max, LXT 18V และ XGT 40V max สว่าน XGT แบบร่างแบตเตอรี่ ทุ่นมอเตอร์ และภาพขาวดำช่างซ่อมมอเตอร์ยุคเก่า
 keywords: แบต Makita 18V, Makita LXT, Makita XGT 40V, Makita CXT 12V, แบต Makita 40V ใส่ 18V ได้ไหม, ที่เก็บแบต Makita, ที่แขวนสว่าน Makita
 ---
 
