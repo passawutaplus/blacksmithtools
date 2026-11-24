@@ -6,9 +6,6 @@ import { CalendarDays, ChevronDown, Clock, ListOrdered } from "lucide-react";
 import { PILLAR_LABEL, extractFaq, getArticle, listArticles, plainText, readingMinutes, renderMarkdown, splitFaq, splitSections } from "@/lib/articles";
 import { ArticleToc } from "@/components/ArticleToc";
 import { ReadingProgress } from "@/components/ReadingProgress";
-
-/** Layout trial: "open" = every section starts open; "first" = only the first section starts open. */
-const START_OPEN: "open" | "first" = "first";
 import { jsonLd } from "@/lib/json-ld";
 
 export async function generateStaticParams() {
@@ -143,7 +140,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
             {sections.map((sec, i) => {
               const faqParts = sec.faq ? splitFaq(sec.md) : null;
               return (
-                <details key={sec.id} id={sec.id} className="art-sec" open={START_OPEN === "open" || i === 0}>
+                <details key={sec.id} id={sec.id} className="art-sec" open>
                   <summary>
                     <span className="num art-sec-n">{String(i + 1).padStart(2, "0")}</span>
                     <h2 dangerouslySetInnerHTML={{ __html: renderMarkdown(`## ${sec.title}`).replace(/^<h2>|<\/h2>$/g, "") }} />
