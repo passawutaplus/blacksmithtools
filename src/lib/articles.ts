@@ -1,5 +1,5 @@
 import "server-only";
-import bundled from "@/data/articles.json";
+import bundled from "../data/articles.json";
 
 /**
  * Articles live as Markdown files in content/articles/<slug>.md (bundled into src/data/articles.json by

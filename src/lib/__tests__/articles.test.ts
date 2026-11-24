@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 import { readFileSync, readdirSync } from "fs";
 import path from "path";
-import bundled from "@/data/articles.json";
+import bundled from "../../data/articles.json";
 import { extractFaq, parseArticle, renderMarkdown } from "../articles";
 
 describe("articles", () => {
