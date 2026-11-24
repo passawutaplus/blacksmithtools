@@ -4,6 +4,8 @@ import { SHOP_ADDRESS, SHOP_PHONE } from "./shop-contact";
 import type { Brand, Category, Product, SiteSettings } from "./types";
 
 export const CATALOG_VERSION = catalog.version;
+/** Bump copyVersion in the catalog JSON to push new names/descriptions to an existing DB without resetting stock, prices or admin edits. */
+export const COPY_VERSION = (catalog as { copyVersion?: string }).copyVersion ?? "";
 export const TIKTOK_PROFILE_URL = "https://www.tiktok.com/@blacksmith_ts";
 export const FACEBOOK_PAGE_URL = "https://www.facebook.com/blacksmithtoolsandsupplies";
 
