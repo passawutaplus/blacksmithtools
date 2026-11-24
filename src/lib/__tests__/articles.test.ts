@@ -5,7 +5,8 @@ import { readFileSync, readdirSync } from "fs";
 import path from "path";
 import bundledJson from "../../data/articles.json";
 const bundled = bundledJson as { slug: string; raw: string }[];
-import { extractFaq, parseArticle, renderMarkdown } from "../articles";
+import { extractFaq, parseArticle, renderMarkdown, shortProductName } from "../articles";
+import catalog from "../../data/shopee-catalog.json";
 
 describe("articles", () => {
   it("parses front matter", () => {
@@ -44,5 +45,24 @@ describe("articles", () => {
     const files = readdirSync(dir).filter((f) => /^[a-z0-9-]+\.md$/.test(f)).sort();
     expect(bundled.map((b) => b.slug)).toEqual(files.map((f) => f.replace(/\.md$/, "")));
     for (const b of bundled) expect(b.raw).toBe(readFileSync(path.join(dir, `${b.slug}.md`), "utf8"));
+  });
+  it("renders [[products: ...]] as product cards without prices and skips unknown ids", () => {
+    const id = (catalog.products as { id: string }[])[0].id;
+    const html = renderMarkdown(`[[products: ${id}, p-does-not-exist]]`);
+    expect(html).toContain('class="article-products"');
+    expect(html.match(/class="article-product"/g)).toHaveLength(1);
+    expect(html).toContain(`href="/product/${id}"`);
+    expect(html).not.toMatch(/฿/);
+    expect(renderMarkdown("[[products: p-nope]]")).toBe("");
+  });
+  it("shortens marketplace titles", () => {
+    expect(shortProductName("Milwaukee Battery M18 Mount (โดยเฉพาะ) BlackSmith-แบรนด์คนไทย")).toBe("Milwaukee Battery M18 Mount");
+    expect(shortProductName("ก".repeat(100)).length).toBeLessThanOrEqual(70);
+  });
+  it("every product id used in an article exists in the catalog", () => {
+    const ids = new Set((catalog.products as { id: string }[]).map((p) => p.id));
+    for (const b of bundled)
+      for (const m of b.raw.matchAll(/^\[\[products:\s*([^\]]+)\]\]$/gm))
+        for (const id of m[1].split(",").map((x) => x.trim())) expect(ids.has(id), `${b.slug}: ${id}`).toBe(true);
   });
 });

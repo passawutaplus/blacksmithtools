@@ -1,5 +1,6 @@
 import "server-only";
 import bundled from "../data/articles.json";
+import catalog from "../data/shopee-catalog.json";
 
 /**
  * Articles live as Markdown files in content/articles/<slug>.md (bundled into src/data/articles.json by
@@ -106,7 +107,29 @@ export function extractFaq(body: string): { q: string; a: string }[] {
     .filter((f) => f.q && f.a);
 }
 
-/** Small, safe Markdown subset: ![alt](/img.webp) images, ## / ### headings, paragraphs, - lists, 1. lists, > quotes, **bold**, *italic*, [links](url). */
+type CatalogProduct = { id: string; name: string; imageUrl: string };
+const catalogById = new Map((catalog.products as CatalogProduct[]).map((p) => [p.id, p]));
+
+/** Short display name from a long marketplace title (drops the brand tagline, caps the length). */
+export function shortProductName(name: string) {
+  const s = name
+    .replace(/BlackSmith\s*[-–]?\s*แบรนด์คนไทย/gi, "")
+    .replace(/\(โดยเฉพาะ\)/g, "")
+    .replace(/\.{3}$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return s.length > 70 ? `${s.slice(0, 68).trim()}…` : s;
+}
+
+/** Product card for `[[products: p-1, p-2]]` lines: real shop photo + name, links to the product page. No prices. */
+export function productCard(id: string) {
+  const p = catalogById.get(id);
+  if (!p || !/^https:\/\//.test(p.imageUrl)) return "";
+  const name = shortProductName(p.name);
+  return `<a class="article-product" href="/product/${encodeURIComponent(p.id)}"><img src="${escapeHtml(p.imageUrl)}" alt="${escapeHtml(name)}" width="400" height="400" loading="lazy" decoding="async" /><span class="n">${escapeHtml(name)}</span><span class="c">ดูสินค้า</span></a>`;
+}
+
+/** Small, safe Markdown subset: [[products: id, id]] product cards, ![alt](/img.webp) images, ## / ### headings, paragraphs, - lists, 1. lists, > quotes, **bold**, *italic*, [links](url). */
 export function renderMarkdown(md: string) {
   const out: string[] = [];
   let list: "ul" | "ol" | null = null;
@@ -132,6 +155,14 @@ export function renderMarkdown(md: string) {
       out.push(
         `<figure><img src="${escapeHtml(m[2])}" alt="${escapeHtml(m[1])}" width="1080" height="1080" loading="lazy" decoding="async" /><figcaption>${inline(m[1])}</figcaption></figure>`,
       );
+    } else if ((m = line.match(/^\[\[products:\s*([^\]]+)\]\]$/))) {
+      flushPara();
+      closeList();
+      const cards = m[1]
+        .split(",")
+        .map((id) => productCard(id.trim()))
+        .filter(Boolean);
+      if (cards.length) out.push(`<div class="article-products">${cards.join("")}</div>`);
     } else if ((m = line.match(/^(#{2,3})\s+(.*)$/))) {
       flushPara();
       closeList();
