@@ -17,15 +17,18 @@ import { getProductDetailSections } from "@/lib/parse-product-details";
 import { useCartStore } from "@/lib/cart-store";
 import { MarketplaceButtons } from "@/components/MarketplaceButtons";
 import { ProductDetailSections } from "@/components/ProductDetailSections";
+import { ProductVouchers } from "@/components/ProductVouchers";
 
 export function ProductDetail({
   product,
   brands,
   categories,
+  stats,
 }: {
   product: Product;
   brands: Brand[];
   categories: Category[];
+  stats?: { sold: number; rating: number; ratingCount: number };
 }) {
   const router = useRouter();
   const detailSections = useMemo(() => getProductDetailSections(product), [product]);
@@ -139,6 +142,24 @@ export function ProductDetail({
 
       <div>
         <h1 className="text-2xl font-bold leading-snug text-navy md:text-3xl">{shortProductName(product.nameTh)}</h1>
+        {stats && (stats.sold > 0 || stats.ratingCount > 0) ? (
+          <dl className="num mt-4 inline-flex border border-navy/12 bg-white text-navy">
+            {stats.ratingCount > 0 ? (
+              <div className="border-r border-navy/12 px-3 py-2">
+                <dt className="text-[11px] font-medium text-muted">คะแนนรีวิว ({stats.ratingCount})</dt>
+                <dd className="text-sm font-semibold">
+                  <span className="text-forge">{stats.rating.toFixed(1)}</span> / 5
+                </dd>
+              </div>
+            ) : null}
+            {stats.sold > 0 ? (
+              <div className="px-3 py-2">
+                <dt className="text-[11px] font-medium text-muted">ขายแล้ว</dt>
+                <dd className="text-sm font-semibold">{stats.sold.toLocaleString("th-TH")} ชิ้น</dd>
+              </div>
+            ) : null}
+          </dl>
+        ) : null}
         <p className="num mt-3 text-2xl font-semibold leading-none text-navy md:hidden">{formatTHB(price)}</p>
 
         {fitBrands.length > 0 ? (
@@ -256,9 +277,11 @@ export function ProductDetail({
           </div>
         </div>
 
+        <ProductVouchers />
+
         <dl className="mt-6 grid grid-cols-3 border border-navy/12 bg-white text-navy">
           {[
-            ["สถานะ", stock > 0 ? `พร้อมสั่ง ${stock}` : "รอคิวพิมพ์"],
+            ["สถานะ", stock > 0 ? (stock <= 5 ? `เหลือ ${stock} ชิ้น` : `พร้อมสั่ง ${stock}`) : "รอคิวพิมพ์"],
             ["จัดส่ง", "ภายใน 2 วัน"],
             ["ค่าส่ง", "฿35 · ฟรี ฿1,000+"],
           ].map(([k, v]) => (

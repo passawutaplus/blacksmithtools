@@ -8,6 +8,7 @@ import type { AdminOrderRow } from "./admin-types";
 import { phonesMatch } from "./phone";
 import { completeThaiAddress } from "./thai-address";
 import { normalizeShopReview, sortShopReviews } from "./reviews";
+import { evaluateVoucher, isClaimable, normalizeVoucherCode, normalizeVoucherInput, type VoucherCheck } from "./vouchers";
 import { readRuntimeBytes, runtimeRoot, safeUploadName } from "./runtime-store";
 import { StateConflictError, readState, withStateRetry, writeState } from "./state-store";
 
@@ -38,6 +39,7 @@ import type {
   ShippingAddress,
   SiteSettings,
   ShopReview,
+  Voucher,
   WholesaleLead,
   WholesaleLeadStatus,
 } from "./types";
@@ -139,6 +141,7 @@ async function ensureDb(): Promise<DbShape> {
   loadedVersion.set(db, version);
   if (!Array.isArray(db.inquiries)) db.inquiries = [];
   if (!Array.isArray(db.testimonials)) db.testimonials = [];
+  if (!Array.isArray(db.vouchers)) db.vouchers = [];
   if (typeof db.inquirySeq !== "number") db.inquirySeq = db.inquiries.length;
   db.settings = { ...defaultSettings, ...db.settings };
   const catalogChanged = applyCatalog(db);
@@ -276,6 +279,106 @@ async function deleteShopReview__impl(id: string) {
   if (db.testimonials.length === before) throw new Error("ไม่พบรีวิว");
   await saveDb(db);
   return { ok: true as const };
+}
+
+/* ---------- vouchers ---------- */
+
+export async function listVouchers() {
+  const db = await ensureDb();
+  return [...(db.vouchers ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/** Public chips only: no secret codes, no usage counters. */
+export async function listClaimableVouchers() {
+  const db = await ensureDb();
+  return (db.vouchers ?? [])
+    .filter((v) => isClaimable(v))
+    .map((v) => ({
+      code: v.code,
+      kind: v.kind,
+      value: v.value,
+      minSubtotal: v.minSubtotal,
+      maxDiscount: v.maxDiscount,
+      endsAt: v.endsAt,
+    }));
+}
+
+async function saveVoucher__impl(input: Partial<Voucher>) {
+  const db = await ensureDb();
+  const vouchers = (db.vouchers ??= []);
+  const existing = input.id ? vouchers.find((v) => v.id === input.id) : undefined;
+  const next = normalizeVoucherInput(input, existing);
+  if (vouchers.some((v) => v.code === next.code && v.id !== existing?.id)) {
+    throw new Error("มีโค้ดนี้อยู่แล้ว");
+  }
+  const now = new Date().toISOString();
+  if (existing) {
+    Object.assign(existing, next, { updatedAt: now });
+    await saveDb(db);
+    return existing;
+  }
+  const row: Voucher = { ...next, id: nanoid(10), usedCount: 0, createdAt: now, updatedAt: now };
+  vouchers.push(row);
+  await saveDb(db);
+  return row;
+}
+
+async function deleteVoucher__impl(id: string) {
+  const db = await ensureDb();
+  const before = (db.vouchers ?? []).length;
+  db.vouchers = (db.vouchers ?? []).filter((v) => v.id !== id);
+  if (db.vouchers.length === before) throw new Error("ไม่พบโค้ด");
+  await saveDb(db);
+  return { ok: true as const };
+}
+
+function phoneUsedVoucher(db: DbShape, code: string, phone?: string) {
+  if (!phone) return false;
+  return db.orders.some(
+    (o) =>
+      o.voucherCode === code &&
+      o.status !== "cancelled" &&
+      o.status !== "refunded" &&
+      phonesMatch(o.address.phone, phone),
+  );
+}
+
+function checkVoucherIn(db: DbShape, rawCode: string, subtotal: number, shippingFee: number, phone?: string): VoucherCheck {
+  const code = normalizeVoucherCode(rawCode);
+  const v = (db.vouchers ?? []).find((x) => x.code === code);
+  return evaluateVoucher(v, {
+    subtotal,
+    shippingFee,
+    phoneAlreadyUsed: v?.oncePerPhone ? phoneUsedVoucher(db, code, phone) : false,
+  });
+}
+
+/** Read-only preview for the checkout box. createOrder re-checks for real. */
+export async function checkVoucher(code: string, items: CartItemInput[], phone?: string) {
+  const db = await ensureDb();
+  const subtotal = cleanCartItems(items).reduce((sum, ci) => {
+    const p = db.products.find((x) => x.id === ci.productId);
+    return p ? sum + linePricing(p, ci.variantId).price * ci.quantity : sum;
+  }, 0);
+  const shippingFee = subtotal > 0 ? calcShipping(subtotal, db.settings) : 0;
+  const result = checkVoucherIn(db, code, subtotal, shippingFee, phone);
+  return { ...result, code: normalizeVoucherCode(code), subtotal, shippingFee };
+}
+
+const SOLD_STATUSES: OrderStatus[] = ["paid", "packing", "shipped", "delivered", "completed"];
+
+/** Real numbers only: units on paid orders, stars from published reviews tied to this product. */
+export async function getProductStats(productId: string) {
+  const db = await ensureDb();
+  let sold = 0;
+  for (const o of db.orders) {
+    if (!SOLD_STATUSES.includes(o.status)) continue;
+    for (const i of o.items) if (i.productId === productId) sold += i.quantity;
+  }
+  const rated = db.testimonials.filter((r) => r.published && r.productId === productId);
+  const ratingCount = rated.length;
+  const rating = ratingCount ? Math.round((rated.reduce((s, r) => s + r.stars, 0) / ratingCount) * 10) / 10 : 0;
+  return { sold, rating, ratingCount };
 }
 
 export async function listProducts(filters?: {
@@ -504,6 +607,7 @@ async function createOrder__impl(input: {
   customerNote?: string;
   wantReceipt?: boolean;
   billing?: BillingInfo;
+  voucherCode?: string;
 }) {
   const db = await ensureDb();
   const cartItems = cleanCartItems(input.items);
@@ -532,7 +636,16 @@ async function createOrder__impl(input: {
 
   const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
   const shippingFee = calcShipping(subtotal, db.settings);
-  const discount = 0;
+  let discount = 0;
+  let voucherCode: string | undefined;
+  if (input.voucherCode?.trim()) {
+    const check = checkVoucherIn(db, input.voucherCode, subtotal, shippingFee, input.address.phone);
+    if (!check.ok) throw new Error(check.error);
+    discount = check.discount;
+    voucherCode = normalizeVoucherCode(input.voucherCode);
+    const used = db.vouchers?.find((v) => v.code === voucherCode);
+    if (used) used.usedCount += 1;
+  }
   const grandTotal = subtotal + shippingFee - discount;
 
   db.orderSeq += 1;
@@ -562,13 +675,14 @@ async function createOrder__impl(input: {
     customerNote: input.customerNote || undefined,
     wantReceipt: input.wantReceipt || undefined,
     billing: input.billing,
+    voucherCode,
     shipmentIds: [],
     events: [],
     stockReservedUntil: reserveUntil,
     createdAt: now,
     updatedAt: now,
   };
-  pushEvent(order, "created", "สร้างคำสั่งซื้อแล้ว");
+  pushEvent(order, "created", voucherCode ? `สร้างคำสั่งซื้อแล้ว (ใช้โค้ด ${voucherCode} ลด ฿${discount})` : "สร้างคำสั่งซื้อแล้ว");
 
   const payment: Payment = {
     id: nanoid(12),
@@ -1266,6 +1380,10 @@ export async function getBrandsAndCategories() {
 }
 
 function restoreStock(db: DbShape, order: Order) {
+  if (order.voucherCode) {
+    const v = db.vouchers?.find((x) => x.code === order.voucherCode);
+    if (v) v.usedCount = Math.max(0, v.usedCount - 1);
+  }
   for (const item of order.items) {
     const product = db.products.find((p) => p.id === item.productId);
     if (!product) continue;
@@ -1522,6 +1640,8 @@ export async function confirmPaysoPaid(paysoRef: string, verifiedTotal: number, 
 export const getSettings = withStateRetry(getSettings__impl);
 export const updateSettings = withStateRetry(updateSettings__impl);
 export const saveShopReview = withStateRetry(saveShopReview__impl);
+export const saveVoucher = withStateRetry(saveVoucher__impl);
+export const deleteVoucher = withStateRetry(deleteVoucher__impl);
 export const deleteShopReview = withStateRetry(deleteShopReview__impl);
 export const upsertProduct = withStateRetry(upsertProduct__impl);
 export const deleteProducts = withStateRetry(deleteProducts__impl);

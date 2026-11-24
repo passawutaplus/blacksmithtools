@@ -3,7 +3,7 @@ import { shortProductName } from "@/lib/product";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { getProductBySlug, listProducts, getSettings, listPublishedReviews } from "@/lib/db";
+import { getProductBySlug, listProducts, getSettings, listPublishedReviews, getProductStats } from "@/lib/db";
 import { ReviewSection } from "@/components/ReviewSection";
 import { formatTHB } from "@/lib/utils";
 import { getProductBlurb } from "@/lib/parse-product-details";
@@ -57,12 +57,13 @@ export default async function ProductPage({
   if (product.slug && product.slug !== requested) {
     redirect(`/product/${encodeURI(product.slug)}`);
   }
-  const [{ products: related }, settings, reviews] = await Promise.all([
+  const [{ products: related }, settings, reviews, stats] = await Promise.all([
     listProducts({
       brand: brands[0]?.slug,
     }),
     getSettings(),
     listPublishedReviews(product.id),
+    getProductStats(product.id),
   ]);
   const relatedList = related.filter((p) => p.id !== product.id).slice(0, 4);
   const optionCount = product.variants?.length ?? 0;
@@ -122,7 +123,7 @@ export default async function ProductPage({
         <span className="mx-2 hidden md:inline">/</span>
         <span className="hidden text-navy md:inline">{shortProductName(product.nameTh)}</span>
       </nav>
-      <ProductDetail product={product} brands={brands} categories={shopCats.length ? shopCats : categories} />
+      <ProductDetail product={product} brands={brands} categories={shopCats.length ? shopCats : categories} stats={stats} />
 
       <ReviewSection reviews={reviews.slice(0, 3)} settings={settings} embedded />
 
