@@ -9,7 +9,9 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "qr:go": "node scripts/build-go-qr.mjs"
+    "qr:go": "node scripts/build-go-qr.mjs",
+    "articles": "node scripts/build-articles.mjs",
+    "prebuild": "node scripts/build-articles.mjs"
   },
   "dependencies": {
     "@vercel/blob": "^2.9.0",

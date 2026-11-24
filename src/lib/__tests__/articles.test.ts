@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
+import { readFileSync, readdirSync } from "fs";
+import path from "path";
+import bundledJson from "../../data/articles.json";
+const bundled = bundledJson as { slug: string; raw: string }[];
 import { extractFaq, parseArticle, renderMarkdown } from "../articles";
 
 describe("articles", () => {
@@ -34,5 +38,11 @@ describe("articles", () => {
       { q: "ถามหนึ่ง", a: "ตอบ หนึ่ง" },
       { q: "ถามสอง", a: "ตอบสอง ลิงก์ อ่านต่อ" },
     ]);
+  });
+  it("bundled articles.json matches content/articles (run `npm run articles`)", () => {
+    const dir = path.join(process.cwd(), "content", "articles");
+    const files = readdirSync(dir).filter((f) => /^[a-z0-9-]+\.md$/.test(f)).sort();
+    expect(bundled.map((b) => b.slug)).toEqual(files.map((f) => f.replace(/\.md$/, "")));
+    for (const b of bundled) expect(b.raw).toBe(readFileSync(path.join(dir, `${b.slug}.md`), "utf8"));
   });
 });

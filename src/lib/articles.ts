@@ -1,9 +1,9 @@
 import "server-only";
-import { promises as fs } from "fs";
-import path from "path";
+import bundled from "../data/articles.json";
 
 /**
- * Articles live as Markdown files in content/articles/<slug>.md with a small header:
+ * Articles live as Markdown files in content/articles/<slug>.md (bundled into src/data/articles.json by
+ * `npm run articles`, which also runs before every build) with a small header:
  * ---
  * title: ...
  * description: ...        (1–2 lines, used for Google + share cards)
@@ -29,8 +29,6 @@ export type Article = {
   draft: boolean;
   body: string;
 };
-
-const DIR = path.join(process.cwd(), "content", "articles");
 
 export const PILLAR_LABEL: Record<Article["pillar"], string> = {
   history: "Tools ลับ ฉบับย่อ",
@@ -69,15 +67,7 @@ export function showDrafts() {
 }
 
 export async function listArticles(): Promise<Article[]> {
-  let files: string[] = [];
-  try {
-    files = (await fs.readdir(DIR)).filter((f) => /^[a-z0-9-]+\.md$/.test(f));
-  } catch {
-    return [];
-  }
-  const all = await Promise.all(
-    files.map(async (f) => parseArticle(f.replace(/\.md$/, ""), await fs.readFile(path.join(DIR, f), "utf8"))),
-  );
+  const all = (bundled as { slug: string; raw: string }[]).map((f) => parseArticle(f.slug, f.raw));
   return all.filter((a) => showDrafts() || !a.draft).sort((a, b) => b.date.localeCompare(a.date));
 }
 
