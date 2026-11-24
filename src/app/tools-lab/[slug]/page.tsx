@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PILLAR_LABEL, getArticle, listArticles, renderMarkdown } from "@/lib/articles";
+import { PILLAR_LABEL, extractFaq, getArticle, listArticles, renderMarkdown } from "@/lib/articles";
 import { jsonLd } from "@/lib/json-ld";
 
 export async function generateStaticParams() {
@@ -18,20 +18,24 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: a.title,
     description: a.description,
     alternates: { canonical: `/tools-lab/${a.slug}` },
+    ...(a.keywords.length ? { keywords: a.keywords } : {}),
     robots: a.draft ? { index: false, follow: false } : undefined,
     openGraph: {
       type: "article",
       title: a.title,
       description: a.description,
       publishedTime: a.date,
-      ...(a.cover ? { images: [{ url: a.cover }] } : {}),
+      ...(a.cover ? { images: [{ url: a.cover, width: 1080, height: 1080, alt: a.coverAlt ?? a.title }] } : {}),
     },
+    twitter: { card: a.cover ? "summary_large_image" : "summary", title: a.title, description: a.description },
   };
 }
 
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {
   const a = await getArticle((await params).slug);
   if (!a) notFound();
+  const related = (await listArticles()).filter((r) => r.slug !== a.slug).slice(0, 3);
+  const faq = extractFaq(a.body);
   const base = (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/$/, "");
   const ld = [
     {
@@ -40,6 +44,9 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
       headline: a.title,
       description: a.description,
       datePublished: a.date,
+      dateModified: a.updated ?? a.date,
+      inLanguage: "th",
+      ...(a.keywords.length ? { keywords: a.keywords.join(", ") } : {}),
       ...(a.cover ? { image: `${base}${a.cover}` } : {}),
       author: { "@type": "Organization", name: "BlackSmith Tools" },
       publisher: { "@type": "Organization", name: "BlackSmith Tools", logo: `${base}/brand/logo.png` },
@@ -54,6 +61,19 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         { "@type": "ListItem", position: 3, name: a.title, item: `${base}/tools-lab/${a.slug}` },
       ],
     },
+    ...(faq.length
+      ? [
+          {
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: faq.map((f) => ({
+              "@type": "Question",
+              name: f.q,
+              acceptedAnswer: { "@type": "Answer", text: f.a },
+            })),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -77,11 +97,28 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         <p className="num mt-3 text-xs text-muted">{a.date} · BlackSmith Tools</p>
       </header>
       {a.cover ? (
-        <div className="relative mt-8 aspect-[16/9] max-w-4xl overflow-hidden bg-steel">
-          <Image src={a.cover} alt="" fill className="object-cover" sizes="(max-width: 1024px) 100vw, 900px" priority />
+        <div className="relative mt-8 aspect-square w-full max-w-xl overflow-hidden bg-steel">
+          <Image src={a.cover} alt={a.coverAlt ?? a.title} fill className="object-cover" sizes="(max-width: 640px) 100vw, 576px" priority />
         </div>
       ) : null}
       <div className="article-body mt-8 max-w-3xl" dangerouslySetInnerHTML={{ __html: renderMarkdown(a.body) }} />
+      {related.length ? (
+        <section className="mt-12 max-w-3xl" aria-labelledby="related-h">
+          <h2 id="related-h" className="text-xl font-bold text-navy">
+            อ่านต่อ
+          </h2>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-3">
+            {related.map((r) => (
+              <li key={r.slug} className="border border-navy/12 bg-white hover:border-navy/40">
+                <Link href={`/tools-lab/${r.slug}`} className="block p-3">
+                  <p className="text-xs font-medium text-forge">{PILLAR_LABEL[r.pillar]}</p>
+                  <p className="mt-1 text-sm font-semibold leading-snug text-navy">{r.title}</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <aside className="mt-12 max-w-3xl border-t-4 border-forge bg-navy p-6 text-white">
         <p className="text-lg font-semibold">อุปกรณ์เสริมที่ใช้ได้กับเครื่องมือของคุณ</p>
         <p className="mt-1 text-sm text-white/75">ออกแบบโดยคนไทย พิมพ์ 3D วัสดุ PETG ส่งใน 2 วัน</p>

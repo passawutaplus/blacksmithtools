@@ -26,9 +26,9 @@ export default async function ToolsLabPage() {
           {articles.map((a) => (
             <li key={a.slug} className="border border-navy/12 bg-white hover:border-navy/40">
               <Link href={`/tools-lab/${a.slug}`} className="group flex h-full flex-col">
-                <div className="relative aspect-[16/9] bg-forge">
+                <div className="relative aspect-square bg-forge">
                   {a.cover ? (
-                    <Image src={a.cover} alt="" fill className="object-cover" sizes="(max-width: 640px) 100vw, 33vw" />
+                    <Image src={a.cover} alt={a.coverAlt ?? a.title} fill className="object-cover" sizes="(max-width: 640px) 100vw, 33vw" />
                   ) : (
                     <Image src="/brand/mark-white.png" alt="" width={56} height={56} className="absolute bottom-4 left-4 h-14 w-14 object-contain opacity-90" />
                   )}
