@@ -754,4 +754,10 @@ summary::-webkit-details-marker {
 .article-body figure { margin: 1.8em 0; max-width: 34rem; }
 .article-body figure img { display: block; width: 100%; height: auto; background: var(--steel, #e6e6e6); }
 .article-body figcaption { margin-top: 0.5rem; font-size: 0.8125rem; line-height: 1.5; color: var(--muted, #5b6770); }
+.article-products { display: grid; grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr)); gap: 0.75rem; margin: 1.25rem 0 1.75rem; }
+.article-body a.article-product { display: flex; color: var(--navy); text-decoration: none; font-weight: 500; flex-direction: column; border: 1px solid rgba(37, 54, 65, 0.18); background: white; }
+.article-body a.article-product:hover { border-color: var(--forge); }
+.article-product img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; background: #f1f1f1; }
+.article-product .n { padding: 0.6rem 0.7rem 0.3rem; font-size: 0.8125rem; line-height: 1.45; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.article-product .c { margin-top: auto; padding: 0.4rem 0.7rem 0.7rem; font-size: 0.8125rem; font-weight: 600; color: var(--forge); }
 .article-body blockquote { border-left: 4px solid var(--forge); background: white; padding: 0.9rem 1.1rem; font-weight: 500; }
