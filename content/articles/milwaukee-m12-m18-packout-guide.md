@@ -4,7 +4,7 @@ description: Milwaukee M12 กับ M18 ต่างกันยังไง �
 date: 2026-11-24
 pillar: product
 cover: /articles/brand-milwaukee.webp
-coverAlt: ปกบทความ Milwaukee M12 กับ M18: คอลลาจสว่าน M12 FUEL กับ M18 FUEL แบต M12 และ M18 กล่อง Packout แบบล้อลาก แบบร่างสว่าน เฟือง และภาพขาวดำช่างประกอบสว่านยุคเก่า
+coverAlt: ปกบทความ Milwaukee M12 กับ M18: คอลลาจสว่าน M12 FUEL กับ M18 FUEL แบต M12 และ M18 กล่อง Packout แบบล้อลาก สกรู และภาพขาวดำช่างประกอบสว่านยุคเก่า
 keywords: Milwaukee M18, Milwaukee M12, M12 กับ M18 ต่างกันยังไง, Packout Milwaukee, กล่อง Packout, ที่แขวนแบต M18, จัดกล่องเครื่องมือ
 ---
 
