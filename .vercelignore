@@ -4,3 +4,4 @@ data/runtime
 .env.local
 .git
 *.md
+!content/**/*.md
