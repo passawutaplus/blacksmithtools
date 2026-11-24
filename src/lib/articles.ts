@@ -190,3 +190,47 @@ export function renderMarkdown(md: string) {
   closeList();
   return out.join("\n");
 }
+
+export type ArticleSection = { id: string; title: string; md: string; faq: boolean };
+
+/** Splits the body at "## " headings: intro (before the first heading) + one section per heading, for the collapsible layout. */
+export function splitSections(body: string): { intro: string; sections: ArticleSection[] } {
+  const parts = body.split(/^##\s+(?!#)/m);
+  const intro = parts[0].trim();
+  const sections = parts.slice(1).map((blk, i) => {
+    const nl = blk.indexOf("\n");
+    const title = (nl < 0 ? blk : blk.slice(0, nl)).trim();
+    const md = nl < 0 ? "" : blk.slice(nl + 1).trim();
+    return { id: `s${i + 1}`, title, md, faq: /^คำถามที่พบบ่อย/.test(title) };
+  });
+  return { intro, sections };
+}
+
+/** Plain text of a heading (strips **bold** / *italic* / links) for the table of contents. */
+export function plainText(s: string) {
+  return s.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+}
+
+/** FAQ section → [{q, html}] (answer keeps links); trailing text after the last answer ("อ่านต่อ: ...") goes to `after`. */
+export function splitFaq(md: string): { items: { q: string; html: string }[]; after: string } {
+  const blocks = md.split(/^###\s+/m).slice(1);
+  let after = "";
+  const items = blocks.map((blk, i) => {
+    const [q, ...rest] = blk.split(/\r?\n/);
+    let ans = rest.join("\n").trim();
+    if (i === blocks.length - 1) {
+      const paras = ans.split(/\n\s*\n/);
+      if (paras.length > 1 && /^อ่านต่อ/.test(paras[paras.length - 1].trim())) {
+        after = paras.pop()!.trim();
+        ans = paras.join("\n\n");
+      }
+    }
+    return { q: plainText(q.trim()), html: renderMarkdown(ans) };
+  });
+  return { items, after: after ? renderMarkdown(after) : "" };
+}
+
+/** Rough Thai reading time: ~800 characters a minute. */
+export function readingMinutes(body: string) {
+  return Math.max(1, Math.round(body.replace(/\s+/g, "").length / 800));
+}
