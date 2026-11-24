@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from "fs";
 import path from "path";
 import bundledJson from "../../data/articles.json";
 const bundled = bundledJson as { slug: string; raw: string }[];
-import { extractFaq, parseArticle, renderMarkdown, shortProductName } from "../articles";
+import { extractFaq, parseArticle, renderMarkdown, shortProductName, splitFaq, splitSections } from "../articles";
 import catalog from "../../data/shopee-catalog.json";
 
 describe("articles", () => {
@@ -64,5 +64,15 @@ describe("articles", () => {
     for (const b of bundled)
       for (const m of b.raw.matchAll(/^\[\[products:\s*([^\]]+)\]\]$/gm))
         for (const id of m[1].split(",").map((x) => x.trim())) expect(ids.has(id), `${b.slug}: ${id}`).toBe(true);
+  });
+
+  it("splits the body into intro + collapsible sections and FAQ items", () => {
+    const { intro, sections } = splitSections("นำ\n\n## หนึ่ง\n\nก\n\n### ย่อย\n\nข\n\n## คำถามที่พบบ่อย\n\n### ถาม\n\nตอบ\n\nอ่านต่อ: [x](/shop)");
+    expect(intro).toBe("นำ");
+    expect(sections.map((x) => [x.id, x.title, x.faq])).toEqual([["s1", "หนึ่ง", false], ["s2", "คำถามที่พบบ่อย", true]]);
+    expect(sections[0].md).toContain("### ย่อย");
+    const f = splitFaq(sections[1].md);
+    expect(f.items).toEqual([{ q: "ถาม", html: "<p>ตอบ</p>" }]);
+    expect(f.after).toContain('href="/shop"');
   });
 });
