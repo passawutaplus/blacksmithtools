@@ -46,7 +46,7 @@ keywords: ที่แขวนสว่าน, ที่เก็บสว่�
 
 ## ที่แขวนเครื่องมือ BlackSmith
 
-BlackSmith Tools เป็นแบรนด์คนไทยที่ออกแบบและพิมพ์ 3D อุปกรณ์เสริมเอง ไม่ใช่สินค้าของแบรนด์เครื่องมือ แต่ทำให้ใช้ได้กับเครื่องมือหลายค่าย เช่น Milwaukee, DeWalt, Makita, Bosch, Ingco, Total, Stanley FatMax, AEG, Hikoki, Skil และ Dongcheng
+BlackSmith Tools เป็นแบรนด์คนไทยที่ออกแบบและพิมพ์ 3D อุปกรณ์เสริมเองด้วยพลาสติก PETG ไม่ใช่สินค้าของแบรนด์เครื่องมือ แต่ทำให้ใช้ได้กับเครื่องมือหลายค่าย เช่น Milwaukee, DeWalt, Makita, Bosch, Ingco, Total, Stanley FatMax, AEG, Hikoki, Skil และ Dongcheng
 
 [[products: p-10585957766, p-12074317663, p-8072694887, p-18693759828, p-21035081346, p-20134987140]]
 
