@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
-import { parseArticle, renderMarkdown } from "../articles";
+import { extractFaq, parseArticle, renderMarkdown } from "../articles";
 
 describe("articles", () => {
   it("parses front matter", () => {
@@ -16,5 +16,23 @@ describe("articles", () => {
     expect(html).toContain("<ul>\n<li>a</li>");
     expect(html).not.toContain('href="javascript');
     expect(html).toContain('<a href="/shop">ok</a>');
+  });
+  it("parses SEO fields", () => {
+    const a = parseArticle("x", "---\ntitle: t\ncoverAlt: ภาพค้อน\nkeywords: ค้อน, ประวัติค้อน ,\n---\nb");
+    expect(a.coverAlt).toBe("ภาพค้อน");
+    expect(a.keywords).toEqual(["ค้อน", "ประวัติค้อน"]);
+  });
+  it("renders local images as figures only", () => {
+    const html = renderMarkdown('![ภาพ "ค้อน"](/articles/hammer.webp)\n\n![x](https://evil.example/a.png)');
+    expect(html).toContain('<figure><img src="/articles/hammer.webp" alt="ภาพ &quot;ค้อน&quot;"');
+    expect(html).toContain('loading="lazy"');
+    expect(html).not.toContain('<img src="https');
+  });
+  it("extracts FAQ for structured data", () => {
+    const faq = extractFaq("## เรื่อง\n\nก\n\n## คำถามที่พบบ่อย\n\n### ถามหนึ่ง\n\nตอบ **หนึ่ง**\n\n### ถามสอง\n\nตอบสอง [ลิงก์](/shop)\n\nอ่านต่อ");
+    expect(faq).toEqual([
+      { q: "ถามหนึ่ง", a: "ตอบ หนึ่ง" },
+      { q: "ถามสอง", a: "ตอบสอง ลิงก์ อ่านต่อ" },
+    ]);
   });
 });

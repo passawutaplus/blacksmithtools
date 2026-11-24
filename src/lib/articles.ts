@@ -9,7 +9,10 @@ import path from "path";
  * description: ...        (1–2 lines, used for Google + share cards)
  * date: 2026-11-23
  * pillar: history | tips | product
- * cover: /articles/hammer.jpg   (optional, file in public/)
+ * cover: /articles/hammer.webp  (optional, file in public/ — square 1:1 post image)
+ * coverAlt: ...                  (optional, describes the cover for Google Images + screen readers)
+ * keywords: ค้อน, ประวัติค้อน    (optional, comma separated, used in <meta keywords> + JSON-LD)
+ * updated: 2026-11-24            (optional, dateModified)
  * draft: true                   (optional — hidden on the live site)
  * ---
  */
@@ -20,6 +23,9 @@ export type Article = {
   date: string;
   pillar: "history" | "tips" | "product";
   cover?: string;
+  coverAlt?: string;
+  keywords: string[];
+  updated?: string;
   draft: boolean;
   body: string;
 };
@@ -49,6 +55,9 @@ export function parseArticle(slug: string, raw: string): Article {
     date: meta.date || "1970-01-01",
     pillar,
     cover: meta.cover || undefined,
+    coverAlt: meta.coverAlt || undefined,
+    keywords: (meta.keywords ?? "").split(",").map((k) => k.trim()).filter(Boolean),
+    updated: meta.updated || undefined,
     draft: meta.draft === "true",
     body: (m ? m[2] : raw).trim(),
   };
@@ -90,7 +99,24 @@ function inline(s: string) {
     });
 }
 
-/** Small, safe Markdown subset: ## / ### headings, paragraphs, - lists, 1. lists, > quotes, **bold**, *italic*, [links](url). */
+/**
+ * FAQ for Google rich results: the "## คำถามที่พบบ่อย" section, each "### question" followed by its answer paragraph(s).
+ */
+export function extractFaq(body: string): { q: string; a: string }[] {
+  const m = body.match(/^##\s+คำถามที่พบบ่อย[^\n]*\n([\s\S]*?)(?=^##\s|(?![\s\S]))/m);
+  if (!m) return [];
+  const strip = (t: string) => t.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+  return m[1]
+    .split(/^###\s+/m)
+    .slice(1)
+    .map((blk) => {
+      const [q, ...rest] = blk.split(/\r?\n/);
+      return { q: strip(q.trim()), a: strip(rest.join(" ").replace(/\s+/g, " ").trim()) };
+    })
+    .filter((f) => f.q && f.a);
+}
+
+/** Small, safe Markdown subset: ![alt](/img.webp) images, ## / ### headings, paragraphs, - lists, 1. lists, > quotes, **bold**, *italic*, [links](url). */
 export function renderMarkdown(md: string) {
   const out: string[] = [];
   let list: "ul" | "ol" | null = null;
@@ -109,6 +135,13 @@ export function renderMarkdown(md: string) {
     if (!line) {
       flushPara();
       closeList();
+    } else if ((m = line.match(/^!\[([^\]]*)\]\((\/[^\s)]+)\)$/))) {
+      flushPara();
+      closeList();
+      // local images only; alt text doubles as the visible caption (good for SEO + accessibility)
+      out.push(
+        `<figure><img src="${escapeHtml(m[2])}" alt="${escapeHtml(m[1])}" width="1080" height="1080" loading="lazy" decoding="async" /><figcaption>${inline(m[1])}</figcaption></figure>`,
+      );
     } else if ((m = line.match(/^(#{2,3})\s+(.*)$/))) {
       flushPara();
       closeList();
