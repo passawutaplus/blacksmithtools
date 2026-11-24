@@ -127,10 +127,10 @@ export function ProductDetail({
                 className={`relative aspect-square w-[4.75rem] shrink-0 snap-start overflow-hidden rounded-[3px] bg-steel md:w-auto md:min-w-0 ${
                   src === main ? "ring-2 ring-navy" : "ring-1 ring-transparent"
                 }`}
-                aria-label="ดูรูปนี้"
+                aria-label={`ดูรูปที่ ${i + 1}`}
                 aria-current={src === main ? "true" : undefined}
               >
-                <Image src={src} alt="" fill className="object-contain p-1.5" sizes="120px" />
+                <Image src={src} alt={`${shortProductName(product.nameTh)} รูปที่ ${i + 1}`} fill className="object-contain p-1.5" sizes="120px" />
               </button>
             ))}
           </div>

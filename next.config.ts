@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   images: {
+    // Fewer srcset widths: every <img> lists each one, and product photos from Shopee are
+    // under 1000px, so 2048/3840 and the tiny 32/48/64 steps only bloated the HTML.
+    deviceSizes: [640, 828, 1080, 1200, 1920],
+    imageSizes: [96, 128, 256, 384],
     remotePatterns: [
       { protocol: "https", hostname: "cf.shopee.co.th" },
       { protocol: "https", hostname: "down-th.img.susercontent.com" },

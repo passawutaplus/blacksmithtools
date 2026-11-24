@@ -4,6 +4,10 @@ import { ProductCard } from "@/components/ProductCard";
 import { BrandLogo } from "@/components/BrandLogo";
 import { PageHeader } from "@/components/PageHeader";
 import type { Metadata } from "next";
+import { jsonLd } from "@/lib/json-ld";
+import { shortProductName } from "@/lib/product";
+import { OG_BASE, breadcrumbLd, collectionLd } from "@/lib/seo";
+import { toCardProduct } from "@/lib/card-product";
 
 export async function generateMetadata({
   params,
@@ -15,12 +19,15 @@ export async function generateMetadata({
   const brand = brands.find((b) => b.slug === slug);
   if (!brand) return { title: "ไม่พบยี่ห้อ" };
   const own = brand.slug === "blacksmith";
+  const title = own ? `สินค้าแบรนด์ ${brand.name}` : `อุปกรณ์เสริมใช้ได้กับ ${brand.name}`;
+  const description = own
+    ? "สินค้าแบรนด์ BlackSmith เจลล้างมือช่าง GoopOrange และอุปกรณ์อเนกประสงค์ ออกแบบและผลิตโดยแบรนด์คนไทย สั่งซื้อในเว็บได้เลย"
+    : `อุปกรณ์เสริมพิมพ์ 3D จาก BlackSmith ใช้ได้กับเครื่องมือและกล่อง ${brand.name} ทั้งที่แขวน ที่เก็บแบต ถาดเสริม และท่อเป่าลม ออกแบบโดยแบรนด์คนไทย`;
   return {
-    title: own ? `สินค้าแบรนด์ ${brand.name}` : `อุปกรณ์สำหรับ ${brand.name}`,
-    description: own
-      ? `สินค้าแบรนด์ BlackSmith เช่น GoopOrange และอุปกรณ์อเนกประสงค์`
-      : `อุปกรณ์เสริม BlackSmith ที่เข้ากับเครื่องมือ ${brand.name} โดยเฉพาะ`,
+    title,
+    description,
     alternates: { canonical: `/shop/${brand.slug}` },
+    openGraph: { ...OG_BASE, type: "website", title, description },
   };
 }
 
@@ -36,9 +43,24 @@ export default async function BrandShopPage({
 
   const { products } = await listProducts({ brand: slug });
   const own = brand.slug === "blacksmith";
+  const listName = own ? `สินค้าแบรนด์ ${brand.name}` : `อุปกรณ์เสริมใช้ได้กับ ${brand.name}`;
+  const ld = [
+    collectionLd(
+      listName,
+      own ? "สินค้าแบรนด์ BlackSmith" : `อุปกรณ์เสริม BlackSmith ใช้ได้กับ ${brand.name}`,
+      `/shop/${brand.slug}`,
+      products.map((p) => ({ name: shortProductName(p.nameTh), path: `/product/${encodeURI(p.slug)}` })),
+    ),
+    breadcrumbLd([
+      ["หน้าแรก", "/"],
+      ["ร้านค้า", "/shop"],
+      [brand.name, `/shop/${brand.slug}`],
+    ]),
+  ];
 
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(ld) }} />
       <PageHeader
         title={brand.name}
         description={
@@ -68,7 +90,7 @@ export default async function BrandShopPage({
         ) : null}
         <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
           {products.map((p) => (
-            <ProductCard key={p.id} product={p} />
+            <ProductCard key={p.id} product={toCardProduct(p)} />
           ))}
         </div>
         {products.length === 0 ? (

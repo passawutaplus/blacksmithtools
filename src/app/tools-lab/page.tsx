@@ -2,17 +2,38 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { PILLAR_LABEL, listArticles } from "@/lib/articles";
+import { jsonLd } from "@/lib/json-ld";
+import { OG_BASE, breadcrumbLd, collectionLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
   title: "Tools ลับ ฉบับย่อ — เรื่องเล่าและความรู้เครื่องมือช่าง",
   description: "ประวัติเครื่องมือที่คนไม่ค่อยรู้ เคล็ดลับงานช่าง และวิธีใช้อุปกรณ์เสริม จากทีม BlackSmith",
   alternates: { canonical: "/tools-lab" },
+  openGraph: {
+    ...OG_BASE,
+    type: "website",
+    title: "Tools ลับ ฉบับย่อ — เรื่องเล่าและความรู้เครื่องมือช่าง",
+    description: "ประวัติเครื่องมือที่คนไม่ค่อยรู้ เคล็ดลับงานช่าง และวิธีใช้อุปกรณ์เสริม จากทีม BlackSmith",
+  },
 };
 
 export default async function ToolsLabPage() {
   const articles = await listArticles();
+  const ld = [
+    collectionLd(
+      "Tools ลับ ฉบับย่อ",
+      "เรื่องเล่า เคล็ดลับ และวิธีใช้เครื่องมือช่าง จากทีม BlackSmith",
+      "/tools-lab",
+      articles.filter((a) => !a.draft).map((a) => ({ name: a.title, path: `/tools-lab/${a.slug}` })),
+    ),
+    breadcrumbLd([
+      ["หน้าแรก", "/"],
+      ["Tools ลับ ฉบับย่อ", "/tools-lab"],
+    ]),
+  ];
   return (
     <div className="container-bs py-10 md:py-14">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(ld) }} />
       <p className="eyebrow">Tools Lab</p>
       <h1 className="mt-2 text-3xl font-bold text-navy md:text-4xl">Tools ลับ ฉบับย่อ</h1>
       <p className="mt-3 max-w-2xl text-muted">

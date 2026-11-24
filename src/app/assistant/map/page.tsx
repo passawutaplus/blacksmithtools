@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PILLARS, TRADE_ICONS, TRADES, toolCount } from "@/lib/chang/catalog";
 
 export const metadata = {
+  alternates: { canonical: "/assistant/map" },
   title: "แผนผังเครื่องมือ",
   description: "แผนผังผู้ช่วยงานช่าง — ดูครบทุกสายงานและเครื่องมือแล้วกระโดดไปหน้าที่ต้องการ",
 };
