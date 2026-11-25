@@ -278,6 +278,22 @@ async function deleteShopReview__impl(id: string) {
   return { ok: true as const };
 }
 
+const SOLD_STATUSES: OrderStatus[] = ["paid", "packing", "shipped", "delivered", "completed"];
+
+/** Real numbers only: units on paid orders, stars from published reviews tied to this product. */
+export async function getProductStats(productId: string) {
+  const db = await ensureDb();
+  let sold = 0;
+  for (const o of db.orders) {
+    if (!SOLD_STATUSES.includes(o.status)) continue;
+    for (const i of o.items) if (i.productId === productId) sold += i.quantity;
+  }
+  const rated = db.testimonials.filter((r) => r.published && r.productId === productId);
+  const ratingCount = rated.length;
+  const rating = ratingCount ? Math.round((rated.reduce((s, r) => s + r.stars, 0) / ratingCount) * 10) / 10 : 0;
+  return { sold, rating, ratingCount };
+}
+
 export async function listProducts(filters?: {
   brand?: string;
   category?: string;
