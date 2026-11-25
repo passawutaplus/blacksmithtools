@@ -111,6 +111,8 @@ const EXPECTED_BLOCKED = [
   "hvac/shsc:liqT@max",
   // แอร์ใหญ่กว่าตารางเบรกเกอร์คร่าว
   "hvac/breaker:btu@max",
+  // ชุดติดตั้งแอร์: สูงต่างมากกว่าระยะท่อทั้งเส้น (เป็นไปไม่ได้)
+  "hvac/kit:height@max",
   // กระแสเกินตารางสาย / แรงดันตกเกินที่สูตรใช้ได้
   "electrical/cable:il@max",
   "electrical/vdrop:il@max",
@@ -120,6 +122,9 @@ const EXPECTED_BLOCKED = [
   "electrical/job:len@max",
   // อัตราไหลเกินท่อใหญ่สุดในตาราง
   "plumbing/pipe:q@max",
+  // ถังแรงดัน: ปั๊มตัดต้องสูงกว่าปั๊มติดอย่างน้อย 0.5 bar
+  "plumbing/ptank:cutIn@max",
+  "plumbing/ptank:cutOut@min",
   // หน้าบานลิ้นชักเตี้ยเกิน / น้ำหนักต่อจุดเกินเพดานพุก
   "handyman/drawer:opening@min",
   "handyman/screw:load@max",

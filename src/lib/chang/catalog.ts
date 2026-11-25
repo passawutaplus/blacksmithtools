@@ -217,6 +217,12 @@ export const TOOLS_WITHOUT_COVER: string[] = [
   "waterproof/crack",
   "ceiling/partition",
   "handyman/cabinet",
+  "electrical/conduit",
+  "plumbing/homepump",
+  "plumbing/ptank",
+  "plumbing/fittings",
+  "hvac/kit",
+  "roof/metal-kit",
 ];
 
 /**
@@ -334,6 +340,14 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "waterproof/crack": ["รอยร้าว", "ร้าว", "ผนังร้าว", "อุดร้าว"],
   "ceiling/partition": ["ผนังเบา", "c-stud", "u-track", "สตัด", "ผนังยิปซัม", "กั้นห้อง"],
   "handyman/cabinet": ["ตู้", "ตู้เสื้อผ้า", "ตู้บิ้วอิน", "ปาร์ติเกิล", "ขอบ pvc"],
+
+  // รอบ 3: เครื่องมือใหม่งานระบบ + หลังคา
+  "electrical/conduit": ["ท่อร้อยสาย", "สายในท่อ", "ท่อ 4 หุน", "ท่อ 6 หุน", "emt", "imc", "ท่อเหลือง"],
+  "plumbing/homepump": ["ปั๊มบ้าน", "ปั๊มอัตโนมัติ", "ปั๊มกี่วัตต์", "วัตต์ปั๊ม"],
+  "plumbing/ptank": ["ถังแรงดัน", "ถังลม", "pressure tank", "สวิตช์แรงดัน", "ปั๊มติดถี่"],
+  "plumbing/fittings": ["ข้อต่อ", "ข้องอ", "สามทาง", "จุดน้ำ", "บอลวาล์ว", "สต็อปวาล์ว", "ใบสั่งของประปา"],
+  "hvac/kit": ["ใบสั่งของแอร์", "ชุดติดตั้ง", "ติดตั้งแอร์", "รางครอบ", "vct", "ฉนวน", "ขาแขวน", "ท่อน้ำทิ้งแอร์"],
+  "roof/metal-kit": ["แป", "เมทัลชีท", "สั่งตัด", "ปั้นลม", "ครอบข้าง", "ครอบสัน"],
 };
 
 export function toolCount(): number {

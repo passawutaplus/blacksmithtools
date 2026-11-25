@@ -1,6 +1,20 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
-import { DISCLAIMER_AB, PUMP, PUMP_HP_SIZES, PVC_PIPES, PVC_VEL_MAX, TANK_SIZES, UNIT, WATER } from "../constants";
+import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
+import {
+  DISCLAIMER_AB,
+  HOME_PUMP,
+  HOME_PUMP_WATTS,
+  PIPE_KIT,
+  PRESSURE_TANK,
+  PRESSURE_TANK_SIZES,
+  PUMP,
+  PUMP_HP_SIZES,
+  PVC_PIPES,
+  PVC_VEL_MAX,
+  TANK_SIZES,
+  UNIT,
+  WATER,
+} from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(plumbingTools, id, v);
 
@@ -81,14 +95,23 @@ export function calcTank(v: Values) {
   });
 }
 
+/** กำลังปั๊มที่ต้องการจากอัตราไหล (ล./นาที) และเฮดรวม (ม.) — ใช้ร่วมกันระหว่างเครื่องมือเลือกปั๊มและปั๊มบ้าน */
+export function pumpPower(q: number, h: number): { kw: number; hp: number; watts: number } {
+  const kw = (q / 60) * UNIT.gravity.value * h * PUMP.headReserve.value / (PUMP.efficiency.value * 1000);
+  return { kw, hp: kw / PUMP.hpPerKw.value, watts: kw * 1000 };
+}
+
+/** เฮดรวมของบ้าน = ชั้น × สูงต่อชั้น + แรงดันเหลือปลายก๊อก + แรงเสียดทานตามระยะท่อ (ค่าเดียวกับหน้าคิดทั้งงานประปา) */
+export function homeHead(floors: number, len: number): number {
+  return floors * HOME_PUMP.floorHeight.value + HOME_PUMP.residualHead.value + len * HOME_PUMP.frictionPerM.value;
+}
+
 export function calcPump(v: Values) {
   const bad = guard("pump", v);
   if (bad) return bad;
   const q = num(v, "q", 40);
   const h = num(v, "h", 18);
-  const kw = (q / 60) * UNIT.gravity.value * h * PUMP.headReserve.value / (PUMP.efficiency.value * 1000);
-  const hp = kw / PUMP.hpPerKw.value;
-  const watts = kw * 1000;
+  const { kw, hp, watts } = pumpPower(q, h);
   const rec = PUMP_HP_SIZES.find((s) => s >= hp) ?? ceil(hp);
   const chosenIdx = PUMP_HP_SIZES.indexOf(rec as (typeof PUMP_HP_SIZES)[number]);
   const ladder = chosenIdx < 0 ? [] : PUMP_HP_SIZES.slice(Math.max(0, chosenIdx - 2), chosenIdx + 3);
@@ -363,6 +386,319 @@ export function calcPlumbBom(v: Values) {
   });
 }
 
+/* ─────────── ถังแรงดัน (คิดจากน้ำที่ถังต้องจ่ายต่อรอบ) ─────────── */
+
+export function calcPressureTank(v: Values) {
+  const bad = guard("ptank", v);
+  if (bad) return bad;
+  const watts = num(v, "watts", 250);
+  const q = num(v, "q", 30);
+  const on = num(v, "cutIn", 1.4);
+  const off = num(v, "cutOut", 2.8);
+  const psi = PRESSURE_TANK.psiPerBar.value;
+  const minDiff = PRESSURE_TANK.minDiff.value;
+  if (off - on < minDiff - 1e-9) {
+    return blockedResult({
+      headline:
+        off <= on
+          ? `แรงดันปั๊มตัด (${fmtTrim(off, 1)} bar) ต้องสูงกว่าปั๊มติด (${fmtTrim(on, 1)} bar) — ตรวจค่าที่กรอก`
+          : `ปั๊มติด-ตัดห่างกันแค่ ${fmtTrim(off - on, 2)} bar น้อยเกินไป (อย่างน้อย ${fmtTrim(minDiff, 1)} bar)`,
+      rows: [{ label: "ที่คิดได้", value: `ปั๊มตัดสูงกว่าปั๊มติดอย่างน้อย ${fmtTrim(minDiff, 1)} bar` }],
+      tip: "ดูค่าบนสวิตช์แรงดัน: ตัวเลขต่ำคือปั๊มติด ตัวเลขสูงคือปั๊มตัด",
+    });
+  }
+  const large = watts > PRESSURE_TANK.largePumpW.value;
+  const runRef = large ? PRESSURE_TANK.minRunLarge : PRESSURE_TANK.minRunSmall;
+  const drawdown = q * runRef.value;
+  const atm = PRESSURE_TANK.atm.value;
+  const pre = on - PRESSURE_TANK.prechargeBelowCutIn.value;
+  // กฎของบอยล์: ลมในถังอัดจากแรงดันเติมลมไปถึงแรงดันปั๊มติด/ตัด → ส่วนของถังที่จ่ายน้ำได้ระหว่างปั๊มตัดถึงปั๊มติด
+  const frac = (pre + atm) * (1 / (on + atm) - 1 / (off + atm));
+  const liters = drawdown / frac;
+  const biggest = PRESSURE_TANK_SIZES[PRESSURE_TANK_SIZES.length - 1];
+  const tank = PRESSURE_TANK_SIZES.find((s) => s >= liters - 1e-9);
+  const count = tank ? 1 : ceil(liters / biggest);
+  const chosenIdx = tank ? PRESSURE_TANK_SIZES.indexOf(tank) : -1;
+  const ladder = chosenIdx < 0 ? [] : PRESSURE_TANK_SIZES.slice(Math.max(0, chosenIdx - 2), chosenIdx + 3);
+  const tankText = tank ? `ถังแรงดัน ${fmt(tank)} ลิตร` : `ถัง ${fmt(biggest)} ลิตร × ${fmt(count)} ใบ (ต่อขนาน)`;
+
+  return resultX({
+    title: "ขนาดถังแรงดัน",
+    headline: tankText,
+    chart:
+      ladder.length > 1
+        ? {
+            kind: "steps",
+            unit: "ลิตร",
+            need: round(liters, 1),
+            needLabel: "ความจุที่ต้องการ",
+            items: ladder.map((s) => ({ label: `${fmt(s)} ล.`, value: s, state: s === tank ? "chosen" : s < liters ? "under" : "over" })),
+          }
+        : undefined,
+    rows: [
+      { label: "ปั๊ม", value: `${fmt(watts)} วัตต์ · ${fmt(q)} ล./นาที` },
+      { label: "ปั๊มติด / ปั๊มตัด", value: `${fmtTrim(on, 1)} / ${fmtTrim(off, 1)} bar (${fmt(on * psi)} / ${fmt(off * psi)} psi)` },
+      { label: "เติมลมถังเปล่า", value: `${fmtTrim(pre, 2)} bar (${fmt(pre * psi)} psi) — ต่ำกว่าปั๊มติดเล็กน้อย` },
+      { label: "ปั๊มเดินอย่างน้อย", value: `${fmtTrim(runRef.value, 1)} นาที/รอบ` },
+      { label: "น้ำที่ถังต้องจ่ายต่อรอบ", value: `${fmt(drawdown)} ลิตร` },
+      { label: "ถังจ่ายน้ำได้", value: `${fmt(frac * 100, 1)}% ของความจุ` },
+      { label: "ความจุที่ต้องการ", value: `${fmt(liters)} ลิตร` },
+      { label: "ถังแนะนำ", value: tankText, emphasize: true },
+    ],
+    tip: "ปั๊มอัตโนมัติที่มีถังในตัว หรือปั๊มแรงดันคงที่ (อินเวอร์เตอร์) ไม่ต้องใช้ถังนี้ · เช็กลมถังตอนไม่มีน้ำในถังเท่านั้น",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary:
+        "ความจุถัง = น้ำที่ต้องจ่ายต่อรอบ (อัตราไหล × เวลาปั๊มเดินขั้นต่ำ) ÷ สัดส่วนที่ถังจ่ายได้ระหว่างปั๊มตัดถึงปั๊มติด (กฎของบอยล์ คิดแรงดันสัมบูรณ์)",
+      steps: [
+        { label: "น้ำที่ถังต้องจ่ายต่อรอบ", expr: "อัตราไหล × เวลาเดินขั้นต่ำ", subst: `${fmt(q)} × ${fmtTrim(runRef.value, 1)} = ${fmt(drawdown)} ลิตร` },
+        {
+          label: "สัดส่วนที่ถังจ่ายได้",
+          expr: "(P เติมลม + 1.013) × [1 ÷ (P ติด + 1.013) − 1 ÷ (P ตัด + 1.013)]",
+          subst: `(${fmtTrim(pre, 2)} + ${fmtTrim(atm, 3)}) × [1 ÷ ${fmtTrim(on + atm, 3)} − 1 ÷ ${fmtTrim(off + atm, 3)}] = ${fmt(frac, 3)}`,
+          note: "แรงดันในสูตรต้องบวกความดันบรรยากาศให้เป็นแรงดันสัมบูรณ์ก่อน",
+        },
+        { label: "ความจุที่ต้องการ", expr: "น้ำต่อรอบ ÷ สัดส่วน", subst: `${fmt(drawdown)} ÷ ${fmt(frac, 3)} = ${fmt(liters, 1)} ลิตร` },
+        {
+          label: "เลือกถังที่ขาย",
+          expr: "ถังขนาดถัดไปที่ ≥ ความจุที่ต้องการ",
+          subst: tank ? `${fmt(liters, 1)} → ${fmt(tank)} ลิตร` : `เกินใบใหญ่สุด ${fmt(biggest)} ลิตร → ${fmt(count)} ใบ`,
+        },
+      ],
+      constants: [runRef, PRESSURE_TANK.prechargeBelowCutIn, PRESSURE_TANK.atm, PRESSURE_TANK.largePumpW],
+      assumptions: [
+        "ถังแรงดันแบบไดอะแฟรม/ถุงยาง เติมลมต่ำกว่าแรงดันปั๊มติดเล็กน้อย",
+        "อัตราไหลคือที่ปั๊มส่งได้จริงช่วงแรงดันใช้งาน (ดูกราฟปั๊ม) ไม่ใช่ตัวเลขสูงสุดบนกล่อง",
+        `เวลาเดินขั้นต่ำ ${fmtTrim(PRESSURE_TANK.minRunSmall.value, 1)} นาที (ปั๊มไม่เกิน ${fmt(PRESSURE_TANK.largePumpW.value)} W) · ${fmtTrim(PRESSURE_TANK.minRunLarge.value, 1)} นาที (ใหญ่กว่า)`,
+      ],
+      caveats: [
+        "ถังเล็กไปปั๊มจะติด-ดับถี่ มอเตอร์และสวิตช์แรงดันพังเร็ว ถ้าคู่มือปั๊มกำหนดเวลาเดิน/ถังขั้นต่ำ ให้ยึดคู่มือ",
+        "ลมในถังรั่วออกได้เรื่อย ๆ ตรวจและเติมลมปีละครั้ง (ตอนถังไม่มีน้ำ)",
+        DISCLAIMER_AB,
+      ],
+      refs: [
+        { label: "กฎของบอยล์ (P₁V₁ = P₂V₂) — วิธีคิดขนาดถังแรงดันจากน้ำที่จ่ายต่อรอบ (drawdown)" },
+        { label: "คู่มือเลือกขนาดถังแรงดันไดอะแฟรมของผู้ผลิต (เวลาเดินปั๊มขั้นต่ำ, แรงดันเติมลม)" },
+      ],
+    },
+  });
+}
+
+/* ─────────── ปั๊มบ้านเป็นวัตต์ ตามชั้นและห้องน้ำ ─────────── */
+
+export function calcHomePump(v: Values) {
+  const bad = guard("homepump", v);
+  if (bad) return bad;
+  const floors = num(v, "floors", 2);
+  const baths = num(v, "baths", 2);
+  const len = num(v, "len", 15);
+  const q = Math.max(HOME_PUMP.minFlow.value, baths * HOME_PUMP.perBathLpm.value);
+  const h = homeHead(floors, len);
+  const { hp, watts } = pumpPower(q, h);
+  const cls = HOME_PUMP_WATTS.find((w) => w >= watts - 1e-9);
+  const hpRec = PUMP_HP_SIZES.find((s) => s >= hp) ?? ceil(hp);
+  const maxW = HOME_PUMP_WATTS[HOME_PUMP_WATTS.length - 1];
+  const needText = `${fmt(ceil(watts))} วัตต์`;
+
+  return resultX({
+    title: "ปั๊มบ้านกี่วัตต์",
+    headline: cls ? `ปั๊มบ้าน ${fmt(cls)} วัตต์ (ต้องการ ${needText})` : `เกินปั๊มบ้าน ${fmt(maxW)} วัตต์ — ใช้ปั๊ม ${fmtTrim(hpRec, 2)} HP`,
+    chart: cls
+      ? {
+          kind: "steps",
+          unit: "W",
+          need: round(watts, 0) || 1,
+          needLabel: "กำลังที่ต้องการ",
+          items: HOME_PUMP_WATTS.map((w) => ({ label: `${w} W`, value: w, state: w === cls ? "chosen" : w < watts ? "under" : "over" })),
+        }
+      : undefined,
+    rows: [
+      { label: "บ้าน", value: `${fmt(floors)} ชั้น · ห้องน้ำ ${fmt(baths)} ห้อง` },
+      { label: "อัตราไหลที่ใช้คิด", value: `${fmt(q)} ล./นาที` },
+      { label: "เฮดรวม", value: `${fmt(h, 1)} ม.` },
+      { label: "กำลังที่ต้องการ", value: `${needText} (${fmt(hp, 2)} HP)` },
+      {
+        label: "ปั๊มแนะนำ",
+        value: cls ? `ปั๊มอัตโนมัติ ${fmt(cls)} วัตต์` : `ปั๊ม ${fmtTrim(hpRec, 2)} HP (เกินรุ่นบ้าน ${fmt(maxW)} W) — ดูเครื่องมือเลือกปั๊มน้ำ`,
+        emphasize: true,
+      },
+    ],
+    tip: "เทียบกราฟอัตราไหล-เฮดของรุ่นที่จะซื้ออีกที · มีเครื่องทำน้ำอุ่นหลายจุดหรือฝักบัวแรง ขยับขึ้นหนึ่งขั้น",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary: "อัตราไหลจากจำนวนห้องน้ำ + เฮดจากจำนวนชั้นและระยะท่อ → กำลังปั๊ม (สูตรเดียวกับเครื่องมือเลือกปั๊มน้ำ) → เลือกขั้นวัตต์ของปั๊มบ้าน",
+      steps: [
+        {
+          label: "อัตราไหล",
+          expr: `มากกว่าระหว่าง ${fmt(HOME_PUMP.minFlow.value)} กับ ห้องน้ำ × ${fmt(HOME_PUMP.perBathLpm.value)} ล./นาที`,
+          subst: `max(${fmt(HOME_PUMP.minFlow.value)}, ${fmt(baths)} × ${fmt(HOME_PUMP.perBathLpm.value)}) = ${fmt(q)} ล./นาที`,
+        },
+        {
+          label: "เฮดรวม",
+          expr: `ชั้น × ${HOME_PUMP.floorHeight.value} + ${HOME_PUMP.residualHead.value} + ระยะท่อ × ${HOME_PUMP.frictionPerM.value}`,
+          subst: `${fmt(floors)} × ${HOME_PUMP.floorHeight.value} + ${HOME_PUMP.residualHead.value} + ${fmt(len)} × ${HOME_PUMP.frictionPerM.value} = ${fmt(h, 2)} ม.`,
+        },
+        {
+          label: "กำลังที่ต้องการ",
+          expr: `(Q/60) × ${UNIT.gravity.value} × H × ${PUMP.headReserve.value} ÷ ${PUMP.efficiency.value}`,
+          subst: `(${fmt(q)}/60) × ${UNIT.gravity.value} × ${fmt(h, 2)} × ${PUMP.headReserve.value} ÷ ${PUMP.efficiency.value} = ${fmt(watts, 1)} W`,
+        },
+        {
+          label: "เลือกขั้นวัตต์",
+          expr: `ขั้นถัดไปที่ ≥ กำลังที่ต้องการ (${HOME_PUMP_WATTS.join(" / ")} W)`,
+          subst: cls ? `${fmt(watts, 1)} W → ${fmt(cls)} W` : `${fmt(watts, 1)} W เกิน ${fmt(maxW)} W → ${fmtTrim(hpRec, 2)} HP`,
+        },
+      ],
+      constants: [HOME_PUMP.perBathLpm, HOME_PUMP.minFlow, HOME_PUMP.floorHeight, HOME_PUMP.residualHead, HOME_PUMP.frictionPerM, PUMP.efficiency, PUMP.headReserve],
+      assumptions: [
+        "ทุกห้องน้ำเปิดน้ำพร้อมกัน ห้องละประมาณ 10 ล./นาที (ฝักบัว/ก๊อกทั่วไป)",
+        "ปั๊มตั้งที่ชั้นล่าง ดูดจากถังเก็บน้ำบนดิน (ไม่ใช่ดูดลึกจากบ่อ)",
+        "ขั้นวัตต์ตามรุ่นปั๊มบ้านอัตโนมัติที่ขายทั่วไป เทียบกับกำลังที่ต้องการแบบไม่ต่ำกว่า",
+      ],
+      caveats: [
+        "ปั๊มดูดจากบ่อลึกหรือถังใต้ดินลึก ต้องบวกความลึกดูดเข้าเฮดด้วย แล้วคิดในเครื่องมือเลือกปั๊มน้ำ",
+        "วัตต์บนฉลากแต่ละยี่ห้อวัดต่างกัน ให้ดูกราฟอัตราไหล-เฮดของรุ่นประกอบ",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "สูตรกำลังปั๊มไฮดรอลิก (Hydraulic Power) — สูตรเดียวกับเครื่องมือเลือกปั๊มน้ำ" }],
+    },
+  });
+}
+
+/* ─────────── นับท่อ + ข้อต่อจากจำนวนจุดน้ำ (ประมาณ) ─────────── */
+
+/** ชนิดจุดน้ำ + ค่าตั้งต้น (บ้าน 2 ห้องน้ำทั่วไป) — ค่าตั้งต้นต้องตรงกับช่องกรอก */
+const FIXTURE_FIELDS = [
+  { key: "faucet", name: "ก๊อกน้ำ", def: 3 },
+  { key: "toilet", name: "ชักโครก", def: 2 },
+  { key: "shower", name: "ฝักบัว", def: 2 },
+  { key: "basin", name: "อ่างล้างหน้า/ซิงค์", def: 2 },
+  { key: "washer", name: "เครื่องซักผ้า", def: 1 },
+  { key: "heater", name: "เครื่องทำน้ำอุ่น", def: 1 },
+] as const;
+
+/** ปากที่ต้องทากาวต่อข้อต่อหนึ่งตัว: สามทาง 3 · ข้องอ/ข้อต่อตรง/บอลวาล์วสวม 2 · ข้องอเกลียวใน 1 (อีกด้านเป็นเกลียว) */
+const GLUED_ENDS = { tee: 3, elbow: 2, socket: 2, valve: 2, threadElbow: 1 } as const;
+
+export function calcFittings(v: Values) {
+  const bad = guard("fittings", v);
+  if (bad) return bad;
+  const counts = Object.fromEntries(FIXTURE_FIELDS.map((f) => [f.key, num(v, f.key, f.def)])) as Record<(typeof FIXTURE_FIELDS)[number]["key"], number>;
+  const points = FIXTURE_FIELDS.reduce((s, f) => s + counts[f.key], 0);
+  if (points < 1) {
+    return blockedResult({
+      headline: "ยังไม่มีจุดน้ำ — ใส่จำนวนก๊อก/ชักโครก/ฝักบัวอย่างน้อย 1 จุด",
+      tip: "กรอกจำนวนจุดน้ำที่จะเดินท่อไปถึง แล้วรายการท่อและข้อต่อจะขึ้นเอง",
+    });
+  }
+  const run = num(v, "run", 15);
+  const waste = num(v, "waste", 10);
+  const stick = PIPE_KIT.stickLen.value;
+  const branchTotal = points * PIPE_KIT.branchLen.value;
+  const mainSticks = ceil((run * (1 + waste / 100)) / stick);
+  const branchSticks = ceil((branchTotal * (1 + waste / 100)) / stick);
+  const tees = points - 1;
+  const endElbow = 1;
+  const mainElbows = ceil(run / PIPE_KIT.mainElbowEvery.value);
+  const sockets = Math.max(0, ceil(run / stick) - 1);
+  const branchElbows = points;
+  const threadElbows = points;
+  const ballValve = 1;
+  const stopValves = counts.toilet + counts.basin + counts.washer + counts.heater;
+  const fittings = tees + endElbow + mainElbows + sockets + branchElbows + threadElbows;
+  const gluedEnds =
+    tees * GLUED_ENDS.tee +
+    (endElbow + mainElbows + branchElbows) * GLUED_ENDS.elbow +
+    sockets * GLUED_ENDS.socket +
+    threadElbows * GLUED_ENDS.threadElbow +
+    ballValve * GLUED_ENDS.valve;
+  const glue = gluedEnds * PIPE_KIT.gluePerJoint.value;
+  const cans = ceil(glue / PIPE_KIT.glueCan.value);
+  const threads = threadElbows + stopValves;
+  const tapes = ceil(threads / PIPE_KIT.threadsPerTape.value);
+  const bigHouse = points > PIPE_KIT.mainCheckAt.value;
+  const pointsText = FIXTURE_FIELDS.filter((f) => counts[f.key] > 0)
+    .map((f) => `${f.name} ${fmt(counts[f.key])}`)
+    .join(" · ");
+  const stickText = (n: number) => `${fmt(n)} เส้น (เส้นละ ${fmtTrim(stick, 1)} ม.)`;
+
+  return resultX({
+    title: "ท่อ + ข้อต่อประปา (ประมาณ)",
+    headline: `ท่อ 6 หุน ${fmt(mainSticks)} เส้น · 4 หุน ${fmt(branchSticks)} เส้น · ข้อต่อ ${fmt(fittings)} ตัว (ประมาณ)`,
+    rows: [
+      { label: "จุดน้ำ", value: `${pointsText} (รวม ${fmt(points)} จุด)` },
+      { label: "ท่อเมน PVC 6 หุน (3/4\") ชั้น 13.5", value: stickText(mainSticks), emphasize: true },
+      { label: "ท่อแยก PVC 4 หุน (1/2\") ชั้น 13.5", value: stickText(branchSticks), emphasize: true },
+      { label: "สามทางลด 6 × 4 หุน", value: `${fmt(tees)} ตัว` },
+      { label: "ข้องอลด 6 × 4 หุน (ปลายท่อเมน)", value: `${fmt(endElbow)} ตัว` },
+      { label: "ข้องอ 6 หุน (เลี้ยวท่อเมน)", value: `${fmt(mainElbows)} ตัว` },
+      { label: "ข้อต่อตรง 6 หุน", value: `${fmt(sockets)} ตัว` },
+      { label: "ข้องอ 4 หุน", value: `${fmt(branchElbows)} ตัว` },
+      { label: "ข้องอเกลียวใน 4 หุน (หัวจุดน้ำ)", value: `${fmt(threadElbows)} ตัว` },
+      { label: "บอลวาล์ว 6 หุน (ต้นทาง)", value: `${fmt(ballValve)} ตัว` },
+      ...(stopValves > 0 ? [{ label: "สต็อปวาล์ว (ชักโครก อ่าง เครื่องซักผ้า เครื่องทำน้ำอุ่น)", value: `${fmt(stopValves)} ตัว` }] : []),
+      { label: "กาว PVC", value: `ราว ${fmt(glue)} ก. → ${fmt(cans)} กระป๋อง (${fmt(PIPE_KIT.glueCan.value)} ก.)`, emphasize: true },
+      { label: "เทปพันเกลียว", value: `${fmt(tapes)} ม้วน (${fmt(threads)} จุดเกลียว)` },
+      ...(bigHouse
+        ? [{ label: "จุดน้ำเยอะ", value: `เกิน ${fmt(PIPE_KIT.mainCheckAt.value)} จุด เช็กขนาดท่อเมนด้วยเครื่องมือ "ขนาดท่อ + ความเร็วน้ำ" อาจต้องใช้ 1 นิ้ว`, emphasize: true }]
+        : []),
+    ],
+    tip: "เป็นตัวเลขประมาณจากจำนวนจุด แนวท่อจริงเลี้ยวมาก/น้อยกว่านี้ได้ — ซื้อข้อต่อเผื่ออีกถุงเล็ก ของเหลือคืนร้านได้ถูกกว่ารถวิ่งรอบสอง",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-25",
+      summary:
+        "ท่อเมน 6 หุนวิ่งจากต้นทางผ่านทุกจุด แต่ละจุดแยกด้วยสามทางลดลงท่อ 4 หุน — นับท่อเป็นเส้น 4 ม. และนับข้อต่อตามจำนวนจุด (ประมาณ ไม่ใช่แบบจริง)",
+      steps: [
+        { label: "จำนวนจุดน้ำ", expr: "รวมทุกชนิด", subst: `${fmt(points)} จุด` },
+        {
+          label: "ท่อเมน 6 หุน",
+          expr: "ปัดขึ้น(ระยะท่อเมน × (1 + เผื่อ) ÷ ยาวเส้น)",
+          subst: `${fmt(run, 1)} × ${fmtTrim(1 + waste / 100, 2)} ÷ ${fmtTrim(stick, 1)} → ${fmt(mainSticks)} เส้น`,
+        },
+        {
+          label: "ท่อแยก 4 หุน",
+          expr: `ปัดขึ้น(จุด × ${fmtTrim(PIPE_KIT.branchLen.value, 1)} ม. × (1 + เผื่อ) ÷ ยาวเส้น)`,
+          subst: `${fmt(points)} × ${fmtTrim(PIPE_KIT.branchLen.value, 1)} = ${fmt(branchTotal, 1)} ม. × ${fmtTrim(1 + waste / 100, 2)} ÷ ${fmtTrim(stick, 1)} → ${fmt(branchSticks)} เส้น`,
+        },
+        { label: "สามทางลด", expr: "จุด − 1 (จุดสุดท้ายใช้ข้องอลด)", subst: `${fmt(points)} − 1 = ${fmt(tees)} ตัว` },
+        {
+          label: "ข้องอ + ข้อต่อตรงท่อเมน",
+          expr: `ข้องอ = ปัดขึ้น(ระยะ ÷ ${fmt(PIPE_KIT.mainElbowEvery.value)}) · ข้อต่อตรง = ปัดขึ้น(ระยะ ÷ ${fmtTrim(stick, 1)}) − 1`,
+          subst: `ข้องอ ${fmt(mainElbows)} ตัว · ข้อต่อตรง ${fmt(sockets)} ตัว`,
+        },
+        { label: "หัวจุดน้ำ", expr: "ทุกจุด: ข้องอ 1 + ข้องอเกลียวใน 1", subst: `${fmt(branchElbows)} + ${fmt(threadElbows)} ตัว` },
+        {
+          label: "กาว PVC",
+          expr: `ปากที่ทากาว × ${fmtTrim(PIPE_KIT.gluePerJoint.value, 1)} ก. (สามทาง 3 ปาก · ข้องอ/ข้อต่อตรง/บอลวาล์ว 2 · ข้องอเกลียวใน 1)`,
+          subst: `${fmt(gluedEnds)} ปาก × ${fmtTrim(PIPE_KIT.gluePerJoint.value, 1)} = ${fmt(glue)} ก. → ${fmt(cans)} กระป๋อง`,
+        },
+        {
+          label: "เทปพันเกลียว",
+          expr: `ปัดขึ้น(จุดเกลียว ÷ ${fmt(PIPE_KIT.threadsPerTape.value)})`,
+          subst: `(${fmt(threadElbows)} หัวจุดน้ำ + ${fmt(stopValves)} สต็อปวาล์ว) ÷ ${fmt(PIPE_KIT.threadsPerTape.value)} → ${fmt(tapes)} ม้วน`,
+        },
+      ],
+      constants: [PIPE_KIT.stickLen, PIPE_KIT.branchLen, PIPE_KIT.mainElbowEvery, PIPE_KIT.gluePerJoint, PIPE_KIT.glueCan, PIPE_KIT.threadsPerTape],
+      assumptions: [
+        "ท่อเมนเส้นเดียววิ่งผ่านทุกจุด (ไม่แยกหลายสาย) ท่อน้ำเย็นอย่างเดียว",
+        "เครื่องทำน้ำอุ่นเป็นแบบจุดเดียว (ต่อน้ำเย็นเข้าเครื่อง) ไม่มีท่อน้ำร้อนเดินในผนัง",
+        "ก๊อกและฝักบัวมีวาล์วในตัว จึงใส่สต็อปวาล์วเฉพาะชักโครก อ่าง เครื่องซักผ้า เครื่องทำน้ำอุ่น",
+        "ระยะท่อเมนคือระยะเดินจริงจากมิเตอร์/ปั๊มถึงจุดไกลสุด รวมช่วงขึ้น-ลงแล้ว",
+      ],
+      caveats: [
+        "เป็นค่าประมาณจากจำนวนจุด ไม่ใช่การถอดแบบ แนวท่อจริงอาจเลี้ยวมากกว่านี้",
+        "บ้านสองชั้นหรือจุดน้ำเยอะ ควรแยกท่อเมนแต่ละชั้น/โซน และเช็กขนาดท่อเมน",
+        "ยังไม่รวมท่อน้ำทิ้ง ท่อโสโครก ท่ออากาศ และข้อต่อสายอ่อนของสุขภัณฑ์",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "แนวปฏิบัติหน้างานประปาบ้าน (ท่อเมน 6 หุน แยกจุดละ 4 หุน)" }],
+    },
+  });
+}
+
 export const plumbingTools: ToolDef[] = [
   {
     id: "tank",
@@ -384,6 +720,29 @@ export const plumbingTools: ToolDef[] = [
       { type: "number", key: "h", label: "เฮดรวม (สูงที่ส่ง + แรงเสียดทานท่อ)", unit: "ม.", default: 18, min: 1, max: 100 },
     ],
     calc: calcPump,
+  },
+  {
+    id: "homepump",
+    name: "ปั๊มบ้านกี่วัตต์",
+    blurb: "จำนวนชั้น + ห้องน้ำ → ปั๊ม 150–400 วัตต์",
+    fields: [
+      { type: "number", key: "floors", label: "จำนวนชั้นที่ส่งน้ำขึ้น", unit: "ชั้น", default: 2, min: 1, max: 4 },
+      { type: "number", key: "baths", label: "ห้องน้ำ", unit: "ห้อง", default: 2, min: 1, max: 6 },
+      { type: "number", key: "len", label: "ระยะท่อจากปั๊มถึงจุดไกลสุด", unit: "ม.", default: 15, min: 1, max: 100 },
+    ],
+    calc: calcHomePump,
+  },
+  {
+    id: "ptank",
+    name: "ขนาดถังแรงดัน",
+    blurb: "ปั๊มติด-ตัด + อัตราไหล → ถังกี่ลิตร",
+    fields: [
+      { type: "number", key: "watts", label: "ปั๊ม", unit: "W", default: 250, min: 100, max: 5000 },
+      { type: "number", key: "q", label: "อัตราไหลของปั๊ม", unit: "ล./นาที", default: 30, min: 5, max: 300 },
+      { type: "number", key: "cutIn", label: "แรงดันปั๊มติด", unit: "bar", default: 1.4, min: 0.5, max: 5, step: 0.1 },
+      { type: "number", key: "cutOut", label: "แรงดันปั๊มตัด", unit: "bar", default: 2.8, min: 1, max: 7, step: 0.1 },
+    ],
+    calc: calcPressureTank,
   },
   {
     id: "pipe",
@@ -432,6 +791,22 @@ export const plumbingTools: ToolDef[] = [
     fields: [{ type: "number", key: "joints", label: "จำนวนข้อต่อ", unit: "จุด", default: 24, min: 1, max: 2000 }],
     calc: calcPlumbBom,
   },
+  {
+    id: "fittings",
+    name: "นับท่อ + ข้อต่อจากจุดน้ำ",
+    blurb: "จำนวนก๊อก ชักโครก ฝักบัว → ท่อเป็นเส้น ข้องอ สามทาง วาล์ว",
+    fields: [
+      { type: "number", key: "faucet", label: "ก๊อกน้ำ (ซิงค์/ล้างพื้น/สนาม)", unit: "จุด", default: 3, min: 0, max: 30 },
+      { type: "number", key: "toilet", label: "ชักโครก", unit: "จุด", default: 2, min: 0, max: 10 },
+      { type: "number", key: "shower", label: "ฝักบัว", unit: "จุด", default: 2, min: 0, max: 10 },
+      { type: "number", key: "basin", label: "อ่างล้างหน้า/ซิงค์", unit: "จุด", default: 2, min: 0, max: 10 },
+      { type: "number", key: "washer", label: "เครื่องซักผ้า", unit: "จุด", default: 1, min: 0, max: 5 },
+      { type: "number", key: "heater", label: "เครื่องทำน้ำอุ่น", unit: "จุด", default: 1, min: 0, max: 10 },
+      { type: "number", key: "run", label: "ระยะท่อเมนถึงจุดไกลสุด", unit: "ม.", default: 15, min: 1, max: 200, step: 0.5 },
+      { type: "number", key: "waste", label: "เผื่อท่อตัดเสีย", unit: "%", default: 10, min: 0, max: 30 },
+    ],
+    calc: calcFittings,
+  },
 ];
 
 export const plumbingJob: JobDef = {
@@ -453,7 +828,7 @@ export const plumbingJob: JobDef = {
     const q = Math.min(60, Math.max(20, people * 8));
     const floors = num(v, "floors", 2);
     const len = num(v, "len", 12);
-    const h = floors * 3.2 + 8 + len * 0.05;
+    const h = homeHead(floors, len);
     const pump = calcPump({ q, h });
     const pipe = calcPlumbPipe({ q, vel: 1.8, pvcClass: "13.5" });
     const bom = calcPlumbBom(v);
