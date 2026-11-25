@@ -104,6 +104,15 @@ describe("print-quote pricing", () => {
     expect(estimateOrder([{ stats: s, qty: 1 }], "resin", "normal").printTHB).toBeNull();
   });
 
+  it("matches the shop's real FDM prices (area/volume of real jobs)", () => {
+    const job = (areaCm2: number, volumeCm3: number) =>
+      estimateOrder([{ stats: { ...s, areaCm2, volumeCm3 }, qty: 1 }], "fdm", "normal").printTHB;
+    expect(job(173, 67.7)).toBe(70); // M12 battery holder
+    expect(job(256, 87.2)).toBe(105); // M18 battery holder, 1h28m
+    expect(job(454, 36.2)).toBe(140); // blower, 1h58m
+    expect(job(1660, 211.6)).toBe(560); // M18 GEN3 stubby, 8h05m
+  });
+
   it("ships free from 1,000 THB", () => {
     expect(parcelFee(null)).toBe(50);
     expect(parcelFee(999)).toBe(50);

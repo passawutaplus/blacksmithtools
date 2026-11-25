@@ -27,12 +27,15 @@ export const PRINT_CONFIG = {
     /** Minimum charge per order: anything under 1 hour is ฿70. */
     minOrderTHB: 70 as number | null,
     /**
-     * Print speed (g/h at 0.25 mm), fitted to the shop's real jobs:
-     *  - Battery Holder M12 = ฿70, Battery Holder M18 = ฿105
-     *  - M18 GEN3 stubby: Bambu Studio 252 g / 8h05m printing = ฿560 (our estimate: 255 g)
-     * Any value in ~30.9–32.9 matches all three. Fine (0.15 mm) is scaled by layer height (provisional).
+     * Print-time model at 0.25 mm: hours = hPerCm2 × surface area + hPerCm3 × volume.
+     * Walls dominate at 15% infill, so area matters more than weight (thin tall parts are slow).
+     * Fitted to the shop's real Bambu Studio jobs (model printing time → billed price):
+     *  - M18 GEN3 stubby 8h05m → ฿560 · mil blower 1h58m → ฿140 · M18 battery holder 1h28m → ฿105
+     *  - M12 battery holder → ฿70
      */
-    gramsPerHour: { normal: 31.6, fine: 19 } as Record<Quality, number | null>,
+    timeModel: { hPerCm2: 0.0042, hPerCm3: 0.00507 },
+    /** Fine 0.15 mm takes ~0.25/0.15 longer — provisional until a real fine-layer job is checked. */
+    qualityTimeFactor: { normal: 1, fine: 0.25 / 0.15 } as Record<Quality, number>,
     /** Order print time is billed in steps of this many hours (nearest): 8h05m → 8 h = ฿560. */
     billStepHours: 0.5,
     /** Fixed setup time per plate (hours). */
@@ -97,12 +100,9 @@ export function estimatePiece(stats: MeshStats, process: Process, quality: Quali
     const c = PRINT_CONFIG.fdm;
     const shellCm3 = Math.min(stats.volumeCm3, stats.areaCm2 * (c.wallMm / 10));
     const grams = (shellCm3 + (stats.volumeCm3 - shellCm3) * c.infill) * c.density;
-    const gph = c.gramsPerHour[quality];
-    const hours = gph ? grams / gph : NaN;
+    const hours = (c.timeModel.hPerCm2 * stats.areaCm2 + c.timeModel.hPerCm3 * stats.volumeCm3) * c.qualityTimeFactor[quality];
     const priceTHB =
-      c.perGramTHB != null && c.perHourTHB != null && gph
-        ? grams * c.perGramTHB + hours * c.perHourTHB
-        : null;
+      c.perGramTHB != null && c.perHourTHB != null ? grams * c.perGramTHB + hours * c.perHourTHB : null;
     return { grams, hours, priceTHB };
   }
   const c = PRINT_CONFIG.resin;
