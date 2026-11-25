@@ -102,8 +102,8 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
       <div className="absolute right-2.5 top-2.5 z-10 flex" role="group" aria-label="รูปแบบการแสดงผล">
         {(
           [
-            ["solid", "3D", Box],
-            ["line", "เส้น", PenLine],
+            ["solid", "ภาพ 3D", Box],
+            ["line", "ภาพลายเส้น", PenLine],
           ] as const
         ).map(([m, label, Icon]) => (
           <button
@@ -111,12 +111,13 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
             type="button"
             onClick={() => switchMode(m)}
             aria-pressed={mode === m}
-            className={`-mr-px flex items-center gap-1 border border-navy px-2 py-0.5 text-[11px] font-medium ${
+            aria-label={label}
+            title={label}
+            className={`-mr-px grid h-[22px] w-7 place-items-center border border-navy ${
               mode === m ? "bg-navy text-white" : "bg-white text-navy"
             }`}
           >
-            <Icon className="h-3 w-3" aria-hidden />
-            {label}
+            <Icon className="h-3.5 w-3.5" aria-hidden />
           </button>
         ))}
       </div>
