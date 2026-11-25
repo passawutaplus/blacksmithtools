@@ -2,8 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import { useVoucherStore } from "@/lib/voucher-store";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useCartStore } from "@/lib/cart-store";
 import { cartLineKey, shortProductName } from "@/lib/product";
@@ -76,11 +75,6 @@ export default function CheckoutPage() {
   const [lines, setLines] = useState<CheckoutLine[]>([]);
   const [subtotal, setSubtotal] = useState(0);
   const [shipping, setShipping] = useState(0);
-  const claimedCodes = useVoucherStore((s) => s.claimed);
-  const [voucherInput, setVoucherInput] = useState("");
-  const [voucher, setVoucher] = useState<{ code: string; discount: number } | null>(null);
-  const [voucherMsg, setVoucherMsg] = useState("");
-  const [voucherBusy, setVoucherBusy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PayMethod>("bank_transfer");
@@ -164,42 +158,6 @@ export default function CheckoutPage() {
     void sync();
   }, [items, cartId, setCartId]);
 
-  const applyVoucher = useCallback(
-    async (raw: string) => {
-      const code = raw.trim();
-      if (!code) return;
-      setVoucherBusy(true);
-      setVoucherMsg("");
-      try {
-        const res = await fetch("/api/vouchers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code, items, phone: address.phone }),
-        });
-        const data = await res.json();
-        if (data.ok) {
-          setVoucher({ code: data.code, discount: data.discount });
-          setVoucherInput("");
-        } else {
-          setVoucher(null);
-          setVoucherMsg(data.error || "ใช้โค้ดนี้ไม่ได้");
-        }
-      } catch {
-        setVoucherMsg("ตรวจโค้ดไม่สำเร็จ ลองใหม่อีกครั้ง");
-      } finally {
-        setVoucherBusy(false);
-      }
-    },
-    [items, address.phone],
-  );
-
-  // Cart changed after a code was applied: re-check so the shown discount is never stale.
-  useEffect(() => {
-    if (!voucher) return;
-    void applyVoucher(voucher.code);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items]);
-
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
@@ -213,7 +171,6 @@ export default function CheckoutPage() {
           items,
           paymentMethod,
           customerNote: address.customerNote.trim(),
-          voucherCode: voucher?.code,
           wantReceipt,
           billing: wantReceipt
             ? {
@@ -563,69 +520,9 @@ export default function CheckoutPage() {
                 <span className="tabular-nums">{shipping === 0 ? "ฟรี" : formatTHB(shipping)}</span>
               </div>
             </div>
-            <div className="mt-4 border-t border-gray-100 pt-4">
-              <p className="text-xs font-semibold text-muted">โค้ดส่วนลด</p>
-              {voucher ? (
-                <p className="mt-2 flex items-center justify-between gap-3 border border-forge px-3 py-2 text-sm">
-                  <span>
-                    <b className="num">{voucher.code}</b> <span className="text-forge">-{formatTHB(voucher.discount)}</span>
-                  </span>
-                  <button type="button" className="text-xs underline" onClick={() => setVoucher(null)}>
-                    เอาออก
-                  </button>
-                </p>
-              ) : (
-                <>
-                  <div className="mt-2 flex gap-2">
-                    <input
-                      className="input min-w-0 flex-1 uppercase"
-                      value={voucherInput}
-                      onChange={(e) => setVoucherInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void applyVoucher(voucherInput);
-                        }
-                      }}
-                      placeholder="กรอกโค้ด"
-                      aria-label="โค้ดส่วนลด"
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      disabled={voucherBusy || !voucherInput.trim()}
-                      onClick={() => void applyVoucher(voucherInput)}
-                    >
-                      ใช้โค้ด
-                    </button>
-                  </div>
-                  {claimedCodes.length > 0 ? (
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {claimedCodes.map((c) => (
-                        <button
-                          key={c}
-                          type="button"
-                          className="num border border-forge px-2 py-1 text-xs font-semibold text-forge"
-                          onClick={() => void applyVoucher(c)}
-                        >
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              )}
-              {voucherMsg ? <p className="mt-2 text-xs text-red-600">{voucherMsg}</p> : null}
-            </div>
-            {voucher ? (
-              <div className="mt-3 flex justify-between gap-4 text-sm">
-                <span className="text-muted">ส่วนลดโค้ด</span>
-                <span className="tabular-nums text-forge">-{formatTHB(voucher.discount)}</span>
-              </div>
-            ) : null}
             <div className="mt-3 flex justify-between gap-4 text-lg font-bold">
               <span>รวมชำระ</span>
-              <span className="tabular-nums text-forge">{formatTHB(subtotal + shipping - (voucher?.discount ?? 0))}</span>
+              <span className="tabular-nums text-forge">{formatTHB(subtotal + shipping)}</span>
             </div>
             {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
             <button type="submit" className="btn btn-primary mt-4 w-full" disabled={loading}>

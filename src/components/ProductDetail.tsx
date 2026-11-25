@@ -17,7 +17,6 @@ import { getProductDetailSections } from "@/lib/parse-product-details";
 import { useCartStore } from "@/lib/cart-store";
 import { MarketplaceButtons } from "@/components/MarketplaceButtons";
 import { ProductDetailSections } from "@/components/ProductDetailSections";
-import { ProductVouchers } from "@/components/ProductVouchers";
 
 export function ProductDetail({
   product,
@@ -276,8 +275,6 @@ export function ProductDetail({
             ) : null}
           </div>
         </div>
-
-        <ProductVouchers />
 
         <dl className="mt-6 grid grid-cols-3 border border-navy/12 bg-white text-navy">
           {[
