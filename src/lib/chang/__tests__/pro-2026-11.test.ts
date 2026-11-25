@@ -9,10 +9,15 @@ import { searchCatalog } from "../catalog";
 import { fmtInchFraction, fmtTrim, inchFraction, parseLengthList, stockPieces } from "../math";
 import type { CalcResult } from "../types";
 import { calcLen, feetInchText, generalJob, generalTools, inchHunText, calcGeometry, calcWeightForce } from "../tools/general";
+import { calcGypsum, calcTbar, ceilingJob } from "../tools/ceiling";
 import { calcAluCut, calcGlassWeight, glassJob } from "../tools/glass";
+import { calcLaminate, handymanTools } from "../tools/handyman";
 import { calcLintel, calcMix, calcMortar, calcPlaster, masonryJob } from "../tools/masonry";
+import { calcPaintQty, calcWallpaper, paintJob, paintPacks, paintTools } from "../tools/paint";
 import { calcRoofMaterial, pitchWarning, roofJob } from "../tools/roof";
 import { calcCut, calcSteelWeight, packBfd, steelJob, steelTools } from "../tools/steel";
+import { calcGrout, calcLeveling, calcTileQty, clipsPerTile, tileJob, tileLayout, tileTools } from "../tools/tile";
+import { calcGap, calcVinylAdhesive, vinylJob } from "../tools/vinyl";
 
 function rowOf(r: CalcResult, label: string): string {
   return r.rows.find((x) => x.label === label)?.value ?? "";
@@ -385,5 +390,225 @@ describe("ทะเบียนค่าคงที่รอบ 2", () => {
 describe("ค้นหา: คำช่างของสายโครงสร้าง", () => {
   it.each(["กล่อง", "ฉาก", "ตัวซี"])('ค้น "%s" ต้องเจอน้ำหนักเหล็ก', (word) => {
     expect(searchCatalog(word).tools.map((t) => `${t.tradeId}/${t.id}`)).toContain("steel/weight");
+  });
+});
+
+/* ═══════════════ งานตกแต่ง ═══════════════ */
+
+describe("กระเบื้อง: นับตามแถว คลิปตามขนาด ถุงยาแนว", () => {
+  it("วางแถว 60×60 ในห้อง 4×5 ม. = 60 แผ่น (เต็ม 48 + ริม 9 + ริม 3)", () => {
+    // ด้านกว้าง 4 ÷ 0.6 = 6 แผ่นเต็ม เศษ 0.4 (เกินครึ่งแผ่น → แผ่นละ 1 ชิ้น)
+    // ด้านยาว 5 ÷ 0.6 = 8 แผ่นเต็ม เศษ 0.2 (ไม่เกินครึ่ง → แผ่นละ 2 ชิ้น)
+    // เต็ม 6×8 = 48 · แถวริมด้านกว้าง (8+1) ชิ้น = 9 แผ่น · แถวริมด้านยาว 6 ชิ้น ÷ 2 = 3 แผ่น → 60
+    expect(tileLayout(4, 5, 0.6, 0.6).count).toBe(60);
+  });
+
+  it("30×60 ในห้อง 3.3×4.1 ม.: วางแถวได้ 77 แต่พื้นที่+เผื่อ 5% ได้ 79 → ใช้ค่ามากกว่า 79 แผ่น 10 กล่อง", () => {
+    // วางแถว: 0.3 ตามกว้าง 11 แผ่นพอดี · 0.6 ตามยาว 6 แผ่น เศษ 0.5 (เกินครึ่ง) → 66 + 11 = 77
+    // พื้นที่: 13.53 ÷ 0.18 × 1.05 = 78.9 → 79 · กล่องละ 8 → 79 ÷ 8 = 9.9 → 10
+    expect(tileLayout(3.3, 4.1, 0.3, 0.6).count).toBe(77);
+    const r = calcTileQty({ w: 3.3, l: 4.1, size: "3060", perBox: 8, pattern: "straight" });
+    expect(numberIn(rowOf(r, "นับแบบวางแถว"))).toBe(77);
+    expect(numberIn(rowOf(r, "จำนวนแผ่น"))).toBe(79);
+    expect(numberIn(rowOf(r, "จำนวนกล่อง"))).toBe(10);
+  });
+
+  it("คลิปต่อแผ่นตามขนาด: 60×60 = 4 · 30×60 = 3 · 60×120 = 6 และแผ่นเล็กกว่า 60 ซม. ไม่ใช้คลิป", () => {
+    // คลิปทุก 30 ซม. ตามขอบ นับครึ่งรอบแผ่น: 0.6/0.3 + 0.6/0.3 = 4 · 0.3/0.3 + 0.6/0.3 = 3 · 2 + 4 = 6
+    expect(clipsPerTile(0.6, 0.6)).toBe(4);
+    expect(clipsPerTile(0.3, 0.6)).toBe(3);
+    expect(clipsPerTile(0.6, 1.2)).toBe(6);
+    // 30×60 ห้อง 20 ตร.ม.: 20 ÷ 0.18 = 111.1 → 112 แผ่น × 3 = 336 ตัว = 4 ถุง (ถุง 100)
+    const r = calcLeveling({ w: 4, l: 5, size: "3060" });
+    expect(rowStarting(r, "คลิปปรับระดับ")).toBe("336 ตัว = 4 ถุง (ถุง 100)");
+    expect(rowStarting(r, "ลิ่ม")).toContain("วนใช้");
+    const small = calcLeveling({ w: 4, l: 5, size: "30" });
+    expect(small.headline).toContain("ไม่ต้องใช้คลิป");
+    expect(hasRow(tileJob.calc({ size: "30" }), "คลิปปรับระดับ")).toBe(false);
+    expect(hasRow(tileJob.calc({ size: "60" }), "คลิปปรับระดับ")).toBe(true);
+  });
+
+  it("ยาแนว 2.1 กก.: ถุง 5 กก. (ค่าเดิม) = 1 ถุง · เลือกถุง 1 กก. = 3 ถุง", () => {
+    expect(rowOf(calcGrout({}), "ยาแนว (ถุง 5 กก.)")).toBe("1 ถุง");
+    expect(rowOf(calcGrout({ groutBag: "1" }), "ยาแนว (ถุง 1 กก.)")).toBe("3 ถุง");
+  });
+
+  it("เครื่องมือเดิมชื่อ “คิ้ว” เปลี่ยนเป็นบัวเชิงผนัง และออกเป็นเส้น", () => {
+    const trim = tileTools.find((t) => t.id === "trim");
+    expect(trim?.name).toContain("บัวเชิงผนัง");
+    // รอบห้อง 4×5 = 18 ม. หักประตู 0.9 = 17.1 ม. ÷ 2.5 = 6.84 → 7 เส้น
+    expect(rowOf(trim!.calc({}), "บัวเชิงผนัง (เส้นละ 2.5 ม.)")).toBe("7 เส้น");
+  });
+});
+
+describe("กระเบื้องยาง: ปรับระดับเป็นตัวเลือก โฟมติดหลัง ห้องยาว", () => {
+  it("ค่าตั้งต้นของ job ไม่มีปูนปรับระดับ ใส่ความหนาแล้วจึงมี", () => {
+    expect(hasRow(vinylJob.calc({}), "ปูนปรับระดับ")).toBe(false);
+    expect(hasRow(vinylJob.calc({ thick: 3 }), "ปูนปรับระดับ")).toBe(true);
+  });
+
+  it("แผ่นมีโฟมติดหลัง ไม่ต้องซื้อโฟมรองพื้น", () => {
+    expect(rowOf(vinylJob.calc({ kind: "clickPad" }), "โฟมรองพื้น")).toBe("ไม่ต้องซื้อ");
+    expect(hasRow(vinylJob.calc({ kind: "click" }), "โฟมรอง (ม้วน")).toBe(true);
+  });
+
+  it("ห้องยาว 16 ม. ต้องขึ้นแถวเตือนตัวแบ่ง ห้อง 5 ม. ไม่ขึ้น", () => {
+    expect(hasRow(calcGap({ l: 16 }), "ต้องมีตัวแบ่ง")).toBe(true);
+    expect(calcGap({ l: 16 }).headline).toContain("ตัวแบ่ง");
+    expect(hasRow(calcGap({ l: 5 }), "ต้องมีตัวแบ่ง")).toBe(false);
+  });
+
+  it("กาว 6 กก.: แกลลอน 4 กก. (ค่าเดิม) = 2 · แกลลอน 3 กก. = 2 · กระป๋อง 1 กก. = 6", () => {
+    // 20 ตร.ม. × 0.3 กก./ตร.ม. = 6 กก. → ÷4 = 1.5 → 2 · ÷3 = 2 · ÷1 = 6
+    expect(numberIn(rowStarting(calcVinylAdhesive({ kind: "glue" }), "กาว (แกลลอน 4 กก.)"))).toBe(2);
+    expect(numberIn(rowStarting(calcVinylAdhesive({ kind: "glue", gluePack: "3" }), "กาว (แกลลอน 3 กก.)"))).toBe(2);
+    const one = calcVinylAdhesive({ kind: "glue", gluePack: "1" });
+    expect(one.rows.some((x) => x.emphasize && numberIn(x.value) === 6)).toBe(true);
+  });
+});
+
+describe("ฝ้า: โครงเป็นเส้น และใบสั่งของตามระบบ", () => {
+  it("ยิปซัม 4×5 ม.: โครงล่าง 53 ม. = 14 เส้น · โครงบน 18 ม. = 5 เส้น · ฉากริม 18 ม. = 5 เส้น (เส้น 4 ม.)", () => {
+    // 20 ÷ 0.4 × 1.05 = 52.5 → 53 ม. ÷ 4 = 13.25 → 14 · 20 ÷ 1.2 × 1.05 = 17.5 → 18 ÷ 4 = 4.5 → 5 · 2×(4+5) = 18 → 5
+    const r = calcGypsum({ w: 4, l: 5 });
+    expect(rowOf(r, "โครง C-Line ล่าง (ซอย) ประมาณ")).toBe("53 ม. ≈ 14 เส้น (เส้นละ 4 ม.)");
+    expect(rowOf(r, "โครง C-Line บน (โครงหลัก) ประมาณ")).toBe("18 ม. ≈ 5 เส้น (เส้นละ 4 ม.)");
+    expect(rowOf(r, "ฉากริมผนัง")).toBe("18 ม. ≈ 5 เส้น (เส้นละ 4 ม.)");
+    // ร้านขายเส้น 3 ม.: 53 ÷ 3 = 17.7 → 18 เส้น
+    expect(rowOf(calcGypsum({ w: 4, l: 5, stock: 3 }), "โครง C-Line ล่าง (ซอย) ประมาณ")).toBe("53 ม. ≈ 18 เส้น (เส้นละ 3 ม.)");
+  });
+
+  it("ทีบาร์ 60×60 ห้อง 4×5 ม.: Main tee 5 เส้น · Cross tee 1.2 ม. 28 ท่อน · 0.6 ม. 28 ท่อน · ลวดแขวน 14 จุด", () => {
+    // Main tee 4 ÷ 1.2 × 5 = 16.67 ม. → 17 ม. ÷ 4 = 4.25 → 5 เส้น
+    // Cross 1.2 ม.: 5 ÷ 0.6 × 4 = 33.33 ม. ÷ 1.2 = 27.8 → 28 ท่อน · Cross 0.6 ม.: 16.67 ÷ 0.6 = 27.8 → 28 ท่อน
+    // ลวดแขวน: 16.67 ÷ 1.2 = 13.9 → 14 จุด
+    const r = calcTbar({ w: 4, l: 5, tile: "60" });
+    expect(rowOf(r, "Main tee ประมาณ")).toBe("17 ม. ≈ 5 เส้น (เส้นละ 4 ม.)");
+    expect(rowOf(r, "Cross tee 1.2 ม. ประมาณ")).toBe("34 ม. ≈ 28 ท่อน");
+    expect(rowOf(r, "Cross tee 0.6 ม. ประมาณ")).toBe("17 ม. ≈ 28 ท่อน");
+    expect(numberIn(rowOf(r, "ลวดแขวน + พุก"))).toBe(14);
+  });
+
+  it("job ทีบาร์ต้องได้โครงทีบาร์ + ลวดแขวน และไม่มีสกรูยิปซัม", () => {
+    const r = ceilingJob.calc({ sys: "tbar" });
+    expect(hasRow(r, "Main tee")).toBe(true);
+    expect(hasRow(r, "Cross tee 1.2")).toBe(true);
+    expect(hasRow(r, "ฉากริมผนัง")).toBe(true);
+    expect(hasRow(r, "ลวดแขวน")).toBe(true);
+    expect(hasRow(r, "สกรูยิปซัม")).toBe(false);
+    expect(hasRow(r, "ปูนฉาบรอยต่อ")).toBe(false);
+    // แผ่น 60×120 ไม่มี Cross tee 0.6 ม.
+    expect(hasRow(ceilingJob.calc({ sys: "tbar120" }), "Cross tee 0.6")).toBe(false);
+  });
+
+  it("job ยิปซัมต้องมีสกรู เทปผ้า และปูนฉาบรอยต่อครบ", () => {
+    const r = ceilingJob.calc({ sys: "gyp" });
+    expect(hasRow(r, "สกรูยิปซัม")).toBe(true);
+    expect(hasRow(r, "เทปผ้า")).toBe(true);
+    // 20 ตร.ม. × 0.5 กก./ตร.ม. = 10 กก.
+    expect(numberIn(rowOf(r, "ปูนฉาบรอยต่อ"))).toBe(10);
+    expect(hasRow(r, "ลวดแขวน")).toBe(false);
+  });
+});
+
+describe("สี: ถัง 2.5 แกลลอน สภาพผนัง ฝ้า พื้นที่ที่รู้แล้ว", () => {
+  it("จัดถัง: 2.09 แกลลอน → 3 แกลลอน (ค่าเดิม) หรือ 1 ถัง 2.5 แกลลอน เมื่อร้านมี", () => {
+    expect(paintPacks(2.09, K.PAINT_PACKS.std).text).toBe("3 แกลลอน");
+    expect(paintPacks(2.09, K.PAINT_PACKS.mid).text).toBe("1 ถัง 2.5 แกลลอน");
+    // 4.18 → 2.5 + 2×1 = 4.5 (น้อยกว่าถัง 5) · 4.6 → ถัง 5 ใบเดียว · 7.3 → 5 + 2.5 = 7.5
+    expect(paintPacks(4.18, K.PAINT_PACKS.mid).text).toBe("1 ถัง 2.5 แกลลอน + 2 แกลลอน");
+    expect(paintPacks(4.6, K.PAINT_PACKS.mid).text).toBe("1 ถังใหญ่");
+    expect(paintPacks(7.3, K.PAINT_PACKS.mid)).toMatchObject({ totalGal: 7.5, text: "1 ถังใหญ่ + 1 ถัง 2.5 แกลลอน" });
+    // ค่าเดิมยังเหมือนรอบก่อน: 6.2 → 7 แกลลอน = 1 ถังใหญ่ + 2 แกลลอน · 0 → 0 แกลลอน
+    expect(paintPacks(6.2, K.PAINT_PACKS.std).text).toBe("1 ถังใหญ่ + 2 แกลลอน");
+    expect(paintPacks(0, K.PAINT_PACKS.std).text).toBe("0 แกลลอน");
+  });
+
+  it("ห้อง 3×4 สูง 2.6 ม.: ทับหน้า 2.09 แกลลอน สั่งเป็นถัง 2.5 แกลลอนได้ และบอกลิตร", () => {
+    // ผนัง 2×(4+3)×2.6 = 36.4 − (1.8 + 1.2) = 33.4 ตร.ม. · ทับหน้า 33.4 × 2 ÷ 32 = 2.0875 แกลลอน
+    const r = calcPaintQty({ l: 4, w: 3, h: 2.6, doors: 1, windows: 1, packs: "mid" });
+    expect(rowOf(r, "สั่งทับหน้า")).toBe("1 ถัง 2.5 แกลลอน");
+    // 2.5 × 3.785 = 9.46 ล. · รองพื้น 33.4 ÷ 30 = 1.11 → 2 แกลลอน = 7.57 ล.
+    expect(rowOf(r, "ของที่สั่งคิดเป็นลิตร")).toBe("รองพื้น 2 แกลลอน (7.6 ล.) · ทับหน้า 1 ถัง 2.5 แกลลอน (9.5 ล.)");
+  });
+
+  it("job ค่าตั้งต้น (ทาทับสีเดิม) ไม่มีถุงสกิมโค้ท · ผนังปูนใหม่ห้อง 3×4 ได้ 7 ถุง", () => {
+    const room = { l: 4, w: 3, h: 2.6, doors: 1, windows: 1 };
+    const repaint = paintJob.calc(room);
+    expect(rowOf(repaint, "สกิมโค้ท")).toContain("ไม่ต้องซื้อ");
+    expect(hasRow(repaint, "ถุง 20 กก.")).toBe(false);
+    // 33.4 × 1.8 × 2 = 120.24 กก. ÷ 20 = 6.01 → 7 ถุง
+    expect(rowOf(paintJob.calc({ ...room, cond: "new" }), "สกิมโค้ท (ถุง 20 กก.)")).toBe("7 ถุง");
+    expect(rowOf(paintJob.calc({ ...room, cond: "gyp" }), "สกิมโค้ท (ถุง 20 กก.)")).toBe("7 ถุง");
+  });
+
+  it("ทาฝ้าด้วย: พื้นที่รวม 33.4 + 12 = 45.4 ตร.ม. · กรอกพื้นที่เอง 64 ตร.ม. ใช้เลขนั้นตรง ๆ", () => {
+    const room = { l: 4, w: 3, h: 2.6, doors: 1, windows: 1 };
+    const withCeil = paintJob.calc({ ...room, ceil: true, cond: "new" });
+    expect(rowOf(withCeil, "พื้นที่ฝ้า")).toBe("12.00 ตร.ม.");
+    expect(rowOf(withCeil, "พื้นที่ทารวม")).toBe("45.40 ตร.ม.");
+    // สกิม 45.4 × 3.6 = 163.44 กก. → 9 ถุง · ทับหน้า 45.4 × 2 ÷ 32 = 2.84 → 3 แกลลอน
+    expect(rowOf(withCeil, "สกิมโค้ท (ถุง 20 กก.)")).toBe("9 ถุง");
+    expect(rowOf(withCeil, "สั่งทับหน้า")).toBe("3 แกลลอน");
+    // พื้นที่ที่รู้แล้ว 64 ตร.ม.: ทับหน้า 64 × 2 ÷ 32 = 4 แกลลอน · ไม่บวกฝ้าซ้ำแม้ติ๊กไว้
+    const known = paintJob.calc({ ...room, area: 64, ceil: true });
+    expect(rowOf(known, "พื้นที่ทา (กรอกเอง)")).toBe("64.00 ตร.ม.");
+    expect(rowOf(known, "สั่งทับหน้า")).toBe("4 แกลลอน");
+    expect(hasRow(known, "พื้นที่ฝ้า")).toBe(false);
+  });
+
+  it("วอลเปเปอร์นับเป็นแถบ: ห้อง 3×4 สูง 2.6 ม. = 9 ม้วน · สูง 3.4 ม. = 13 ม้วน", () => {
+    // แนวผนัง 14 − 0.9 = 13.1 ม. ÷ 0.53 = 24.7 → 25 แถบ
+    // สูง 2.6 + 0.1 = 2.7 ม. → ม้วน 10 ม. ได้ 3 แถบ → 25 ÷ 3 = 8.3 → 9 ม้วน (วิธีพื้นที่เดิมได้ 8)
+    // สูง 3.4 + 0.1 = 3.5 ม. → ม้วนละ 2 แถบ → 25 ÷ 2 = 12.5 → 13 ม้วน (วิธีพื้นที่เดิมได้ 10)
+    const a = calcWallpaper({ l: 4, w: 3, h: 2.6, doors: 1 });
+    expect(numberIn(rowOf(a, "จำนวนแถบ"))).toBe(25);
+    expect(rowOf(a, "ม้วนหนึ่งตัดได้")).toBe("3 แถบ");
+    expect(rowOf(a, "จำนวนม้วน")).toBe("9 ม้วน");
+    expect(rowOf(calcWallpaper({ l: 4, w: 3, h: 3.4, doors: 1 }), "จำนวนม้วน")).toBe("13 ม้วน");
+  });
+
+  it("ลายซ้ำทำให้แถบยาวขึ้น: สูง 2.4 ม. ลายเรียบ 7 ม้วน · ลายซ้ำ 53 ซม. 9 ม้วน", () => {
+    // ลายเรียบ: 2.5 ม./แถบ → 4 แถบ/ม้วน → 25 ÷ 4 = 6.25 → 7
+    // ลายซ้ำ 0.53: ปัดขึ้น(2.5 ÷ 0.53) = 5 ช่วง → 2.65 ม./แถบ → 3 แถบ/ม้วน → 9
+    expect(rowOf(calcWallpaper({ l: 4, w: 3, h: 2.4, doors: 1 }), "จำนวนม้วน")).toBe("7 ม้วน");
+    const rep = calcWallpaper({ l: 4, w: 3, h: 2.4, doors: 1, repeat: 53 });
+    expect(rowOf(rep, "แถบละ")).toContain("2.65 ม.");
+    expect(rowOf(rep, "จำนวนม้วน")).toBe("9 ม้วน");
+  });
+
+  it("ม้วนสั้นกว่าความสูงผนังต้องบอกตรง ๆ ไม่ใช่ตอบ Infinity", () => {
+    const r = calcWallpaper({ l: 4, w: 3, h: 6, rollL: 5 });
+    expect(r.invalid).toBe(true);
+    expect(r.headline).toContain("สั้นกว่าแถบ");
+  });
+
+  it("เครื่องมือฉาบบางหาเจอด้วยคำว่าสกิมโค้ท/โป๊ว", () => {
+    const skim = paintTools.find((t) => t.id === "skim");
+    expect(skim?.name).toContain("สกิมโค้ท");
+    expect(skim?.keywords).toContain("โป๊ว");
+  });
+});
+
+describe("บิ้วอิน: ลามิเนตออกเป็นแผ่น 4×8 ฟุต", () => {
+  it("ชิ้น 1.2×2.4 ม. 4 ชิ้น = 4 แผ่น (แผ่นละ 1 ชิ้น) ไม่ใช่ 12.67 ตร.ม. ลอย ๆ", () => {
+    const r = calcLaminate({ w: 1.2, h: 2.4, qty: 4, waste: 10 });
+    expect(rowStarting(r, "สั่งลามิเนต")).toBe("4 แผ่น");
+    expect(r.headline).toBe("ลามิเนต 4 แผ่น (12.67 ตร.ม.)");
+  });
+
+  it("ชิ้น 0.6×0.8 ม. 10 ชิ้น: แผ่นหนึ่งตัดได้ 2×3 = 6 ชิ้น → 2 แผ่น", () => {
+    // 1.22 ÷ 0.6 = 2 · 2.44 ÷ 0.8 = 3 → 6 ชิ้น/แผ่น (อีกทิศ 1 × 4 = 4) · 10 ÷ 6 = 1.67 → 2 แผ่น
+    const r = calcLaminate({ w: 0.6, h: 0.8, qty: 10, waste: 10 });
+    expect(rowStarting(r, "สั่งลามิเนต")).toBe("2 แผ่น");
+    expect(rowOf(r, "วิธีนับ")).toContain("ตัดได้ 6 ชิ้น");
+  });
+
+  it("ชิ้นใหญ่กว่าแผ่น (1.5×3 ม.) นับตามพื้นที่และเตือนว่าต้องต่อแผ่น", () => {
+    // 1.5 × 3 × 2 × 1.1 = 9.9 ตร.ม. ÷ 2.9768 = 3.33 → 4 แผ่น
+    const r = calcLaminate({ w: 1.5, h: 3, qty: 2, waste: 10 });
+    expect(rowStarting(r, "สั่งลามิเนต")).toBe("4 แผ่น");
+    expect(hasRow(r, "ชิ้นงานใหญ่กว่าแผ่น")).toBe(true);
+    expect(handymanTools.find((t) => t.id === "laminate")?.keywords).toContain("ไม้อัด");
   });
 });

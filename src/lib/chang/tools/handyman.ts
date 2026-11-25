@@ -1,6 +1,6 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
-import { ANCHOR, DISCLAIMER_AB, DISCLAIMER_C, LED, LED_DRIVER_SIZES, STAIR_LAW, WASTE_DEFAULT } from "../constants";
+import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
+import { ANCHOR, DISCLAIMER_AB, DISCLAIMER_C, LAMINATE, LED, LED_DRIVER_SIZES, STAIR_LAW, WASTE_DEFAULT } from "../constants";
 
 const HINGE_EDGE: Record<string, number> = { full: 4.5, half: 9.5, inset: 16 };
 
@@ -210,10 +210,18 @@ export function calcLaminate(v: Values) {
   const area = raw * (1 + wastePct / 100);
   const glue = area * 0.15;
   const edge = 2 * (w + h) * qty;
+  // ร้านขายเป็นแผ่น 4×8 ฟุต (1.22×2.44 ม.): ถ้าชิ้นงานลงแผ่นได้ให้นับว่าแผ่นหนึ่งตัดได้กี่ชิ้น ไม่งั้นนับตามพื้นที่
+  const sw = LAMINATE.sheetW.value;
+  const sl = LAMINATE.sheetL.value;
+  const fit = (a: number, b: number) => Math.floor(sw / a + 1e-9) * Math.floor(sl / b + 1e-9);
+  const perSheet = Math.max(fit(w, h), fit(h, w));
+  const byArea = ceil(area / (sw * sl));
+  const sheets = perSheet >= 1 ? ceil(qty / perSheet) : byArea;
+  const sheetLabel = `แผ่น ${fmtTrim(sw, 2)}×${fmtTrim(sl, 2)} ม. (4×8 ฟุต)`;
 
   return resultX({
-    title: "กาวลามิเนต + ขอบ",
-    headline: `ลามิเนต ${fmt(area, 2)} ตร.ม.`,
+    title: "ลามิเนต + กาว + ขอบ",
+    headline: `ลามิเนต ${fmt(sheets)} แผ่น (${fmt(area, 2)} ตร.ม.)`,
     chart: {
       kind: "stack",
       parts: [
@@ -224,11 +232,15 @@ export function calcLaminate(v: Values) {
       totalDisplay: `${fmt(area, 2)} ตร.ม.`,
     },
     rows: [
-      { label: `พื้นที่ (เผื่อ ${fmt(wastePct)}%)`, value: `${fmt(area, 2)} ตร.ม.`, emphasize: true },
+      { label: `พื้นที่ (เผื่อ ${fmt(wastePct)}%)`, value: `${fmt(area, 2)} ตร.ม.` },
+      { label: `สั่งลามิเนต ${sheetLabel}`, value: `${fmt(sheets)} แผ่น`, emphasize: true },
+      perSheet >= 1
+        ? { label: "วิธีนับ", value: `แผ่นหนึ่งตัดได้ ${fmt(perSheet)} ชิ้น · ${fmt(qty)} ชิ้น ÷ ${fmt(perSheet)} (นับตามพื้นที่+เผื่อได้ ${fmt(byArea)} แผ่น)` }
+        : { label: "ชิ้นงานใหญ่กว่าแผ่น", value: `ต้องต่อแผ่น — นับตามพื้นที่+เผื่อ ได้ ${fmt(byArea)} แผ่น วางแนวต่อก่อนสั่ง`, emphasize: true },
       { label: "กาว", value: `${fmt(glue, 1)} กก.` },
       { label: "ขอบ PVC", value: `${fmt(edge, 1)} ม.` },
     ],
-    tip: "ลายไม้ดูทิศลายให้ตรงกัน ก่อนตัด",
+    tip: "ลายไม้ต้องวางตามยาวแผ่นทิศเดียวกัน ถ้าชิ้นงานต้องหมุนขวางลาย จำนวนแผ่นจะมากกว่านี้",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -244,6 +256,19 @@ export function calcLaminate(v: Values) {
           expr: `พื้นที่สั่ง = A × (1 + เผื่อเสีย)`,
           subst: `${fmt(raw, 2)} × ${fmt(1 + wastePct / 100, 2)} = ${fmt(area, 2)} ตร.ม.`,
         },
+        perSheet >= 1
+          ? {
+              label: "แปลงเป็นแผ่นที่ขาย",
+              expr: "ปัดขึ้น(จำนวนชิ้น ÷ ชิ้นที่ตัดได้ต่อแผ่น)",
+              subst: `${fmt(qty)} ÷ ${fmt(perSheet)} = ${fmt(sheets)} แผ่น`,
+              note: "ชิ้นที่ตัดได้ต่อแผ่น = ปัดลง(1.22 ÷ ด้านหนึ่ง) × ปัดลง(2.44 ÷ อีกด้าน) เลือกทิศที่ได้มากกว่า (ยังไม่คิดทิศลาย)",
+            }
+          : {
+              label: "แปลงเป็นแผ่นที่ขาย",
+              expr: "ปัดขึ้น(พื้นที่สั่ง ÷ พื้นที่แผ่น)",
+              subst: `${fmt(area, 2)} ÷ ${fmt(sw * sl, 2)} = ${fmt(sheets)} แผ่น`,
+              note: "ชิ้นงานใหญ่กว่าแผ่น 1.22×2.44 ม. จึงต้องต่อแผ่น",
+            },
         {
           label: "กาวและขอบ PVC",
           expr: "กาว = พื้นที่ × 0.15 กก./ตร.ม. · ขอบ = เส้นรอบ × จำนวนแผ่น",
@@ -623,12 +648,13 @@ export const handymanTools: ToolDef[] = [
   },
   {
     id: "laminate",
-    name: "กาวลามิเนต + ขอบ",
-    blurb: "พื้นที่แผ่นและขอบ PVC",
+    name: "ลามิเนต + กาว + ขอบ",
+    blurb: "กี่แผ่น 4×8 ฟุต กาว ขอบ PVC",
+    keywords: ["ลามิเนต", "ไม้อัด", "แผ่น 4x8", "ขอบ PVC", "กาวยาง"],
     fields: [
-      { type: "number", key: "w", label: "กว้างแผ่น", unit: "ม.", default: 1.2, min: 0.2, max: 5, step: 0.01 },
-      { type: "number", key: "h", label: "ยาวแผ่น", unit: "ม.", default: 2.4, min: 0.2, max: 5, step: 0.01 },
-      { type: "number", key: "qty", label: "จำนวนแผ่น", unit: "แผ่น", default: 4, min: 1, max: 1000 },
+      { type: "number", key: "w", label: "กว้างชิ้นงาน", unit: "ม.", default: 1.2, min: 0.2, max: 5, step: 0.01 },
+      { type: "number", key: "h", label: "ยาวชิ้นงาน", unit: "ม.", default: 2.4, min: 0.2, max: 5, step: 0.01 },
+      { type: "number", key: "qty", label: "จำนวนชิ้น", unit: "ชิ้น", default: 4, min: 1, max: 1000 },
       { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: 10, min: 0, max: 30 },
     ],
     calc: calcLaminate,

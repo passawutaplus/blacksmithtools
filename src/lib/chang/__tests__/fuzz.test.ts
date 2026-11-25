@@ -133,6 +133,8 @@ const EXPECTED_BLOCKED = [
   "vinyl/level:deduct@max",
   "vinyl/adhesive:deduct@max",
   "vinyl/job:deduct@max",
+  // ผนังสูงกว่าความยาวม้วนวอลเปเปอร์ตั้งต้น (10 ม.) ตัดแถบไม่ได้สักแถบ
+  "paint/wallpaper:h@max",
   // กระจกใหญ่/ลมแรงเกินตารางหน้างาน
   "glass/wind:w@max",
   "glass/wind:h@max",
