@@ -34,8 +34,8 @@ export const PRINT_CONFIG = {
      *  - M18 GEN3 stubby 8h05m → ฿560 · 6× M18 holder on one plate 8h44m → ฿630
      */
     timeModel: { hPerCm2: 0.00433, hPerCm3: 0.00402 },
-    /** Fine 0.15 mm vs 0.25 mm: 9× M12 plate 13h29m vs 9h10m → ×1.47 (shop charged ฿935). */
-    qualityTimeFactor: { normal: 1, fine: 1.47 } as Record<Quality, number>,
+    /** Fine 0.15 mm: measured ×1.47 time (9× M12 13h29m vs 9h10m), shop chose +35% (Passawut 2026-11-25). */
+    qualityTimeFactor: { normal: 1, fine: 1.35 } as Record<Quality, number>,
     /** Bambu "total time" (print + prepare) is billed to the nearest step: 8h12m → 8 h = ฿560, 8h51m → 9 h = ฿630. */
     billStepHours: 0.5,
     /** Bambu Studio "prepare time" per plate (6m26s on the P2S). */

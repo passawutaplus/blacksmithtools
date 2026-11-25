@@ -3,7 +3,8 @@ import { customAlphabet } from "nanoid";
 import { quoteRequestSchema, type QuoteRequest } from "@/lib/print-quote/request";
 import { PRINT_CONFIG, parcelFee } from "@/lib/print-quote/pricing";
 import { clientIp, rateLimited } from "@/lib/rate-limit";
-import { hasBlobStore, writeRuntimeBytes } from "@/lib/runtime-store";
+import { hasBlobStore } from "@/lib/runtime-store";
+import { savePrintQuote } from "@/lib/db";
 import { pushLine } from "@/lib/notify";
 
 export const dynamic = "force-dynamic";
@@ -40,6 +41,7 @@ function alertText(id: string, q: QuoteRequest) {
     `📦 ${c.address} ${c.subdistrict} ${c.district} ${c.province} ${c.zip}`,
     c.wantDate ? `📅 ต้องการรับ ${c.wantDate}` : "",
     q.keepFiles ? "ไฟล์: ใช้เพื่องานนี้ ลบอัตโนมัติใน 30 วัน" : "ไฟล์: ลูกค้าไม่ให้เก็บไฟล์ ขอไฟล์ทางแชท",
+    siteUrl() ? `➡️ ยืนยันราคา/เปิดออเดอร์: ${siteUrl()}/admin/print-quotes` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -79,10 +81,8 @@ export async function POST(req: Request) {
   }
 
   const id = `Q${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${quoteId()}`;
-  await writeRuntimeBytes(
-    `print-quotes/requests/${id}.json`,
-    Buffer.from(JSON.stringify({ id, createdAt: new Date().toISOString(), ...q }, null, 2)),
-  );
+  const now = new Date().toISOString();
+  await savePrintQuote({ id, createdAt: now, updatedAt: now, status: "new", ...q });
   after(() => pushLine(alertText(id, q)));
   return NextResponse.json({ ok: true, id });
 }
