@@ -112,6 +112,8 @@ describe("print-quote pricing", () => {
     expect(job(454, 36.2)).toBe(140); // blower, 1h58m
     expect(job(1660, 211.6)).toBe(560); // M18 GEN3 stubby, 8h05m
     expect(job(256, 87.2, 6)).toBe(630); // 6× M18 holder on one plate, 8h44m
+    const fine = estimateOrder([{ stats: { ...s, areaCm2: 173, volumeCm3: 67.7 }, qty: 9 }], "fdm", "fine").printTHB!;
+    expect(Math.abs(fine - 935)).toBeLessThanOrEqual(35); // 9× M12 at 0.15 mm, 13h29m, shop ฿935
   });
 
   it("keeps every price ending in 0 or 5", () => {
