@@ -6,6 +6,7 @@ import { ChevronRight, Star } from "lucide-react";
 import { Fields, focusField } from "@/components/chang/Fields";
 import { FormulaNote } from "@/components/chang/FormulaNote";
 import { ResultPanel, type FieldIssue } from "@/components/chang/ResultPanel";
+import { ToolDiagram } from "@/components/chang/diagrams/ToolDiagram";
 import { useStoredRaw } from "@/components/chang/useStored";
 import { FAV_KEY, parseFavorites, pushRecent, toggleFavorite } from "@/lib/chang/favorites";
 import { invalidResult, validateFields, visibleFields } from "@/lib/chang/math";
@@ -102,7 +103,10 @@ export function CalcScreen({
         ) : null}
       </div>
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6">
-        <Fields fields={fields} values={values} onChange={setValues} errors={shownErrors} />
+        <div className="grid min-w-0 gap-5">
+          <ToolDiagram path={persistKey} values={values} />
+          <Fields fields={fields} values={values} onChange={setValues} errors={shownErrors} />
+        </div>
         <div className="lg:sticky lg:top-28">
           <ResultPanel
             title={title}
