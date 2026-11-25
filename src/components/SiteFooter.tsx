@@ -11,7 +11,6 @@ import {
   ShopeeTile,
   ThaiMartTile,
   TikTokTile,
-  WebsiteTile,
 } from "@/components/ChannelIcons";
 import type { SiteSettings } from "@/lib/types";
 
@@ -146,7 +145,6 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
 
         <Col title="ติดตามเรา">
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <WebsiteTile href="/" />
             {settings.shopeeShopUrl ? <ShopeeTile href={settings.shopeeShopUrl} /> : null}
             {settings.lazadaShopUrl ? <LazadaTile href={settings.lazadaShopUrl} /> : null}
             {settings.thaiMartShopUrl ? <ThaiMartTile href={settings.thaiMartShopUrl} /> : null}
