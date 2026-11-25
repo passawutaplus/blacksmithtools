@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { TRADES, TOOL_COVERS, toolCount } from "../catalog";
+import { TRADES, TOOL_COVERS, TOOLS_WITHOUT_COVER, toolCount } from "../catalog";
 import * as K from "../constants";
 import type { ChartSpec, ConstRef, Field, JobDef, ToolDef, Values } from "../types";
 import { calcBtu, calcShsc, satTemp } from "../tools/hvac";
@@ -308,15 +308,23 @@ describe("แคตตาล็อกเครื่องมือ", () => {
     expect(allTools.length).toBe(toolCount() + TRADES.filter((t) => t.job).length);
   });
 
-  it("ทุกเครื่องมือย่อยมีภาพปกใน TOOL_COVERS", () => {
-    expect(Object.keys(TOOL_COVERS)).toHaveLength(toolCount());
+  it("ทุกเครื่องมือย่อยมีภาพปกใน TOOL_COVERS ยกเว้นที่ลงทะเบียนว่ายังไม่มีภาพ", () => {
+    expect(Object.keys(TOOL_COVERS)).toHaveLength(toolCount() - TOOLS_WITHOUT_COVER.length);
     for (const trade of TRADES) {
       for (const tool of trade.tools) {
-        expect(TOOL_COVERS[`${trade.id}/${tool.id}`], `${trade.id}/${tool.id}`).toBe(
-          `/assistant/tools/${trade.id}-${tool.id}.webp`,
-        );
+        const key = `${trade.id}/${tool.id}`;
+        if (TOOLS_WITHOUT_COVER.includes(key)) {
+          expect(TOOL_COVERS[key], key).toBeUndefined();
+          continue;
+        }
+        expect(TOOL_COVERS[key], key).toBe(`/assistant/tools/${trade.id}-${tool.id}.webp`);
       }
     }
+  });
+
+  it("รายการที่ยังไม่มีภาพปกต้องชี้เครื่องมือที่มีอยู่จริง", () => {
+    const all = TRADES.flatMap((t) => t.tools.map((tool) => `${t.id}/${tool.id}`));
+    for (const key of TOOLS_WITHOUT_COVER) expect(all, key).toContain(key);
   });
 
   it("ทุกเครื่องมือคำนวณด้วยค่าตั้งต้นได้โดยไม่พัง", () => {

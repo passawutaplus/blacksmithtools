@@ -133,6 +133,8 @@ const EXPECTED_BLOCKED = [
   "vinyl/level:deduct@max",
   "vinyl/adhesive:deduct@max",
   "vinyl/job:deduct@max",
+  // ผนังโซนอาบน้ำยาวกว่าผนังห้องที่เหลือหลังหักประตู
+  "waterproof/bathroom:showerRun@max",
   // ผนังสูงกว่าความยาวม้วนวอลเปเปอร์ตั้งต้น (10 ม.) ตัดแถบไม่ได้สักแถบ
   "paint/wallpaper:h@max",
   // กระจกใหญ่/ลมแรงเกินตารางหน้างาน

@@ -11,6 +11,7 @@ import {
   PanelTop,
   Ruler,
   Box,
+  ShieldCheck,
   Wrench,
   Zap,
 } from "lucide-react";
@@ -28,11 +29,12 @@ import { roofJob, roofTools } from "./tools/roof";
 import { steelJob, steelTools } from "./tools/steel";
 import { tileJob, tileTools } from "./tools/tile";
 import { vinylJob, vinylTools } from "./tools/vinyl";
+import { waterproofJob, waterproofTools } from "./tools/waterproof";
 
 export const PILLARS: Pillar[] = [
   { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา" },
   { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก" },
-  { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ หลังคา เหล็ก สี" },
+  { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ หลังคา เหล็ก สี กันซึม" },
   { id: "general", name: "เครื่องมือทั่วไป", blurb: "แปลงหน่วย รูปทรง" },
 ];
 
@@ -49,6 +51,7 @@ export const TRADE_ICONS: Record<string, LucideIcon> = {
   roof: Home,
   steel: Wrench,
   paint: Paintbrush,
+  waterproof: ShieldCheck,
   general: Ruler,
 };
 
@@ -182,6 +185,15 @@ export const TRADES: Trade[] = [
     job: paintJob,
   },
   {
+    id: "waterproof",
+    name: "ช่างกันซึม",
+    short: "กันซึม",
+    pillarId: "shell",
+    blurb: "ห้องน้ำ ดาดฟ้า รอยร้าว ตาข่าย ไพรเมอร์",
+    tools: waterproofTools,
+    job: waterproofJob,
+  },
+  {
     id: "general",
     name: "เครื่องมือทั่วไป",
     short: "ทั่วไป",
@@ -193,12 +205,29 @@ export const TRADES: Trade[] = [
 ];
 
 /**
+ * เครื่องมือที่ยังไม่มีไฟล์ภาพปก — การ์ดจะใช้พื้นสีกับไอคอนสายงานแทน (ไม่ชี้ไปไฟล์ที่ไม่มีจนรูปแตก)
+ * ใส่ภาพใน public/assistant/tools แล้วลบออกจากรายการนี้
+ */
+export const TOOLS_WITHOUT_COVER: string[] = [
+  "tile/bathroom",
+  "tile/layout",
+  "paint/system",
+  "waterproof/bathroom",
+  "waterproof/roof",
+  "waterproof/crack",
+  "ceiling/partition",
+  "handyman/cabinet",
+];
+
+/**
  * ภาพปกการ์ดเครื่องมือย่อย (ไฟล์อยู่ public/assistant/tools)
  * คีย์เป็น "tradeId/toolId" — สร้างจากทะเบียนสายงานอัตโนมัติ ไม่ต้องไล่ใส่ทีละอัน
  */
 export const TOOL_COVERS: Record<string, string> = Object.fromEntries(
   TRADES.flatMap((t) =>
-    t.tools.map((tool) => [`${t.id}/${tool.id}`, `/assistant/tools/${t.id}-${tool.id}.webp`]),
+    t.tools
+      .filter((tool) => !TOOLS_WITHOUT_COVER.includes(`${t.id}/${tool.id}`))
+      .map((tool) => [`${t.id}/${tool.id}`, `/assistant/tools/${t.id}-${tool.id}.webp`]),
   ),
 );
 
@@ -267,7 +296,9 @@ const TRADE_ALIASES: Record<string, string[]> = {
   // คำช่างที่ชื่อสายงานไม่มี (รอบ 2): สะกดแบบที่ช่างพิมพ์จริง รวมตัวสะกดเพี้ยนที่เจอบ่อย
   ceiling: ["ฝ้า", "ยิปซัม", "ยิปซั่ม", "ทีบาร์", "ซีลาย", "c-line", "โครงคร่าว", "โครงเคร่า"],
   vinyl: ["กระเบื้องยาง", "spc", "lvt", "พื้นไม้", "ลามิเนตปูพื้น"],
-  paint: ["ทาสี", "สกิมโค้ท", "โป๊ว", "วอลเปเปอร์"],
+  paint: ["ทาสี", "สกิมโค้ท", "โป๊ว", "วอลเปเปอร์", "รองพื้น", "กันสนิม", "สีน้ำมัน"],
+  // รอบ 3: สายงานใหม่
+  waterproof: ["กันซึม", "กันรั่ว", "ดาดฟ้า", "ดาดฟ้ารั่ว", "ห้องน้ำรั่ว", "รอยร้าว", "ร้าว", "pu", "เมมเบรน", "membrane", "ซีเมนต์กันซึม"],
 };
 
 const TOOL_ALIASES: Record<string, string[]> = {
@@ -294,6 +325,15 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "hvac/pipe": ["หุน", "ท่อแอร์"],
   "general/unit-area-vol": ["คิว", "ลบ.ม."],
   "masonry/mix": ["คิว", "ทราย", "หิน"],
+  // รอบ 3: เครื่องมือใหม่งานตกแต่ง
+  "tile/bathroom": ["ห้องน้ำ", "ปูห้องน้ำ", "กระเบื้องผนัง", "คิ้วกระเบื้อง"],
+  "tile/layout": ["หาศูนย์", "ตั้งศูนย์", "เศษริม", "แบ่งแผ่น", "เริ่มปู"],
+  "paint/system": ["รองพื้น", "กันสนิม", "สีน้ำมัน", "กัลวาไนซ์", "ปูนชื้น", "ด่าง", "สีเหล็ก", "สีไม้"],
+  "waterproof/bathroom": ["กันซึมห้องน้ำ", "ห้องน้ำรั่ว", "ซีเมนต์กันซึม"],
+  "waterproof/roof": ["ดาดฟ้า", "ดาดฟ้ารั่ว", "หลังคาคอนกรีต", "กันซึมดาดฟ้า"],
+  "waterproof/crack": ["รอยร้าว", "ร้าว", "ผนังร้าว", "อุดร้าว"],
+  "ceiling/partition": ["ผนังเบา", "c-stud", "u-track", "สตัด", "ผนังยิปซัม", "กั้นห้อง"],
+  "handyman/cabinet": ["ตู้", "ตู้เสื้อผ้า", "ตู้บิ้วอิน", "ปาร์ติเกิล", "ขอบ pvc"],
 };
 
 export function toolCount(): number {
