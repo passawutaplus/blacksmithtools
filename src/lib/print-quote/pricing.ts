@@ -27,11 +27,12 @@ export const PRINT_CONFIG = {
     /** Minimum charge per order: anything under 1 hour is ฿70. */
     minOrderTHB: 70 as number | null,
     /**
-     * PROVISIONAL print speed (g/h). From the shop's data point: Battery Holder M12 (~35 g)
-     * prints within 1 hour at 0.25 mm. Fine = scaled by layer height. Refine with real
-     * Bambu Studio times.
+     * PROVISIONAL print speed (g/h), fitted to the shop's prices: Battery Holder M12 = ฿70,
+     * M18 = ฿105 at 0.25 mm. Fine = scaled by layer height. Refine with real Bambu Studio times.
      */
-    gramsPerHour: { normal: 36, fine: 21.6 } as Record<Quality, number | null>,
+    gramsPerHour: { normal: 34, fine: 20.4 } as Record<Quality, number | null>,
+    /** Order print time is billed in steps of this many hours (nearest). M12 ≈1 h = ฿70, M18 ≈1.5 h = ฿105. */
+    billStepHours: 0.5,
     /** Fixed setup time per plate (hours). */
     setupHours: 0.25,
   },
@@ -123,6 +124,13 @@ export function estimateOrder(lines: QuoteLine[], process: Process, quality: Qua
   const per = lines.map((l) => ({ l, e: estimatePiece(l.stats, process, quality) }));
   const prices = per.map(({ l, e }) => (e.priceTHB == null ? null : e.priceTHB * l.qty));
   let printTHB: number | null = prices.some((p) => p == null) ? null : prices.reduce<number>((s, p) => s + (p ?? 0), 0);
+  if (printTHB != null && process === "fdm" && PRINT_CONFIG.fdm.perHourTHB != null) {
+    const c = PRINT_CONFIG.fdm;
+    const printHours = per.reduce((s, { l, e }) => s + e.hours * l.qty, 0);
+    const grams = per.reduce((s, { l, e }) => s + e.grams * l.qty, 0);
+    const billed = Math.round(printHours / c.billStepHours) * c.billStepHours;
+    printTHB = billed * c.perHourTHB! + grams * (c.perGramTHB ?? 0);
+  }
   const min = PRINT_CONFIG[process].minOrderTHB;
   const minApplied = printTHB != null && min != null && printTHB < min;
   if (printTHB != null && min != null) printTHB = Math.max(printTHB, min);
