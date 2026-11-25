@@ -24,9 +24,6 @@ import {
   saveShopReview,
   deleteShopReview,
   listShopReviews,
-  listVouchers,
-  saveVoucher,
-  deleteVoucher,
   setOrderStatus,
   setProductStock,
   setProductsFeatured,
@@ -98,8 +95,6 @@ export async function GET(req: Request) {
       });
     case "reviews":
       return NextResponse.json({ reviews: await listShopReviews() });
-    case "vouchers":
-      return NextResponse.json({ vouchers: await listVouchers() });
     default:
       return NextResponse.json({ error: "ไม่รู้จักรายการ" }, { status: 400 });
   }
@@ -184,10 +179,6 @@ export async function POST(req: Request) {
         return NextResponse.json({ review: await saveShopReview(body.review ?? body) });
       case "delete_review":
         return NextResponse.json(await deleteShopReview(String(body.id ?? "")));
-      case "save_voucher":
-        return NextResponse.json({ voucher: await saveVoucher(body.voucher ?? {}) });
-      case "delete_voucher":
-        return NextResponse.json(await deleteVoucher(String(body.id ?? "")));
       case "update_inquiry":
         return NextResponse.json({
           inquiry: await updateWholesaleLead(body.id, {

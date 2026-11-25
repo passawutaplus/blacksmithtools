@@ -210,35 +210,6 @@ export interface Order {
   channel?: ManualChannel;
   /** เลขออเดอร์ Shopee / Lazada / อ้างอิงภายนอก */
   externalRef?: string;
-  /** โค้ดส่วนลดที่ใช้ตอนสั่ง (ส่วนลดอยู่ใน discount) */
-  voucherCode?: string;
-}
-
-export type VoucherKind = "fixed" | "percent" | "free_shipping";
-
-/** คูปองร้านค้า — ตรวจเงื่อนไขและตัดยอดที่เซิร์ฟเวอร์เท่านั้น */
-export interface Voucher {
-  id: string;
-  /** ตัวพิมพ์ใหญ่ A-Z 0-9 - เท่านั้น */
-  code: string;
-  kind: VoucherKind;
-  /** fixed = บาท, percent = 1-100, free_shipping = ไม่ใช้ */
-  value: number;
-  minSubtotal: number;
-  /** เพดานส่วนลดสำหรับ percent (0 = ไม่จำกัด) */
-  maxDiscount: number;
-  startsAt?: string;
-  endsAt?: string;
-  /** 0 = ไม่จำกัดจำนวนสิทธิ์ */
-  usageLimit: number;
-  usedCount: number;
-  /** ลูกค้าเบอร์เดียวกันใช้ได้ครั้งเดียว */
-  oncePerPhone: boolean;
-  /** true = โชว์ปุ่ม "เก็บโค้ด" บนหน้าสินค้า, false = โค้ดลับ ต้องพิมพ์เอง */
-  public: boolean;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface SiteSettings {
@@ -320,7 +291,6 @@ export interface DbShape {
   shipments: Shipment[];
   inquiries: WholesaleLead[];
   testimonials: ShopReview[];
-  vouchers?: Voucher[];
   settings: SiteSettings;
   receiptSeq: number;
   orderSeq: number;
