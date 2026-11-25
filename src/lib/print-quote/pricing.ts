@@ -12,8 +12,6 @@ export const PRINT_CONFIG = {
   shippingTHB: 50,
   /** Parcel shipping is free when the print total reaches this (THB). */
   freeShipFromTHB: 1000,
-  /** Minimum charge per order (THB) — null until set. */
-  minOrderTHB: null as number | null,
   fdm: {
     label: "FDM · PETG",
     maxMm: 256,
@@ -23,12 +21,17 @@ export const PRINT_CONFIG = {
     density: 1.27,
     /** Outer wall thickness used to estimate shell weight (mm). */
     wallMm: 1.2,
-    /** THB per gram of printed part — null until calibrated. */
-    perGramTHB: null as number | null,
-    /** THB per machine hour — null until calibrated. */
-    perHourTHB: null as number | null,
-    /** Grams the printer lays down per hour at each layer height — null until calibrated. */
-    gramsPerHour: { normal: null, fine: null } as Record<Quality, number | null>,
+    /** Shop rule (2026-11-25): FDM is charged by print time only, ฿70 per hour. */
+    perGramTHB: 0 as number | null,
+    perHourTHB: 70 as number | null,
+    /** Minimum charge per order: anything under 1 hour is ฿70. */
+    minOrderTHB: 70 as number | null,
+    /**
+     * PROVISIONAL print speed (g/h). From the shop's data point: Battery Holder M12 (~35 g)
+     * prints within 1 hour at 0.25 mm. Fine = scaled by layer height. Refine with real
+     * Bambu Studio times.
+     */
+    gramsPerHour: { normal: 36, fine: 21.6 } as Record<Quality, number | null>,
     /** Fixed setup time per plate (hours). */
     setupHours: 0.25,
   },
@@ -43,6 +46,7 @@ export const PRINT_CONFIG = {
     supportFactor: null as number | null,
     perGramTHB: null as number | null,
     perHourTHB: null as number | null,
+    minOrderTHB: null as number | null,
     /** Exposure + lift per layer (seconds) — null until calibrated. */
     secPerLayer: null as number | null,
     prepHours: 0.33,
@@ -114,12 +118,14 @@ export type QuoteLine = { stats: MeshStats; qty: number };
 
 /** Whole-order estimate. null fields = not calibrated yet. */
 export function estimateOrder(lines: QuoteLine[], process: Process, quality: Quality) {
-  if (!lines.length) return { printTHB: null, hours: null, pieces: 0 };
+  if (!lines.length) return { printTHB: null, hours: null, pieces: 0, minApplied: false };
   const pieces = lines.reduce((s, l) => s + l.qty, 0);
   const per = lines.map((l) => ({ l, e: estimatePiece(l.stats, process, quality) }));
   const prices = per.map(({ l, e }) => (e.priceTHB == null ? null : e.priceTHB * l.qty));
   let printTHB: number | null = prices.some((p) => p == null) ? null : prices.reduce<number>((s, p) => s + (p ?? 0), 0);
-  if (printTHB != null && PRINT_CONFIG.minOrderTHB != null) printTHB = Math.max(printTHB, PRINT_CONFIG.minOrderTHB);
+  const min = PRINT_CONFIG[process].minOrderTHB;
+  const minApplied = printTHB != null && min != null && printTHB < min;
+  if (printTHB != null && min != null) printTHB = Math.max(printTHB, min);
 
   let hours: number | null;
   if (process === "resin") {
@@ -130,7 +136,7 @@ export function estimateOrder(lines: QuoteLine[], process: Process, quality: Qua
     const sum = per.reduce((s, { l, e }) => s + e.hours * l.qty, 0);
     hours = Number.isFinite(sum) ? sum + PRINT_CONFIG.fdm.setupHours : null;
   }
-  return { printTHB: printTHB == null ? null : Math.ceil(printTHB), hours, pieces };
+  return { printTHB: printTHB == null ? null : Math.ceil(printTHB), hours, pieces, minApplied };
 }
 
 export function formatHours(h: number | null) {

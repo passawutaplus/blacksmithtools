@@ -93,10 +93,15 @@ describe("print-quote pricing", () => {
     expect(fileStatus({ ...s, size: [300, 10, 10] }, "fdm").level).toBe("error");
   });
 
-  it("returns no price until the rates are calibrated", () => {
+  it("charges FDM ฿70/hour with a ฿70 minimum", () => {
     const e = estimateOrder([{ stats: s, qty: 3 }], "fdm", "normal");
     expect(e.pieces).toBe(3);
-    expect(e.printTHB).toBeNull();
+    expect(e.printTHB).toBe(70);
+    expect(e.minApplied).toBe(true);
+  });
+
+  it("returns no resin price until the rates are calibrated", () => {
+    expect(estimateOrder([{ stats: s, qty: 1 }], "resin", "normal").printTHB).toBeNull();
   });
 
   it("ships free from 1,000 THB", () => {

@@ -715,6 +715,9 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
               <b>{calculated ? formatHours(order.hours) : "—"}</b>
             </div>
           </div>
+          {calculated && order.minApplied && (
+            <p className="mt-2 text-[11.5px] text-[#c5ced4]">งานพิมพ์ไม่ถึง 1 ชม. คิดขั้นต่ำ ฿{PRINT_CONFIG[process].minOrderTHB}</p>
+          )}
           {calculated && order.printTHB == null && priceable.length > 0 && (
             <p className="mt-2 text-[11.5px] text-[#c5ced4]">ร้านจะแจ้งราคาหลังตรวจไฟล์</p>
           )}
