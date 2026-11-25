@@ -27,11 +27,13 @@ export const PRINT_CONFIG = {
     /** Minimum charge per order: anything under 1 hour is ฿70. */
     minOrderTHB: 70 as number | null,
     /**
-     * PROVISIONAL print speed (g/h), fitted to the shop's prices: Battery Holder M12 = ฿70,
-     * M18 = ฿105 at 0.25 mm. Fine = scaled by layer height. Refine with real Bambu Studio times.
+     * Print speed (g/h at 0.25 mm), fitted to the shop's real jobs:
+     *  - Battery Holder M12 = ฿70, Battery Holder M18 = ฿105
+     *  - M18 GEN3 stubby: Bambu Studio 252 g / 8h05m printing = ฿560 (our estimate: 255 g)
+     * Any value in ~30.9–32.9 matches all three. Fine (0.15 mm) is scaled by layer height (provisional).
      */
-    gramsPerHour: { normal: 34, fine: 20.4 } as Record<Quality, number | null>,
-    /** Order print time is billed in steps of this many hours (nearest). M12 ≈1 h = ฿70, M18 ≈1.5 h = ฿105. */
+    gramsPerHour: { normal: 31.6, fine: 19 } as Record<Quality, number | null>,
+    /** Order print time is billed in steps of this many hours (nearest): 8h05m → 8 h = ฿560. */
     billStepHours: 0.5,
     /** Fixed setup time per plate (hours). */
     setupHours: 0.25,
