@@ -1473,7 +1473,12 @@ export async function listPrintQuotes(status?: string) {
   const db = await ensureDb();
   let items = (db.printQuotes ?? []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   if (status) items = items.filter((q) => q.status === status);
-  return items;
+  // Attach the order's bill token so the admin can re-copy the payment message any time.
+  const byId = new Map(db.orders.map((o) => [o.id, o]));
+  return items.map((q) => {
+    const o = q.orderId ? byId.get(q.orderId) : undefined;
+    return o ? { ...q, orderToken: o.token, orderTotal: o.grandTotal, orderStatus: o.status } : q;
+  });
 }
 
 async function updatePrintQuote__impl(id: string, patch: { status?: PrintQuoteStatus; adminNote?: string }) {
@@ -1520,20 +1525,30 @@ async function printQuoteToOrder__impl(id: string, input: { printTHB: number; sh
     province: loc.province || q.contact.province,
     postalCode: loc.postalCode || q.contact.zip,
   };
-  const pieces = q.files.reduce((s, f) => s + f.qty, 0);
+  const files = q.files.filter((f) => f.status !== "error");
+  const pieces = files.reduce((s, f) => s + f.qty, 0);
   const proc = q.process === "fdm" ? "FDM PETG" : "Resin";
   const layer = q.process === "fdm" ? (q.quality === "fine" ? "0.15" : "0.25") : q.quality === "fine" ? "ละเอียด" : "ปกติ";
   const items: OrderItem[] = [
     {
       productId: "custom",
       name: `งานพิมพ์ 3D ${proc} · layer ${layer}`,
-      variantName: `${q.files.length} ไฟล์ · ${pieces} ชิ้น · คำขอ #${q.id}`,
+      variantName: `${files.length} ไฟล์ · ${pieces} ชิ้น · คำขอ #${q.id}`,
       sku: `PRINT3D-${q.id}`,
       price,
       quantity: 1,
-      imageUrl: "",
+      imageUrl: "/print/part.png",
     },
   ];
+  // Job details for the shop (not shown to the customer): files, wanted sizes, notes.
+  const fileLines = files.map((f) => {
+    const dims = f.dims ? ` ${f.dims.map((n) => Math.round(n)).join("×")} มม.` : "";
+    const want = f.wantMm?.some(Boolean) ? ` → ต้องการ ${f.wantMm.map((n) => n || "-").join("×")} มม.` : "";
+    const note = f.note?.trim() ? ` · ${f.note.trim()}` : "";
+    const warn = f.status === "warn" ? ` ⚠ ${f.statusText}` : "";
+    return `• ${f.name} × ${f.qty}${dims}${want}${note}${warn}`;
+  });
+  const adminNote = [input.note?.trim() ?? "", `งานพิมพ์ 3D คำขอ #${q.id}`, ...fileLines].filter(Boolean).join("\n").slice(0, 4000);
   db.orderSeq += 1;
   const now = new Date().toISOString();
   const order: Order = {
@@ -1556,10 +1571,10 @@ async function printQuoteToOrder__impl(id: string, input: { printTHB: number; sh
         q.shipping === "rider" ? "ส่งด่วน Grab/ไรเดอร์ ลูกค้าจ่ายค่าส่งปลายทาง" : "",
         q.contact.wantDate ? `ต้องการรับ ${q.contact.wantDate}` : "",
         q.contact.lineId ? `LINE ${q.contact.lineId}` : "",
-        input.note?.trim() ?? "",
       ]
         .filter(Boolean)
         .join(" · ") || undefined,
+    adminNote,
     shipmentIds: [],
     events: [],
     createdAt: now,
