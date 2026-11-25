@@ -84,7 +84,7 @@ export function FormulaNote({ explain }: { explain: FormulaExplain }) {
 
           <ol className="mt-3 divide-y divide-navy/10">
             {explain.steps.map((step, i) => (
-              <li key={step.label} className="flex gap-3 py-2.5">
+              <li key={`${i}:${step.label}`} className="flex gap-3 py-2.5">
                 <span
                   className="font-latin mt-px flex h-6 w-6 shrink-0 items-center justify-center border border-navy/30 text-xs font-semibold text-navy tabular-nums"
                   aria-hidden
@@ -108,8 +108,8 @@ export function FormulaNote({ explain }: { explain: FormulaExplain }) {
           {explain.constants?.length ? (
             <Section icon={Pin} title="ค่าคงที่ที่ใช้ และที่มา">
               <ul className="mt-1.5 space-y-2">
-                {explain.constants.map((k) => (
-                  <li key={k.label} className="text-[0.8125rem] leading-relaxed">
+                {explain.constants.map((k, i) => (
+                  <li key={`${i}:${k.label}`} className="text-[0.8125rem] leading-relaxed">
                     <span className="font-semibold text-navy">
                       {k.label} = {k.value.toLocaleString("th-TH")} {k.unit}
                     </span>
@@ -145,9 +145,9 @@ export function FormulaNote({ explain }: { explain: FormulaExplain }) {
           {explain.refs?.length ? (
             <Section icon={Library} title="อ้างอิง">
               <ul className="mt-1.5 space-y-1 text-[0.8125rem] leading-relaxed">
-                {explain.refs.map((r) =>
+                {explain.refs.map((r, i) =>
                   r.url ? (
-                    <li key={r.label}>
+                    <li key={`${i}:${r.label}`}>
                       <a
                         className="inline-flex min-h-11 items-center text-navy underline decoration-forge decoration-2 underline-offset-4 hover:text-forge"
                         href={r.url}
@@ -158,7 +158,7 @@ export function FormulaNote({ explain }: { explain: FormulaExplain }) {
                       </a>
                     </li>
                   ) : (
-                    <li key={r.label} className="text-navy/75">
+                    <li key={`${i}:${r.label}`} className="text-navy/75">
                       {r.label}
                     </li>
                   ),
