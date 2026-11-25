@@ -1,10 +1,13 @@
-import type { JobDef, ToolDef, Values } from "../types";
+import type { ChartSpec, ConstRef, JobDef, ToolDef, Values } from "../types";
 import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, stepTable, str, withDefaults } from "../math";
 import {
   BREAKER_SIZES,
   CABLE_METHODS,
   CABLE_TABLE_5_20,
   CABLE_TABLE_SOURCE,
+  CONDUIT_FILL,
+  CONDUIT_SIZE_SOURCE,
+  CONDUIT_SIZES,
   DISCLAIMER_AB,
   DISCLAIMER_C,
   AC,
@@ -18,6 +21,8 @@ import {
   KT_SOURCE,
   PUMP,
   SOLAR,
+  THW_OD,
+  THW_OD_SOURCE,
 } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(electricalTools, id, v);
@@ -651,6 +656,239 @@ export function calcElecUnit(v: Values) {
   });
 }
 
+/* ─────────── จำนวนสายในท่อ ─────────── */
+
+type ConduitKind = "emt" | "imc" | "custom";
+
+const CONDUIT_KIND_NAME: Record<ConduitKind, string> = {
+  emt: "ท่อเหล็กบาง EMT",
+  imc: "ท่อเหล็กหนา IMC",
+  custom: "ท่อที่วัดขนาดในเอง",
+};
+
+/** เกณฑ์พื้นที่สายในท่อตามจำนวนเส้นทั้งหมดในท่อ: 1 เส้น 53% · 2 เส้น 31% · 3 เส้นขึ้นไป 40% */
+export function conduitFillLimit(count: number): ConstRef {
+  if (count <= 1) return CONDUIT_FILL.one;
+  if (count === 2) return CONDUIT_FILL.two;
+  return CONDUIT_FILL.many;
+}
+
+function circleArea(d: number): number {
+  return (Math.PI / 4) * d * d;
+}
+
+/** พื้นที่หน้าตัดรวมฉนวนของสาย THW หนึ่งเส้น (ตร.มม.) จาก OD ในตาราง */
+export function thwArea(mm2: number): { od: number; area: number } {
+  const row = THW_OD.find((r) => r.mm2 === mm2) ?? THW_OD[1];
+  return { od: row.od, area: circleArea(row.od) };
+}
+
+/** สายขนาดเดียวกันใส่ท่อได้กี่เส้น — ลองเกณฑ์ 40% ก่อน ถ้าได้ไม่ถึง 3 เส้นถอยไปเช็ก 2 เส้น (31%) และ 1 เส้น (53%) */
+export function maxWiresIn(conduitArea: number, wireArea: number): number {
+  const fits = (n: number) => n * wireArea <= (conduitArea * conduitFillLimit(n).value) / 100 + 1e-9;
+  const many = Math.floor((conduitArea * CONDUIT_FILL.many.value) / 100 / wireArea + 1e-9);
+  if (many >= 3) return many;
+  if (fits(2)) return 2;
+  if (fits(1)) return 1;
+  return 0;
+}
+
+/** ท่อที่เลือกได้ตามชนิด — ท่อเหล็กมี 4 ขนาด · ท่อวัดเองมีขนาดเดียวตามที่กรอก */
+function conduitCandidates(kind: ConduitKind, idMm: number) {
+  if (kind === "custom") {
+    const name = `ขนาดใน ${fmtTrim(idMm, 1)} มม.`;
+    return [{ key: "custom", name, short: name, id: idMm }];
+  }
+  return CONDUIT_SIZES.map((s) => ({ key: s.key as string, name: s.label as string, short: s.short as string, id: kind === "imc" ? s.imc : s.emt }));
+}
+
+/** แถวเตือนลดพิกัดสายเมื่อมีหลายวงจรในท่อเดียว (ใช้ตารางกลุ่มวงจรเดียวกับเครื่องมือเลือกสาย) */
+function groupingRow(currentWires: number) {
+  const circuits = Math.floor(currentWires / 2);
+  if (circuits <= 1) return { label: "ลดพิกัดสาย", value: "วงจรเดียวในท่อ ไม่ต้องลด" };
+  const kg = groupingFactor(circuits);
+  return {
+    label: "ลดพิกัดสาย (ถ้าเป็นวงจร 1 เฟส)",
+    value:
+      kg === null
+        ? `${circuits} วงจรในท่อเดียว เกินตาราง (${KG_CIRCUITS_MAX} วงจร) — แยกท่อ`
+        : `${circuits} วงจร → สายทนกระแสได้ ${fmt(kg * 100)}% (ตัวคูณ ${fmtTrim(kg, 2)}) คิดต่อในเครื่องมือเลือกขนาดสายไฟ`,
+  };
+}
+
+export function calcConduit(v: Values) {
+  const bad = guard("conduit", v);
+  if (bad) return bad;
+  const mode = str(v, "mode", "max");
+  const kindRaw = str(v, "kind", "emt");
+  const kind: ConduitKind = kindRaw === "imc" || kindRaw === "custom" ? kindRaw : "emt";
+  const idMm = num(v, "idMm", 16);
+  const mm2 = Number(str(v, "wire", "2.5"));
+  const wire = thwArea(mm2);
+  const candidates = conduitCandidates(kind, idMm);
+  const kindName = CONDUIT_KIND_NAME[kind];
+
+  const common = {
+    assumptions: [
+      `สาย THW (60227 IEC 01) แกนเดียว คิด OD สูงสุดตาม IEC 60227-3 (สาย ${fmtTrim(mm2, 1)} ตร.มม. = Ø ${fmtTrim(wire.od, 1)} มม.)`,
+      kind === "custom" ? "ขนาดในท่อตามที่วัดและกรอกเอง" : `ขนาดใน${kindName}ตาม NEC Chapter 9 Table 4 (มิติ ANSI ที่ มอก. 770 อิง)`,
+      "พื้นที่สายรวมไม่เกิน 53% (1 เส้น) · 31% (2 เส้น) · 40% (3 เส้นขึ้นไป) ของพื้นที่ในท่อ",
+    ],
+    caveats: [
+      "ตรวจกับ วสท. ฉบับจริงก่อนใช้เป็นข้อกำหนด — เกณฑ์และขนาดท่อในเครื่องมือนี้ยังไม่ได้เทียบเล่มจริง",
+      "ท่อยาวหรือโค้งรวมเกิน 360° ระหว่างกล่องดึงสาย ร้อยยากกว่าที่คิดได้ ให้เผื่อกล่องดึงสายหรือใช้ท่อใหญ่ขึ้น",
+      "หลายวงจรในท่อเดียว สายร้อนขึ้น ต้องลดพิกัดสาย (ดูแถวลดพิกัด) ไม่ใช่แค่ใส่ได้ก็พอ",
+      "สายยี่ห้อจริงมักเล็กกว่า OD ที่ใช้คิดเล็กน้อย ผลจึงเอียงไปทางใส่ได้น้อยกว่าจริง",
+      DISCLAIMER_AB,
+    ],
+    refs: [{ label: CONDUIT_SIZE_SOURCE }, { label: THW_OD_SOURCE }, { label: "NEC Chapter 9 Table 1 / วสท. — เกณฑ์พื้นที่สายในท่อ 53/31/40%" }],
+  };
+
+  if (mode !== "min") {
+    const sizeKey = str(v, "size", "0.5");
+    const conduit = candidates.find((c) => c.key === sizeKey) ?? candidates[0];
+    const conduitArea = circleArea(conduit.id);
+    const n = maxWiresIn(conduitArea, wire.area);
+    if (n === 0) {
+      return blockedResult({
+        headline: `สาย ${fmtTrim(mm2, 1)} ตร.มม. ใหญ่เกินท่อ ${conduit.name} — ใส่ไม่ได้สักเส้น`,
+        rows: [
+          { label: "พื้นที่ในท่อ", value: `${fmt(conduitArea, 1)} ตร.มม.` },
+          { label: "พื้นที่สาย 1 เส้น", value: `${fmt(wire.area, 1)} ตร.มม. (ได้ไม่เกิน ${fmt((conduitArea * CONDUIT_FILL.one.value) / 100, 1)} ตร.มม.)` },
+        ],
+        tip: "ใช้ท่อใหญ่ขึ้น หรือตรวจขนาดในท่อที่กรอกอีกครั้ง (กรอกเป็นมิลลิเมตร)",
+      });
+    }
+    const limit = conduitFillLimit(n);
+    const fill = ((n * wire.area) / conduitArea) * 100;
+    const chart: ChartSpec = {
+      kind: "threshold",
+      unit: "%",
+      value: round(fill, 1),
+      max: 100,
+      zones: [
+        { upTo: limit.value, tone: "good", label: `ไม่เกิน ${fmt(limit.value)}%` },
+        { upTo: 100, tone: "bad", label: "แน่นเกิน ร้อยไม่เข้า/สายร้อน" },
+      ],
+    };
+    return resultX({
+      title: "จำนวนสายในท่อ",
+      headline: `ท่อ ${conduit.name} ใส่สาย ${fmtTrim(mm2, 1)} ตร.มม. ได้ ${fmt(n)} เส้น`,
+      chart,
+      rows: [
+        { label: "ท่อ", value: `${kindName} ${conduit.name}` },
+        { label: "ขนาดในท่อ", value: `${fmtTrim(conduit.id, 2)} มม. (พื้นที่ ${fmt(conduitArea, 1)} ตร.มม.)` },
+        { label: "สาย THW (IEC 01)", value: `${fmtTrim(mm2, 1)} ตร.มม. · Ø นอก ${fmtTrim(wire.od, 1)} มม. (${fmt(wire.area, 1)} ตร.มม./เส้น)` },
+        { label: "ใส่ได้สูงสุด", value: `${fmt(n)} เส้น`, emphasize: true },
+        { label: "สายเต็มท่อ", value: `${fmt(fill, 1)}% (เกณฑ์ ${fmt(limit.value)}% สำหรับ ${n >= 3 ? "3 เส้นขึ้นไป" : `${n} เส้น`})` },
+        groupingRow(n),
+      ],
+      tip: "นับสายดินด้วยทุกเส้น · ใส่ได้ไม่ได้แปลว่าสายไม่ร้อน หลายวงจรในท่อเดียวต้องลดพิกัดสาย",
+      explain: {
+        risk: "B",
+        updatedAt: "2026-11-25",
+        summary: "จำนวนสาย = ปัดลง(พื้นที่ในท่อ × 40% ÷ พื้นที่สาย 1 เส้น) — ถ้าได้ไม่ถึง 3 เส้น เช็กเกณฑ์ 2 เส้น 31% และ 1 เส้น 53% แทน",
+        steps: [
+          { label: "พื้นที่ในท่อ", expr: "π/4 × ขนาดใน²", subst: `π/4 × ${fmtTrim(conduit.id, 2)}² = ${fmt(conduitArea, 1)} ตร.มม.` },
+          { label: "พื้นที่สาย 1 เส้น (รวมฉนวน)", expr: "π/4 × Ø นอก²", subst: `π/4 × ${fmtTrim(wire.od, 1)}² = ${fmt(wire.area, 2)} ตร.มม.` },
+          {
+            label: "จำนวนเส้นที่ใส่ได้",
+            expr: "ปัดลง(พื้นที่ท่อ × เกณฑ์ ÷ พื้นที่สาย)",
+            subst: `${fmt(conduitArea, 1)} × ${fmt(limit.value)}% ÷ ${fmt(wire.area, 2)} → ${fmt(n)} เส้น (เต็ม ${fmt(fill, 1)}%)`,
+          },
+        ],
+        constants: [CONDUIT_FILL.one, CONDUIT_FILL.two, CONDUIT_FILL.many],
+        ...common,
+      },
+    });
+  }
+
+  // โหมดย้อนกลับ: มีสายเท่านี้ ต้องใช้ท่อเล็กสุดขนาดไหน
+  const n1 = num(v, "n", 6);
+  const mm2b = Number(str(v, "wire2", "2.5"));
+  const n2 = num(v, "n2", 0);
+  const wire2 = thwArea(mm2b);
+  const count = n1 + n2;
+  const wiresArea = n1 * wire.area + n2 * wire2.area;
+  const limit = conduitFillLimit(count);
+  const allowed = (id: number) => (circleArea(id) * limit.value) / 100;
+  const pick = candidates.find((c) => wiresArea <= allowed(c.id) + 1e-9);
+  const wireText = `${fmt(n1)} × ${fmtTrim(mm2, 1)}${n2 > 0 ? ` + ${fmt(n2)} × ${fmtTrim(mm2b, 1)}` : ""} ตร.มม.`;
+  if (!pick) {
+    const biggest = candidates[candidates.length - 1];
+    return blockedResult({
+      headline:
+        kind === "custom"
+          ? `สาย ${wireText} ใส่ท่อ ${biggest.name} ไม่ได้ — แน่นเกินเกณฑ์ ${fmt(limit.value)}%`
+          : `สาย ${wireText} เกินท่อ ${biggest.name} — แบ่งเป็นหลายท่อ หรือใช้รางเดินสาย`,
+      rows: [
+        { label: "พื้นที่สายรวม", value: `${fmt(wiresArea, 1)} ตร.มม.` },
+        { label: `ท่อ ${biggest.name} รับได้`, value: `${fmt(allowed(biggest.id), 1)} ตร.มม. (${fmt(limit.value)}% ของพื้นที่ใน)` },
+      ],
+      tip: "แยกวงจรลงหลายท่อ จะได้ไม่ต้องลดพิกัดสายมากด้วย",
+    });
+  }
+  const pickArea = circleArea(pick.id);
+  const fill = (wiresArea / pickArea) * 100;
+  const chart: ChartSpec =
+    candidates.length > 1
+      ? {
+          kind: "steps",
+          unit: "ตร.มม.",
+          need: round(wiresArea, 1),
+          needLabel: "พื้นที่สายรวม",
+          items: candidates.map((c) => ({
+            label: c.short,
+            value: round(allowed(c.id), 1),
+            state: c.key === pick.key ? "chosen" : allowed(c.id) < wiresArea ? "under" : "over",
+          })),
+        }
+      : {
+          kind: "threshold",
+          unit: "%",
+          value: round(fill, 1),
+          max: 100,
+          zones: [
+            { upTo: limit.value, tone: "good", label: `ไม่เกิน ${fmt(limit.value)}%` },
+            { upTo: 100, tone: "bad", label: "แน่นเกิน" },
+          ],
+        };
+  return resultX({
+    title: "ขนาดท่อร้อยสาย",
+    headline: kind === "custom" ? `ใส่ได้ — สายเต็มท่อ ${fmt(fill, 1)}%` : `ใช้ท่อ ${pick.name} ขึ้นไป`,
+    chart,
+    rows: [
+      { label: "สายในท่อ", value: `${wireText} รวม ${fmt(count)} เส้น` },
+      { label: "พื้นที่สายรวม", value: `${fmt(wiresArea, 1)} ตร.มม.` },
+      { label: "เกณฑ์", value: `ไม่เกิน ${fmt(limit.value)}% ของพื้นที่ในท่อ` },
+      { label: kind === "custom" ? "ท่อที่กรอก" : "ท่อเล็กสุดที่ใส่ได้", value: `${kindName} ${pick.name}`, emphasize: true },
+      { label: "สายเต็มท่อ", value: `${fmt(fill, 1)}%` },
+      groupingRow(n1),
+    ],
+    tip: "เดินโค้งเยอะหรือท่อยาว ขยับขึ้นอีกขนาดจะร้อยง่ายกว่า · หลายวงจรในท่อเดียวต้องลดพิกัดสาย",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary: "พื้นที่สายรวม (รวมฉนวน) ต้องไม่เกินเกณฑ์ของพื้นที่ในท่อ — เลือกท่อเล็กสุดที่ผ่าน",
+      steps: [
+        {
+          label: "พื้นที่สายรวม",
+          expr: "Σ จำนวน × π/4 × Ø นอก²",
+          subst: `${fmt(n1)} × ${fmt(wire.area, 2)}${n2 > 0 ? ` + ${fmt(n2)} × ${fmt(wire2.area, 2)}` : ""} = ${fmt(wiresArea, 1)} ตร.มม.`,
+        },
+        { label: "เกณฑ์ตามจำนวนเส้น", expr: "1 เส้น 53% · 2 เส้น 31% · 3 เส้นขึ้นไป 40%", subst: `${fmt(count)} เส้น → ${fmt(limit.value)}%` },
+        {
+          label: "เลือกท่อ",
+          expr: "ท่อเล็กสุดที่ π/4 × ขนาดใน² × เกณฑ์ ≥ พื้นที่สายรวม",
+          subst: `${pick.name}: ${fmt(allowed(pick.id), 1)} ≥ ${fmt(wiresArea, 1)} ตร.มม. (เต็ม ${fmt(fill, 1)}%)`,
+        },
+      ],
+      constants: [limit],
+      ...common,
+    },
+  });
+}
+
 export const electricalTools: ToolDef[] = [
   {
     id: "cable",
@@ -717,6 +955,61 @@ export const electricalTools: ToolDef[] = [
       },
     ],
     calc: calcVdrop,
+  },
+  {
+    id: "conduit",
+    name: "จำนวนสายในท่อ",
+    blurb: "ท่อ 4 หุน / 6 หุน / 1 นิ้ว ใส่สายได้กี่เส้น",
+    fields: [
+      {
+        type: "select",
+        key: "mode",
+        label: "อยากรู้",
+        default: "max",
+        options: [
+          { value: "max", label: "ท่อนี้ใส่สายได้กี่เส้น" },
+          { value: "min", label: "มีสายเท่านี้ ใช้ท่อขนาดไหน" },
+        ],
+      },
+      {
+        type: "select",
+        key: "kind",
+        label: "ชนิดท่อ",
+        default: "emt",
+        options: [
+          { value: "emt", label: "ท่อเหล็กบาง EMT" },
+          { value: "imc", label: "ท่อเหล็กหนา IMC" },
+          { value: "custom", label: "ท่อ PVC / อื่น ๆ (วัดขนาดในเอง)" },
+        ],
+      },
+      {
+        type: "select",
+        key: "size",
+        label: "ขนาดท่อ (ท่อเหล็ก)",
+        default: "0.5",
+        options: CONDUIT_SIZES.map((s) => ({ value: s.key, label: s.label })),
+        when: { key: "mode", is: "max" },
+      },
+      { type: "number", key: "idMm", label: "ขนาดในท่อ (วัดจริง)", unit: "มม.", default: 16, min: 8, max: 100, step: 0.1, when: { key: "kind", is: "custom" } },
+      {
+        type: "select",
+        key: "wire",
+        label: "ขนาดสาย THW (IEC 01)",
+        default: "2.5",
+        options: THW_OD.map((w) => ({ value: String(w.mm2), label: `${w.mm2} ตร.มม.` })),
+      },
+      { type: "number", key: "n", label: "จำนวนสายขนาดนี้", unit: "เส้น", default: 6, min: 1, max: 60, when: { key: "mode", is: "min" } },
+      {
+        type: "select",
+        key: "wire2",
+        label: "สายอีกขนาด (เช่น สายดิน)",
+        default: "2.5",
+        options: THW_OD.map((w) => ({ value: String(w.mm2), label: `${w.mm2} ตร.มม.` })),
+        when: { key: "mode", is: "min" },
+      },
+      { type: "number", key: "n2", label: "จำนวนสายอีกขนาด", unit: "เส้น", default: 0, min: 0, max: 60, when: { key: "mode", is: "min" } },
+    ],
+    calc: calcConduit,
   },
   {
     id: "solar",

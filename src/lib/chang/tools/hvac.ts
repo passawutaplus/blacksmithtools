@@ -1,4 +1,4 @@
-import type { JobDef, ToolDef, Values } from "../types";
+import type { CalcResult, JobDef, ToolDef, Values } from "../types";
 import {
   blockedResult,
   bool,
@@ -12,12 +12,15 @@ import {
   num,
   resultX,
   round,
+  stockPieces,
   str,
   tableRange,
   withDefaults,
 } from "../math";
 import {
   AC,
+  AC_KIT,
+  AC_TRUNK_SIZES,
   AC_BREAKER_SOURCE,
   AC_BREAKER_TABLE,
   AC_CHARGE_G_PER_M,
@@ -34,6 +37,7 @@ import {
   REFRIGERANT_PT_SOURCE,
   SHSC,
 } from "../constants";
+import { calcSlope } from "./plumbing";
 
 const guard = (id: string, v: Values) => guardTool(hvacTools, id, v);
 
@@ -312,17 +316,22 @@ export function copperHun(inchLabel: string): string {
   return `${fmt(hun)} หุน (${inchLabel})`;
 }
 
+/** ขนาดท่อทองแดงคู่ตามขนาดแอร์ + เลื่อนขึ้นหนึ่งไซซ์เมื่อเดินไกล — ใช้ร่วมกันระหว่างเครื่องมือท่อทองแดงกับชุดติดตั้งแอร์ */
+export function copperSizeFor(btu: number, run: number) {
+  let idx = PIPE_BRACKETS.findIndex((b) => btu <= b.upTo);
+  if (idx < 0) idx = PIPE_BRACKETS.length - 1;
+  const longRun = run > AC_PIPE_LONG_RUN.value;
+  if (longRun) idx = Math.min(idx + 1, PIPE_BRACKETS.length - 1);
+  const { liq, suc } = PIPE_BRACKETS[idx];
+  return { idx, liq, suc, longRun };
+}
+
 export function calcPipe(v: Values) {
   const bad = guard("pipe", v);
   if (bad) return bad;
   const btu = num(v, "btu", 18000);
   const run = num(v, "run", 8);
-  let chosenIdx = PIPE_BRACKETS.findIndex((b) => btu <= b.upTo);
-  if (chosenIdx < 0) chosenIdx = PIPE_BRACKETS.length - 1;
-  const longRun = run > AC_PIPE_LONG_RUN.value;
-  if (longRun) chosenIdx = Math.min(chosenIdx + 1, PIPE_BRACKETS.length - 1);
-  const bracket = PIPE_BRACKETS[chosenIdx];
-  const { liq, suc } = bracket;
+  const { idx: chosenIdx, liq, suc, longRun } = copperSizeFor(btu, run);
   const extra = longRun
     ? `เดินไกลเกิน ${AC_PIPE_LONG_RUN.value} ม. เลื่อนขึ้นหนึ่งไซซ์แล้ว — ยึดคู่มือรุ่นเป็นหลัก`
     : "ระยะมาตรฐาน ใช้ไซซ์ตารางได้";
@@ -789,6 +798,157 @@ export function calcEnergy(v: Values) {
   });
 }
 
+/* ─────────── ชุดติดตั้งแอร์ / ใบสั่งของ ─────────── */
+
+function rowOf(r: CalcResult, label: string): string {
+  return r.rows.find((x) => x.label === label)?.value ?? "-";
+}
+
+const WALL_BRACKET: Record<string, { name: string; bracket: string }> = {
+  brick: { name: "อิฐฉาบปูน", bracket: `ขาแขวนคอยล์ร้อน 1 ชุด + พุก ${AC_KIT.anchorsPerBracket.value} ตัว (เจาะให้โดนเนื้ออิฐ ไม่โดนแนวปูน)` },
+  concrete: { name: "คอนกรีต", bracket: `ขาแขวนคอยล์ร้อน 1 ชุด + พุกเหล็ก ${AC_KIT.anchorsPerBracket.value} ตัว` },
+  light: { name: "เบา/ไม้/สมาร์ทบอร์ด", bracket: "ห้ามแขวนผนังเบา — ใช้ขาตั้งพื้น 1 ชุด + ยางรองกันสั่น 4 ตัว" },
+};
+
+export function calcAcKit(v: Values) {
+  const bad = guard("kit", v);
+  if (bad) return bad;
+  const btu = num(v, "btu", 12000);
+  const run = num(v, "run", 6);
+  const height = num(v, "height", 1);
+  const wallKey = str(v, "wall", "brick");
+  const wall = WALL_BRACKET[wallKey] ?? WALL_BRACKET.brick;
+  const kind = str(v, "kind", "R32");
+  const std = num(v, "std", 5);
+  const feed = num(v, "feed", 10);
+  const drainLen = num(v, "drain", 4);
+  const spare = num(v, "spare", 0.5);
+  const trunkFull = bool(v, "trunkFull", true);
+  const trunkLen = trunkFull ? run : num(v, "trunkLen", 3);
+  if (height > run + 1e-9) {
+    return blockedResult({
+      headline: `สูงต่าง ${fmtTrim(height, 1)} ม. มากกว่าระยะท่อทั้งเส้น ${fmtTrim(run, 1)} ม. — เป็นไปไม่ได้ ตรวจค่าที่กรอก`,
+      rows: [{ label: "ระยะท่อ", value: "ต้องรวมช่วงดิ่งขึ้น-ลงแล้ว จึงไม่น้อยกว่าระยะสูงต่าง" }],
+      tip: "วัดระยะท่อตามแนวเดินจริงทั้งแนวนอนและแนวดิ่ง",
+    });
+  }
+  if (trunkLen > run + 1e-9) {
+    return blockedResult({
+      headline: `รางครอบ ${fmtTrim(trunkLen, 1)} ม. ยาวกว่าท่อ ${fmtTrim(run, 1)} ม. — ตรวจค่าที่กรอก`,
+      tip: "รางครอบท่อยาวได้ไม่เกินแนวท่อ ถ้าครอบตลอดแนวให้ติ๊ก “ครอบรางตลอดแนวท่อ”",
+    });
+  }
+
+  const pipe = copperSizeFor(btu, run);
+  const pipeRes = calcPipe({ btu, run });
+  const chargeRes = calcCharge({ kind, std, run });
+  const breakerRes = calcBreaker({ btu, method: "surface" });
+  const elec = breakerForBtu(btu, "surface");
+  const slopeRes = calcSlope({ len: drainLen, ratio: String(AC_KIT.drainRatio.value) });
+
+  const pipeBuy = ceil(run + spare);
+  const insul = stockPieces(pipeBuy, AC_KIT.insulationStick.value, "ท่อน");
+  const powerBuy = ceil(feed + spare);
+  const linkBuy = ceil(run + spare);
+  const drain = stockPieces(drainLen, AC_KIT.drainStick.value, "เส้น");
+  const trunk = stockPieces(trunkLen, AC_KIT.trunkStick.value, "ท่อน");
+  const trunkSize = (AC_TRUNK_SIZES.find((t) => btu <= t.maxBtu) ?? AC_TRUNK_SIZES[AC_TRUNK_SIZES.length - 1]).name;
+  const extra = Math.max(0, run - AC_KIT.freeLen.value);
+  const needCharge = run > std;
+  const addCharge = rowOf(chargeRes, "เติมเพิ่ม");
+  const drop = rowOf(slopeRes, "ตกทั้งเส้น");
+  const hun = (inch: string) => copperHun(inch).split(" (")[0];
+  const pipePair = `${hun(pipe.liq)} + ${hun(pipe.suc)}`;
+  const wireText = elec ? `${elec.wire} ตร.มม.` : "ตามป้ายเครื่อง";
+  const tall = height > AC_KIT.heightWarn.value;
+
+  const rows = [
+    { label: "แอร์", value: `${fmt(btu)} BTU · ท่อ ${fmtTrim(run, 1)} ม. · สูงต่าง ${fmtTrim(height, 1)} ม. · ผนัง${wall.name}` },
+    { label: `ท่อทองแดงเส้นเล็ก ${copperHun(pipe.liq)}`, value: `${fmt(pipeBuy)} ม.`, emphasize: true },
+    { label: `ท่อทองแดงเส้นใหญ่ ${copperHun(pipe.suc)}`, value: `${fmt(pipeBuy)} ม.`, emphasize: true },
+    { label: `ฉนวนหุ้มท่อ ${hun(pipe.liq)}`, value: `${fmt(pipeBuy)} ม. → ${insul.text}` },
+    { label: `ฉนวนหุ้มท่อ ${hun(pipe.suc)}`, value: `${fmt(pipeBuy)} ม. → ${insul.text}` },
+    {
+      label: elec ? `สายไฟเข้าเครื่อง VCT ${AC_KIT.powerCores.value}×${elec.wire} ตร.มม.` : "สายไฟเข้าเครื่อง VCT",
+      value: `${fmt(powerBuy)} ม.${elec ? "" : " (ขนาดตามป้ายเครื่อง)"}`,
+      emphasize: true,
+    },
+    {
+      label: elec ? `สายเชื่อมคอยล์ร้อน-เย็น VCT ${AC_KIT.linkCores.value}×${elec.wire} ตร.มม.` : "สายเชื่อมคอยล์ร้อน-เย็น VCT",
+      value: `${fmt(linkBuy)} ม. (บางรุ่นใช้สายเล็กกว่านี้ ดูแผนผังสายของรุ่น)`,
+    },
+    {
+      label: "เบรกเกอร์",
+      value: elec ? `${elec.breaker} A (สาย ${wireText} ทน ${elec.ampacity} A)` : "เกินตารางคร่าว — ใช้ค่าบนป้ายเครื่อง",
+      emphasize: true,
+    },
+    { label: "ท่อน้ำทิ้ง PVC 4 หุน", value: `${drain.text} · ลาด 1:${fmt(AC_KIT.drainRatio.value)} ตก ${drop}` },
+    ...(trunkLen > 0 ? [{ label: `รางครอบท่อ ${trunkSize}`, value: `${fmtTrim(trunkLen, 1)} ม. → ${trunk.text} + ข้องอ/ฝาครอบตามแนวจริง` }] : []),
+    { label: "ขาแขวน/ขาตั้งคอยล์ร้อน", value: wall.bracket },
+    {
+      label: `น้ำยา ${kind} เติมเพิ่ม`,
+      value: needCharge ? `${addCharge} · ท่อเกิน ${fmtTrim(std, 1)} ม.` : `ไม่ต้องเติม (ท่อ ${fmtTrim(run, 1)} ม. ไม่เกิน ${fmtTrim(std, 1)} ม.)`,
+    },
+    {
+      label: "ค่าแรงระยะเกิน",
+      value:
+        extra > 0
+          ? `ท่อเกินแพ็กติดตั้ง ${fmtTrim(AC_KIT.freeLen.value, 1)} ม. ไป ${fmtTrim(extra, 1)} ม. — คิดค่าท่อ+แรงเพิ่ม ${fmtTrim(extra, 1)} ม.`
+          : `ไม่เกินแพ็กติดตั้ง ${fmtTrim(AC_KIT.freeLen.value, 1)} ม.`,
+    },
+    ...(tall
+      ? [{ label: "สูงต่างมาก", value: `เกิน ${fmt(AC_KIT.heightWarn.value)} ม. เช็กระยะสูงต่างสูงสุดและการทำกับดักน้ำมันในคู่มือรุ่น`, emphasize: true }]
+      : []),
+  ];
+
+  const kitPart = resultX({
+    title: "ชุดติดตั้งแอร์",
+    rows,
+    tip: "",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary:
+        "ใบสั่งของงานติดตั้งแอร์ 1 ชุด: ท่อคู่และสายยาวตามระยะจริง + เผื่อต่อเส้น ปัดขึ้นเป็นเมตร · ฉนวน/ราง/ท่อน้ำทิ้ง ปัดขึ้นเป็นท่อนที่ขาย",
+      steps: [
+        { label: "ท่อทองแดง (ต่อเส้น)", expr: "ปัดขึ้น(ระยะท่อ + เผื่อ)", subst: `${fmtTrim(run, 1)} + ${fmtTrim(spare, 1)} → ${fmt(pipeBuy)} ม. เส้นละขนาด` },
+        {
+          label: "ฉนวนหุ้มท่อ",
+          expr: `ปัดขึ้น(ยาวท่อ ÷ ${fmtTrim(AC_KIT.insulationStick.value, 1)} ม.) ต่อเส้น`,
+          subst: `${fmt(pipeBuy)} ÷ ${fmtTrim(AC_KIT.insulationStick.value, 1)} → ${insul.text}`,
+        },
+        { label: "สายไฟเข้าเครื่อง", expr: "ปัดขึ้น(ระยะจากตู้ไฟ + เผื่อ)", subst: `${fmtTrim(feed, 1)} + ${fmtTrim(spare, 1)} → ${fmt(powerBuy)} ม.` },
+        { label: "สายเชื่อมคอยล์", expr: "ปัดขึ้น(ระยะท่อ + เผื่อ)", subst: `${fmtTrim(run, 1)} + ${fmtTrim(spare, 1)} → ${fmt(linkBuy)} ม.` },
+        { label: "รางครอบท่อ", expr: `ปัดขึ้น(ยาวราง ÷ ${fmtTrim(AC_KIT.trunkStick.value, 1)} ม.)`, subst: `${fmtTrim(trunkLen, 1)} ม. → ${trunk.text}` },
+        { label: "ค่าแรงระยะเกิน", expr: `ระยะท่อ − ${fmtTrim(AC_KIT.freeLen.value, 1)} ม. (แพ็กติดตั้ง)`, subst: `${fmtTrim(run, 1)} − ${fmtTrim(AC_KIT.freeLen.value, 1)} = ${fmtTrim(extra, 1)} ม.` },
+      ],
+      constants: [AC_KIT.insulationStick, AC_KIT.trunkStick, AC_KIT.drainStick, AC_KIT.freeLen, AC_KIT.heightWarn, AC_KIT.linkCores],
+      assumptions: [
+        "แอร์ผนังแยกส่วน 1 เครื่อง ไฟ 220 V 1 เฟส เดินสายแยกวงจรจากตู้ไฟ",
+        "ระยะท่อคือแนวเดินจริงรวมช่วงดิ่ง · สายเชื่อมคอยล์ยาวเท่าแนวท่อ",
+        "ท่อน้ำทิ้ง PVC 4 หุน · รางครอบเลือกตามขนาดแอร์ (ท่อคู่ + ฉนวน + สาย + ท่อน้ำทิ้งต้องลงราง)",
+        "ค่าแรงระยะเกินคิดจากแพ็กติดตั้งทั่วไปที่รวมท่อ 4 ม. — แต่ละร้านกำหนดเองได้",
+      ],
+      caveats: [
+        "ยึดคู่มือรุ่นที่ติดตั้งจริงเรื่องขนาดท่อ ระยะไม่ต้องเติมน้ำยา ระยะสูงต่าง และขนาด/จำนวนแกนสายเชื่อม",
+        "สาย VCT หลายแกนพิกัดกระแสต่างจากสายเดี่ยวในท่อ — ขนาดในใบนี้มาจากตารางคร่าวตาม BTU ให้ช่างไฟยืนยันกับป้ายเครื่อง",
+        ...(tall ? ["ระยะสูงต่างเกินที่รุ่นส่วนใหญ่รับได้ บางรุ่นต้องทำกับดักน้ำมันทุกช่วงความสูงตามคู่มือ"] : []),
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "คู่มือติดตั้งเครื่องปรับอากาศแยกส่วนของผู้ผลิต (ท่อ สาย ท่อน้ำทิ้ง ขาแขวน)" }],
+    },
+  });
+
+  return jobFromParts({
+    title: "ชุดติดตั้งแอร์ / ใบสั่งของ",
+    headline: `ท่อ ${pipePair} ยาว ${fmt(pipeBuy)} ม. · สาย VCT ${elec ? `${AC_KIT.powerCores.value}×${elec.wire}` : "ตามป้ายเครื่อง"} · เบรกเกอร์ ${elec ? `${elec.breaker} A` : "ตามป้ายเครื่อง"}`,
+    rows,
+    tip: "ยังไม่รวมเทปพันท่อ ปลอกรูผนัง ซิลิโคนอุดรู และค่าแรงติดตั้ง · ขนาดสายและเบรกเกอร์เป็นตารางคร่าว ให้ช่างไฟยืนยันกับป้ายเครื่อง",
+    parts: [kitPart, pipeRes, chargeRes, ...(breakerRes.invalid ? [] : [breakerRes]), slopeRes],
+    chart: pipeRes.chart,
+  });
+}
+
 export const hvacTools: ToolDef[] = [
   {
     id: "btu",
@@ -869,6 +1029,41 @@ export const hvacTools: ToolDef[] = [
       { type: "number", key: "run", label: "ระยะเดินท่อ", unit: "ม.", default: 8, min: 1, max: 50, step: 0.5 },
     ],
     calc: calcPipe,
+  },
+  {
+    id: "kit",
+    name: "ชุดติดตั้งแอร์ / ใบสั่งของ",
+    blurb: "ท่อ ฉนวน สาย VCT ราง ท่อน้ำทิ้ง ขาแขวน น้ำยา ค่าระยะเกิน",
+    fields: [
+      { type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 12000, min: 5000, max: 60000, step: 1000 },
+      { type: "number", key: "run", label: "ระยะท่อน้ำยา (รวมช่วงดิ่ง)", unit: "ม.", default: 6, min: 1, max: 50, step: 0.5 },
+      { type: "number", key: "height", label: "คอยล์ร้อน-เย็นสูงต่างกัน", unit: "ม.", default: 1, min: 0, max: 30, step: 0.5 },
+      {
+        type: "select",
+        key: "wall",
+        label: "ผนังที่แขวนคอยล์ร้อน",
+        default: "brick",
+        options: [
+          { value: "brick", label: "อิฐฉาบปูน" },
+          { value: "concrete", label: "คอนกรีต" },
+          { value: "light", label: "ผนังเบา / ไม้ / สมาร์ทบอร์ด" },
+        ],
+      },
+      {
+        type: "select",
+        key: "kind",
+        label: "น้ำยา",
+        default: "R32",
+        options: ["R32", "R410A", "R22"].map((x) => ({ value: x, label: x })),
+      },
+      { type: "number", key: "std", label: "ระยะท่อที่ไม่ต้องเติมน้ำยา (ดูคู่มือรุ่น)", unit: "ม.", default: 5, min: 0, max: 30 },
+      { type: "number", key: "feed", label: "ระยะสายไฟจากตู้ไฟถึงแอร์", unit: "ม.", default: 10, min: 1, max: 100, step: 0.5 },
+      { type: "number", key: "drain", label: "ยาวท่อน้ำทิ้ง", unit: "ม.", default: 4, min: 1, max: 50, step: 0.5 },
+      { type: "number", key: "spare", label: "เผื่อท่อ/สาย ต่อเส้น (บาน ดัด เข้าขั้ว)", unit: "ม.", default: 0.5, min: 0, max: 3, step: 0.1 },
+      { type: "bool", key: "trunkFull", label: "ครอบรางตลอดแนวท่อ", default: true },
+      { type: "number", key: "trunkLen", label: "ยาวรางครอบ (ช่วงที่เดินโชว์)", unit: "ม.", default: 3, min: 0, max: 50, step: 0.5, when: { key: "trunkFull", is: "false" } },
+    ],
+    calc: calcAcKit,
   },
   {
     id: "charge",
