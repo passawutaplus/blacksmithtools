@@ -1,6 +1,19 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { fmt, fmtInchFraction, fmtTrim, guardInputs, guardTool, inchFraction, invalidResult, num, resultX, str } from "../math";
-import { UNIT } from "../constants";
+import {
+  blockedResult,
+  ceil,
+  fmt,
+  fmtInchFraction,
+  fmtTrim,
+  guardInputs,
+  guardTool,
+  inchFraction,
+  invalidResult,
+  num,
+  resultX,
+  str,
+} from "../math";
+import { DISCLAIMER_AB, RAILING, SPACING, TRADE_LEN, UNIT } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(generalTools, id, v);
 
@@ -322,6 +335,284 @@ export function calcTriangle(v: Values) {
   });
 }
 
+/* ─────────────── นิ้ว-หุน-เศษส่วน ↔ มม. (อ่านข้อความที่ช่างพิมพ์) ─────────────── */
+
+type TradeUnit = "ft" | "in" | "hun" | "mm" | "cm" | "m";
+
+const TRADE_UNIT_MM: Record<TradeUnit, () => number> = {
+  ft: () => UNIT.foot.value * 1000,
+  in: () => UNIT.inch.value,
+  hun: () => UNIT.inch.value / TRADE_LEN.hunPerInch.value,
+  mm: () => 1,
+  cm: () => 10,
+  m: () => 1000,
+};
+
+const TRADE_UNIT_NAME: Record<TradeUnit, string> = { ft: "ฟุต", in: "นิ้ว", hun: "หุน", mm: "มม.", cm: "ซม.", m: "ม." };
+
+/** คำหน่วยที่ช่างพิมพ์ — เรียงคำยาวก่อนคำสั้น (มม. ก่อน ม. · inch ก่อน in) */
+const TRADE_UNIT_WORDS: Array<[RegExp, TradeUnit]> = [
+  [/^(ฟุต|feet|foot|ft|')/, "ft"],
+  [/^(นิ้ว|inches|inch|in|")/, "in"],
+  [/^หุน/, "hun"],
+  [/^(มม\.?|มิลลิเมตร|มิล|mm)/, "mm"],
+  [/^(ซม\.?|เซนติเมตร|เซนต์|เซน|cm)/, "cm"],
+  [/^(เมตร|ม\.?|m)/, "m"],
+];
+
+const UNICODE_FRACTIONS: Record<string, string> = { "½": "1/2", "¼": "1/4", "¾": "3/4", "⅛": "1/8", "⅜": "3/8", "⅝": "5/8", "⅞": "7/8" };
+
+export type TradeLengthPart = { value: number; unit: TradeUnit };
+
+/**
+ * อ่านความยาวแบบที่ช่างพิมพ์: 1 1/2" · 1-1/2 นิ้ว · 3/4 · 6 หุน · 19 มม. · 7' 10½" · 7 ฟุต 10 1/2 นิ้ว · นิ้วครึ่ง
+ * - ตัวเลขไม่มีหน่วยใช้หน่วยตาม `bare` — ยกเว้นตัวเลขที่ตามหลังฟุต ถือเป็นนิ้ว (7' 10 = 7 ฟุต 10 นิ้ว)
+ * - อ่านไม่ออกตรงไหนต้องบอก ห้ามเดา
+ */
+export function parseTradeLength(raw: string, bare: TradeUnit = "in"): { mm: number; parts: TradeLengthPart[] } | { error: string } {
+  let s = raw.trim().toLowerCase();
+  if (!s) return { error: "พิมพ์ขนาดก่อน เช่น 1 1/2\" · 6 หุน · 19 มม." };
+  if (s.startsWith("-")) return { error: "ความยาวติดลบไม่ได้" };
+  s = s.replace(/[½¼¾⅛⅜⅝⅞]/g, (ch) => ` ${UNICODE_FRACTIONS[ch]}`);
+  s = s.replace(/[”″“]/g, '"').replace(/[’′‘]/g, "'");
+  s = s.replace(/(\d),(\d{3})(?!\d)/g, "$1$2");
+
+  const parts: TradeLengthPart[] = [];
+  let rest = s;
+  const skipSeparators = () => {
+    rest = rest.replace(/^[\s,+\-]+/, "");
+  };
+  while (true) {
+    skipSeparators();
+    if (!rest) break;
+    let value: number | null = null;
+    const frac = rest.match(/^(\d+)\s*\/\s*(\d+)/);
+    const mixed = rest.match(/^(\d+(?:\.\d+)?)(?:(?:\s+|-)(\d+)\s*\/\s*(\d+))?/);
+    if (frac) {
+      if (Number(frac[2]) === 0) return { error: `เศษส่วน ${frac[0]} หารศูนย์ไม่ได้` };
+      value = Number(frac[1]) / Number(frac[2]);
+      rest = rest.slice(frac[0].length);
+    } else if (mixed) {
+      value = Number(mixed[1]);
+      if (mixed[2] !== undefined) {
+        if (Number(mixed[3]) === 0) return { error: `เศษส่วน ${mixed[2]}/${mixed[3]} หารศูนย์ไม่ได้` };
+        value += Number(mixed[2]) / Number(mixed[3]);
+      }
+      rest = rest.slice(mixed[0].length);
+    }
+    rest = rest.replace(/^\s+/, "");
+    let unit: TradeUnit | null = null;
+    for (const [re, u] of TRADE_UNIT_WORDS) {
+      const m = rest.match(re);
+      if (m) {
+        unit = u;
+        rest = rest.slice(m[0].length);
+        break;
+      }
+    }
+    if (value === null) {
+      // "นิ้วครึ่ง" / "ฟุตครึ่ง" — ไม่มีตัวเลขนำหน้าแปลว่า 1
+      if (unit === "in" || unit === "ft") value = 1;
+      else return { error: `อ่านไม่ออกตรง "${rest.slice(0, 12)}" — พิมพ์แบบ 1 1/2" · 6 หุน · 19 มม.` };
+    }
+    if (unit && /^\s*ครึ่ง/.test(rest)) {
+      value += 0.5;
+      rest = rest.replace(/^\s*ครึ่ง/, "");
+    }
+    if (!unit) {
+      const prev = parts[parts.length - 1];
+      if (prev?.unit === "ft") unit = "in";
+      else if (parts.length === 0) unit = bare;
+      else return { error: `ตัวเลข ${fmtTrim(value, 3)} ไม่มีหน่วย — ใส่หน่วยต่อท้าย เช่น นิ้ว หุน มม.` };
+    }
+    parts.push({ value, unit });
+  }
+  if (parts.length === 0) return { error: "พิมพ์ขนาดก่อน เช่น 1 1/2\" · 6 หุน · 19 มม." };
+  const mm = parts.reduce((sum, p) => sum + p.value * TRADE_UNIT_MM[p.unit](), 0);
+  if (!(mm > 0)) return { error: "ความยาวต้องมากกว่าศูนย์" };
+  if (mm > TRADE_LEN.maxMm.value) return { error: `ยาวเกิน ${fmt(TRADE_LEN.maxMm.value / 1000)} ม. — เครื่องมือนี้ไว้แปลงขนาดหน้างาน` };
+  return { mm, parts };
+}
+
+function partText(p: TradeLengthPart): string {
+  if (p.unit === "in" || p.unit === "ft") {
+    const sixteenths = p.value * TRADE_LEN.fractionDen.value;
+    if (Math.abs(sixteenths - Math.round(sixteenths)) < 1e-9) return `${fmtInchFraction(p.value, TRADE_LEN.fractionDen.value)} ${TRADE_UNIT_NAME[p.unit]}`;
+  }
+  return `${fmtTrim(p.value, 3)} ${TRADE_UNIT_NAME[p.unit]}`;
+}
+
+export function calcInchText(v: Values) {
+  const bad = guard("inch", v);
+  if (bad) return bad;
+  const raw = str(v, "q", '1 1/2"');
+  const bare = str(v, "bare", "in") as TradeUnit;
+  const parsed = parseTradeLength(raw, bare in TRADE_UNIT_MM ? bare : "in");
+  if ("error" in parsed) return invalidResult(parsed.error, { q: parsed.error }, 'ตัวอย่างที่อ่านได้: 1 1/2" · 3/4 · 6 หุน · 19 มม. · 7\' 10½" · นิ้วครึ่ง');
+  const { mm, parts } = parsed;
+  const read = parts.map(partText).join(" ");
+  const inches = mm / UNIT.inch.value;
+  const den = TRADE_LEN.fractionDen.value;
+  const hunExact = inches * TRADE_LEN.hunPerInch.value;
+  const fracText = fmtInchFraction(inches, den);
+  const roundedIn = inchFraction(inches, den);
+  const tooSmall = roundedIn.whole === 0 && roundedIn.num === 0;
+  const metricOnly = parts.every((p) => p.unit === "mm" || p.unit === "cm" || p.unit === "m");
+  const hunRounded = fmtTrim((roundedIn.whole + roundedIn.num / roundedIn.den) * TRADE_LEN.hunPerInch.value, 1);
+  const tradeText = inches >= 12 ? feetInchText(mm) : `${fracText} นิ้ว (${hunRounded} หุน)`;
+  return resultX({
+    title: "นิ้ว-หุน-เศษส่วน ↔ มม.",
+    headline: tooSmall ? `${read} = ${fmt(mm, 2)} มม.` : `${metricOnly ? read : `${read} = ${fmtTrim(mm, 2)} มม.`} ≈ ${tradeText}`,
+    rows: [
+      { label: "อ่านได้ว่า", value: read },
+      { label: "มิลลิเมตร", value: `${fmt(mm, 2)} มม.`, emphasize: true },
+      ...(tooSmall ? [] : [{ label: "นิ้วเศษส่วนใกล้สุด (1/16)", value: inchHunText(mm), emphasize: true }]),
+      { label: "หุน (ไม่ปัด)", value: `${fmt(hunExact, 2)} หุน` },
+      { label: "นิ้ว (ทศนิยม)", value: `${fmt(inches, 3)} นิ้ว` },
+      { label: "เซนติเมตร", value: `${fmt(mm / 10, 2)} ซม.` },
+      ...(inches >= 12 ? [{ label: "ฟุต-นิ้ว (ใกล้สุด 1/16 นิ้ว)", value: feetInchText(mm) }] : []),
+    ],
+    tip: "ท่อ ข้อต่อ ดอกสว่าน ที่เรียกเป็นหุน/นิ้วคือขนาดเรียก ไม่ใช่ Ø จริงเสมอไป — วัดของจริงก่อนสั่งตัด",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-25",
+      summary: "อ่านตัวเลขกับหน่วยทีละส่วน แปลงเป็นมิลลิเมตรแล้วรวมกัน จากนั้นแปลงกลับเป็นนิ้วเศษส่วนใกล้สุด 1/16 นิ้ว และหุน (1 หุน = 1/8 นิ้ว)",
+      steps: [
+        {
+          label: "แปลงแต่ละส่วนเป็นมม.",
+          expr: "ฟุต × 304.8 · นิ้ว × 25.4 · หุน × 3.175 · ซม. × 10 · ม. × 1,000",
+          subst: `${parts.map((p) => `${partText(p)} = ${fmt(p.value * TRADE_UNIT_MM[p.unit](), 2)} มม.`).join(" + ")} → ${fmt(mm, 2)} มม.`,
+        },
+        {
+          label: "เป็นนิ้วเศษส่วน",
+          expr: `นิ้ว = มม. ÷ 25.4 แล้วปัดเข้า 1/${den} นิ้วใกล้สุด`,
+          subst: `${fmt(mm, 2)} ÷ 25.4 = ${fmt(inches, 3)} นิ้ว ≈ ${fracText} นิ้ว`,
+        },
+        {
+          label: "เป็นหุน",
+          expr: `หุน = นิ้ว × ${TRADE_LEN.hunPerInch.value}`,
+          subst: `${fmt(inches, 3)} × ${TRADE_LEN.hunPerInch.value} = ${fmt(hunExact, 2)} หุน`,
+        },
+      ],
+      constants: [UNIT.inch, UNIT.foot, TRADE_LEN.hunPerInch, TRADE_LEN.fractionDen],
+      assumptions: [
+        `ตัวเลขที่ไม่มีหน่วยนับเป็น${TRADE_UNIT_NAME[bare in TRADE_UNIT_MM ? bare : "in"]} ยกเว้นตัวเลขที่ตามหลังฟุตนับเป็นนิ้ว (7' 10 = 7 ฟุต 10 นิ้ว)`,
+        "1 หุน = 1/8 นิ้ว ตามที่ช่างไทยใช้กับท่อ เหล็กเส้น และดอกสว่าน",
+      ],
+      caveats: [
+        "เศษส่วนนิ้วปัดเข้า 1/16 นิ้วใกล้สุด คลาดได้ไม่เกิน 0.8 มม. งานที่ต้องเป๊ะกว่านั้นให้ยึดค่ามิลลิเมตร",
+        "ขนาดท่อ/ข้อต่อเป็นขนาดเรียก เช่น ท่อ 4 หุน Ø นอกไม่ใช่ 12.7 มม. — เทียบตารางของชนิดท่อนั้น",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "นิยามหน่วยสากล (ISO 80000) · หน่วยช่างไทย (หุน = 1/8 นิ้ว)" }],
+    },
+  });
+}
+
+/* ─────────────── แบ่งระยะเท่า ๆ กัน ─────────────── */
+
+export type SpacingEnds = "gap" | "member";
+
+/**
+ * แบ่งระยะรวมให้ช่องว่างเท่ากัน
+ * - ends = "gap": ปลายทั้งสองเป็นช่อง (ลูกกรงระหว่างเสา) → n ชิ้น มี n + 1 ช่อง
+ * - ends = "member": มีชิ้นชิดปลายทั้งสองข้าง (โครงคร่าว ชั้นวางรวมบน-ล่าง) → n ชิ้น มี n − 1 ช่อง
+ * คืนตำแหน่งขอบซ้ายของแต่ละชิ้น วัดจากปลายซ้ายทุกจุด (ไม่ใช่วัดต่อกัน)
+ */
+export function equalSpacing(total: number, width: number, n: number, ends: SpacingEnds) {
+  const gaps = ends === "gap" ? n + 1 : n - 1;
+  const gap = gaps > 0 ? (total - n * width) / gaps : NaN;
+  const starts = Array.from({ length: n }, (_, i) => (ends === "gap" ? (i + 1) * gap + i * width : i * (gap + width)));
+  return { gap, gaps, pitch: gap + width, starts };
+}
+
+/** จำนวนชิ้นน้อยสุดที่ทำให้ช่องว่างไม่เกิน maxGap */
+export function countForMaxGap(total: number, width: number, maxGap: number, ends: SpacingEnds): number {
+  if (ends === "gap") return Math.max(1, ceil((total - maxGap) / (maxGap + width)));
+  return Math.max(2, ceil((total + maxGap) / (maxGap + width)));
+}
+
+export function calcSpacing(v: Values) {
+  const bad = guard("spacing", v);
+  if (bad) return bad;
+  const total = num(v, "total", 2000);
+  const width = num(v, "w", 20);
+  const mode = str(v, "mode", "count");
+  const ends = (str(v, "ends", "gap") === "member" ? "member" : "gap") as SpacingEnds;
+  const mark = str(v, "mark", "edge");
+  const maxGap = num(v, "maxGap", 100);
+  const n = mode === "maxgap" ? countForMaxGap(total, width, maxGap, ends) : Math.round(num(v, "n", 9));
+  if (ends === "member" && n < 2) {
+    return blockedResult({
+      headline: "แบบมีชิ้นชิดปลายทั้งสองข้าง ต้องมีอย่างน้อย 2 ชิ้น",
+      tip: "ใส่จำนวนชิ้นตั้งแต่ 2 ขึ้นไป หรือเปลี่ยนเป็นแบบปลายทั้งสองเป็นช่อง",
+    });
+  }
+  if (n * width >= total) {
+    return blockedResult({
+      headline: `${fmt(n)} ชิ้น × กว้าง ${fmtTrim(width, 1)} มม. = ${fmt(n * width)} มม. ไม่น้อยกว่าระยะรวม ${fmt(total)} มม. — ไม่เหลือช่อง`,
+      tip: "ลดจำนวนชิ้น ใช้ชิ้นที่แคบลง หรือตรวจว่าใส่ระยะรวมเป็น มม.",
+    });
+  }
+  const sp = equalSpacing(total, width, n, ends);
+  const positions = sp.starts.map((x) => (mark === "center" ? x + width / 2 : x));
+  const maxMarks = SPACING.maxMarks.value;
+  const shown = positions.slice(0, maxMarks).map((x) => fmt(x));
+  const markLabel = mark === "center" ? "มาร์กกึ่งกลางชิ้น (วัดจากปลายซ้าย)" : "มาร์กขอบซ้ายชิ้น (วัดจากปลายซ้าย)";
+  const railNote = sp.gap > RAILING.maxGapCm.value * 10;
+  return resultX({
+    title: "แบ่งระยะเท่า ๆ กัน",
+    headline: `${fmt(n)} ชิ้น · ช่องละ ${fmtTrim(sp.gap, 1)} มม.`,
+    rows: [
+      ...(mode === "maxgap" ? [{ label: "ช่องไม่เกิน", value: `${fmtTrim(maxGap, 1)} มม. → ใช้ ${fmt(n)} ชิ้น` }] : []),
+      { label: "จำนวนชิ้น", value: `${fmt(n)} ชิ้น · ${fmt(sp.gaps)} ช่อง` },
+      { label: "ช่องว่างจริง", value: `${fmtTrim(sp.gap, 1)} มม.`, emphasize: true },
+      { label: "ระยะศูนย์ถึงศูนย์ (c/c)", value: `${fmtTrim(sp.pitch, 1)} มม.` },
+      {
+        label: markLabel,
+        value: `${shown.join(" · ")} มม.${positions.length > maxMarks ? ` (แสดง ${fmt(maxMarks)} จุดแรกจาก ${fmt(positions.length)})` : ""}`,
+        emphasize: true,
+      },
+    ],
+    tip: railNote
+      ? `ทุกจุดวัดจากปลายซ้ายจุดเดียว อย่าวัดต่อทีละช่อง ระยะจะคลาดสะสม · ถ้าเป็นลูกกรงราวกันตก ช่องต้องไม่เกิน ${fmt(RAILING.maxGapCm.value)} ซม.`
+      : "ทุกจุดวัดจากปลายซ้ายจุดเดียว อย่าวัดต่อทีละช่อง ระยะจะคลาดสะสม",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-25",
+      summary:
+        ends === "gap"
+          ? "ปลายทั้งสองเป็นช่อง: ช่อง = (ระยะรวม − จำนวน × กว้างชิ้น) ÷ (จำนวน + 1)"
+          : "มีชิ้นชิดปลายทั้งสองข้าง: ช่อง = (ระยะรวม − จำนวน × กว้างชิ้น) ÷ (จำนวน − 1)",
+      steps: [
+        ...(mode === "maxgap"
+          ? [
+              {
+                label: "หาจำนวนชิ้นน้อยสุด",
+                expr: ends === "gap" ? "n = ปัดขึ้น((ระยะรวม − ช่องสูงสุด) ÷ (ช่องสูงสุด + กว้างชิ้น))" : "n = ปัดขึ้น((ระยะรวม + ช่องสูงสุด) ÷ (ช่องสูงสุด + กว้างชิ้น))",
+                subst: `${fmt(total)} ${ends === "gap" ? "−" : "+"} ${fmtTrim(maxGap, 1)} ÷ (${fmtTrim(maxGap, 1)} + ${fmtTrim(width, 1)}) → ${fmt(n)} ชิ้น`,
+              },
+            ]
+          : []),
+        {
+          label: "ช่องว่างจริง",
+          expr: `ช่อง = (ระยะรวม − n × กว้างชิ้น) ÷ ${ends === "gap" ? "(n + 1)" : "(n − 1)"}`,
+          subst: `(${fmt(total)} − ${fmt(n)} × ${fmtTrim(width, 1)}) ÷ ${fmt(sp.gaps)} = ${fmtTrim(sp.gap, 2)} มม.`,
+        },
+        {
+          label: "ตำแหน่งชิ้นที่ i",
+          expr: ends === "gap" ? "ขอบซ้าย = i × ช่อง + (i − 1) × กว้างชิ้น" : "ขอบซ้าย = (i − 1) × (ช่อง + กว้างชิ้น)",
+          subst: `ชิ้นแรก ${fmt(positions[0])} มม. · ชิ้นสุดท้าย ${fmt(positions[positions.length - 1])} มม.${mark === "center" ? " (กึ่งกลาง = ขอบซ้าย + กว้าง ÷ 2)" : ""}`,
+        },
+      ],
+      constants: [SPACING.maxMarks],
+      assumptions: ["ระยะรวมคือระยะในระหว่างของสองข้าง (เช่น ระหว่างผิวเสา) ไม่ใช่ศูนย์เสาถึงศูนย์เสา", "ตำแหน่งปัดเป็นมิลลิเมตรเต็มทีละจุด ไม่ปัดสะสม"],
+      caveats: ["ของจริงกว้างไม่เท่าสเปก (เหล็กกล่อง ไม้) วัดชิ้นจริงมาใส่ก่อนมาร์ก", DISCLAIMER_AB],
+      refs: [{ label: "เรขาคณิตพื้นฐาน — แบ่งช่วงเท่ากัน" }],
+    },
+  });
+}
+
 const lenOpts = [
   { value: "mm", label: "มม." },
   { value: "cm", label: "ซม." },
@@ -334,6 +625,71 @@ const lenOpts = [
 ];
 
 export const generalTools: ToolDef[] = [
+  {
+    id: "inch",
+    name: "นิ้ว-หุน-เศษส่วน ↔ มม.",
+    blurb: "พิมพ์ 1 1/2\" · 6 หุน · 19 มม. ได้เศษส่วนนิ้ว หุน ฟุต-นิ้ว",
+    keywords: ["หุน", "เศษส่วนนิ้ว", "นิ้วครึ่ง", "ฟุต-นิ้ว", "inch"],
+    fields: [
+      { type: "text", key: "q", label: "ขนาด (พิมพ์ได้: 1 1/2\" · 3/4 · 6 หุน · 19 มม. · 7' 10½\")", default: '1 1/2"', placeholder: '1 1/2" · 6 หุน · 19 มม.' },
+      {
+        type: "select",
+        key: "bare",
+        label: "ตัวเลขไม่มีหน่วย นับเป็น",
+        default: "in",
+        options: [
+          { value: "in", label: "นิ้ว" },
+          { value: "hun", label: "หุน" },
+          { value: "mm", label: "มม." },
+          { value: "cm", label: "ซม." },
+        ],
+      },
+    ],
+    calc: calcInchText,
+  },
+  {
+    id: "spacing",
+    name: "แบ่งระยะเท่า ๆ กัน",
+    blurb: "ลูกกรง ชั้นวาง โครงคร่าว — ช่องจริงและตำแหน่งมาร์ก",
+    keywords: ["แบ่งช่อง", "ลูกกรง", "ระยะห่าง", "ชั้นวาง", "โครงคร่าว"],
+    fields: [
+      { type: "number", key: "total", label: "ระยะรวม (ในระหว่าง)", unit: "มม.", default: 2000, min: 10, max: 100000 },
+      { type: "number", key: "w", label: "กว้างชิ้น", unit: "มม.", default: 20, min: 0, max: 2000, step: 0.5 },
+      {
+        type: "select",
+        key: "mode",
+        label: "รู้อะไร",
+        default: "count",
+        options: [
+          { value: "count", label: "รู้จำนวนชิ้น" },
+          { value: "maxgap", label: "รู้ช่องห่างไม่เกิน" },
+        ],
+      },
+      { type: "number", key: "n", label: "จำนวนชิ้น", unit: "ชิ้น", default: 9, min: 1, max: 500, when: { key: "mode", is: "count" } },
+      { type: "number", key: "maxGap", label: "ช่องห่างไม่เกิน", unit: "มม.", default: 100, min: 1, max: 100000, when: { key: "mode", is: "maxgap" } },
+      {
+        type: "select",
+        key: "ends",
+        label: "ที่ปลายสองข้าง",
+        default: "gap",
+        options: [
+          { value: "gap", label: "เป็นช่อง (ลูกกรงระหว่างเสา)" },
+          { value: "member", label: "มีชิ้นชิดปลาย (โครง ชั้นบน-ล่าง)" },
+        ],
+      },
+      {
+        type: "select",
+        key: "mark",
+        label: "มาร์กที่",
+        default: "edge",
+        options: [
+          { value: "edge", label: "ขอบซ้ายชิ้น" },
+          { value: "center", label: "กึ่งกลางชิ้น" },
+        ],
+      },
+    ],
+    calc: calcSpacing,
+  },
   {
     id: "unit-length",
     name: "แปลงหน่วยความยาว",

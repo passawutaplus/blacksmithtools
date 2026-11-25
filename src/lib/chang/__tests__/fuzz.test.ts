@@ -149,6 +149,10 @@ const EXPECTED_BLOCKED = [
   // ชิ้นงานตั้งต้นยาวกว่าเส้นวัตถุดิบสั้นสุด
   "steel/cut:stock@min",
   "steel/job:stock@min",
+  // แบ่งระยะ: ชิ้นกว้างรวมกันเต็มระยะแล้ว ไม่เหลือช่อง (9 × 20 ≥ 10 มม. · 500 × 20 · 9 × 2000)
+  "general/spacing:total@min",
+  "general/spacing:n@max",
+  "general/spacing:w@max",
 ].sort();
 
 describe("กวาดทุกเครื่องมือ: ค่าตั้งต้นและค่าปลายช่วง", () => {

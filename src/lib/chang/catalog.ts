@@ -11,11 +11,13 @@ import {
   PanelTop,
   Ruler,
   Box,
+  Truck,
   Wrench,
   Zap,
 } from "lucide-react";
 import type { Pillar, Trade } from "./types";
 import { ceilingJob, ceilingTools } from "./tools/ceiling";
+import { concreteJob, concreteTools } from "./tools/concrete";
 import { electricalJob, electricalTools } from "./tools/electrical";
 import { generalJob, generalTools } from "./tools/general";
 import { glassJob, glassTools } from "./tools/glass";
@@ -32,7 +34,7 @@ import { vinylJob, vinylTools } from "./tools/vinyl";
 export const PILLARS: Pillar[] = [
   { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา" },
   { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก" },
-  { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ หลังคา เหล็ก สี" },
+  { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ คอนกรีต หลังคา เหล็ก สี" },
   { id: "general", name: "เครื่องมือทั่วไป", blurb: "แปลงหน่วย รูปทรง" },
 ];
 
@@ -46,6 +48,7 @@ export const TRADE_ICONS: Record<string, LucideIcon> = {
   ceiling: PanelTop,
   glass: AppWindow,
   masonry: Box,
+  concrete: Truck,
   roof: Home,
   steel: Wrench,
   paint: Paintbrush,
@@ -155,6 +158,15 @@ export const TRADES: Trade[] = [
     job: masonryJob,
   },
   {
+    id: "concrete",
+    name: "ช่างคอนกรีต",
+    short: "คอนกรีต",
+    pillarId: "shell",
+    blurb: "เทพื้น รถโม่ ไวร์เมช เหล็กเส้น ปลอก",
+    tools: concreteTools,
+    job: concreteJob,
+  },
+  {
     id: "roof",
     name: "ช่างหลังคาและรางน้ำ",
     short: "หลังคา",
@@ -202,8 +214,21 @@ export const TOOL_COVERS: Record<string, string> = Object.fromEntries(
   ),
 );
 
+/**
+ * เครื่องมือที่ยังไม่มีไฟล์ภาพปก — การ์ดจะใช้พื้นสีกับไอคอนแทนภาพแตก
+ * ทำภาพ public/assistant/tools/<สายงาน>-<เครื่องมือ>.webp แล้วลบชื่อออกจากรายการนี้
+ */
+const TOOLS_WITHOUT_COVER = new Set([
+  "general/inch",
+  "general/spacing",
+  "steel/railing",
+  "concrete/slab",
+  "concrete/rebar",
+]);
+
 export function getToolCover(tradeId: string, toolId: string): string | undefined {
-  return TOOL_COVERS[`${tradeId}/${toolId}`];
+  const key = `${tradeId}/${toolId}`;
+  return TOOLS_WITHOUT_COVER.has(key) ? undefined : TOOL_COVERS[key];
 }
 
 export function getTrade(id: string): Trade | undefined {
@@ -259,6 +284,7 @@ const TRADE_ALIASES: Record<string, string[]> = {
   electrical: ["สายไฟ", "เบรกเกอร์", "แรงดันตก", "โซลาร์", "ไฟ"],
   plumbing: ["ประปา", "ท่อ", "ปั๊ม", "ถังน้ำ"],
   masonry: ["ก่อ", "อิฐ", "ฉาบ", "ทับหลัง", "เสาเอ็น", "ปูน"],
+  concrete: ["คอนกรีต", "เทพื้น", "เทปูน", "รถโม่", "ปูนโม่", "ผสมเสร็จ", "ไวร์เมช", "wire mesh", "เหล็กเส้น", "ปลอก", "คานคอดิน"],
   steel: ["เหล็ก", "เชื่อม", "h-beam", "ลวดเชื่อม"],
   roof: ["หลังคา", "เมทัลชีท", "กระเบื้องลอน"],
   tile: ["กระเบื้อง", "ยาแนว", "ปูนกาว"],
@@ -294,6 +320,13 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "hvac/pipe": ["หุน", "ท่อแอร์"],
   "general/unit-area-vol": ["คิว", "ลบ.ม."],
   "masonry/mix": ["คิว", "ทราย", "หิน"],
+  // เครื่องมือใหม่ 2026-11 (โครงสร้าง + ทั่วไป)
+  "general/inch": ["หุน", "นิ้ว", "เศษส่วน", "นิ้วครึ่ง", "ฟุต-นิ้ว", "inch", "มม. เป็นนิ้ว"],
+  "general/spacing": ["แบ่งระยะ", "แบ่งช่อง", "ระยะเท่า", "ลูกกรง", "ชั้นวาง", "โครงคร่าว", "ระยะห่าง"],
+  "steel/railing": ["รั้ว", "ราวกันตก", "ราวระเบียง", "ราวบันได", "ลูกกรง", "กันสาด", "ประตูรั้ว", "เหล็กกล่อง"],
+  "steel/weight": ["ราคาเหล็ก", "กก./เส้น", "แป๊บ", "ท่อดำ"],
+  "concrete/slab": ["เทพื้น", "ไวร์เมช", "wiremesh", "wire mesh", "รถโม่", "ปูนโม่", "คิว", "ลานจอดรถ"],
+  "concrete/rebar": ["เหล็กเส้น", "ปลอก", "เหล็กปลอก", "ลวดผูก", "ข้ออ้อย", "db12", "rb6", "คานคอดิน", "ทาบเหล็ก"],
 };
 
 export function toolCount(): number {
