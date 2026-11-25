@@ -50,7 +50,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
       .catch(() => undefined);
   }, [pathname]);
 
-  if (pathname.includes("/print")) {
+  if (/\/print(\/|$)/.test(pathname)) {
     return <>{children}</>;
   }
 
