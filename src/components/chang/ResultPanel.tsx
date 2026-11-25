@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, type RefObject } from "react";
-import { ArrowDown, ArrowUp, Check, CircleAlert, Copy, ImageDown, Share2, ShieldAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, CircleAlert, Copy, Share2, ShieldAlert } from "lucide-react";
 import type { CalcResult } from "@/lib/chang/types";
 import { DISCLAIMER_C } from "@/lib/chang/constants";
-import { copyText, downloadResultPng, shareText } from "@/lib/chang/share";
+import { withBrandCredit } from "@/lib/chang/brand";
+import { copyText, shareText } from "@/lib/chang/share";
+import { ExportPanel } from "./ExportPanel";
 import { formulaToText } from "./FormulaNote";
 import { ResultChart } from "./ResultChart";
 
@@ -27,7 +29,7 @@ export function ResultPanel({
 }: {
   title: string;
   subtitle?: string;
-  /** รหัสเครื่องมือ (เช่น "hvac/btu") ใช้ตั้งชื่อไฟล์รูป */
+  /** รหัสเครื่องมือ (เช่น "hvac/btu") ใช้ตั้งชื่อไฟล์ที่ส่งออก */
   fileSlug?: string;
   result: CalcResult;
   issues?: FieldIssue[];
@@ -65,7 +67,10 @@ export function ResultPanel({
   }
 
   async function onCopy(withFormula: boolean) {
-    const text = withFormula && result.explain ? result.copyText + formulaToText(result.explain) : result.copyText;
+    // เครดิตแบรนด์ + ลิงก์ go ต่อท้ายเสมอ (บรรทัดเดียว) — ตัวผลลัพธ์และสูตรไม่ถูกแก้
+    const text = withBrandCredit(
+      withFormula && result.explain ? result.copyText + formulaToText(result.explain) : result.copyText,
+    );
     if (await copyText(text)) {
       flash(
         { kind: "ok", text: withFormula ? "คัดลอกผลพร้อมสูตรแล้ว — วางในแชตได้เลย" : "คัดลอกแล้ว — วางในแชตได้เลย" },
@@ -77,32 +82,12 @@ export function ResultPanel({
   }
 
   async function onShare() {
-    const outcome = await shareText(title, result.copyText);
+    const text = withBrandCredit(result.copyText);
+    const outcome = await shareText(title, text);
     if (outcome === "shared") flash({ kind: "ok", text: "ส่งต่อแล้ว" });
     else if (outcome === "copied")
       flash({ kind: "ok", text: "เครื่องนี้เปิดหน้าต่างแชร์ไม่ได้ จึงคัดลอกข้อความให้แทนแล้ว — วางในแชตได้เลย" }, "plain");
-    else if (outcome === "failed") showManual(result.copyText);
-  }
-
-  async function onSaveImage() {
-    const host = window.location.hostname;
-    const isLocal = host === "localhost" || host === "127.0.0.1";
-    const ok = await downloadResultPng({
-      title,
-      subtitle,
-      fileSlug,
-      headline: result.headline,
-      inputs,
-      rows: result.rows,
-      tip: result.tip,
-      disclaimer: result.explain?.risk === "C" ? DISCLAIMER_C : undefined,
-      url: isLocal ? undefined : `${window.location.host}${window.location.pathname}`,
-    });
-    flash(
-      ok
-        ? { kind: "ok", text: "บันทึกรูปแล้ว — ดูในโฟลเดอร์ดาวน์โหลดหรือแกลเลอรี" }
-        : { kind: "error", text: "บันทึกรูปไม่สำเร็จ ลองใช้ “คัดลอก” แทน หรือจับภาพหน้าจอ" },
-    );
+    else if (outcome === "failed") showManual(text);
   }
 
   return (
@@ -166,8 +151,8 @@ export function ResultPanel({
 
           {result.rows.length > 0 ? (
             <dl className="mt-3 divide-y divide-navy/10 border-y border-navy/15">
-              {result.rows.map((row) => (
-                <div key={row.label} className="flex items-start justify-between gap-3 py-2.5">
+              {result.rows.map((row, i) => (
+                <div key={`${i}:${row.label}`} className="flex items-start justify-between gap-3 py-2.5">
                   <dt className="text-sm text-navy/75">{row.label}</dt>
                   <dd
                     className={`text-right text-sm tabular-nums text-navy ${row.emphasize ? "font-bold" : "font-medium"}`}
@@ -185,12 +170,9 @@ export function ResultPanel({
 
           {invalid ? null : (
             <>
-              <div className="mt-4 grid grid-cols-2 gap-2 @[26rem]:grid-cols-3">
-                <button
-                  type="button"
-                  className="btn btn-navy col-span-2 px-3 text-sm @[26rem]:col-span-1"
-                  onClick={() => void onCopy(false)}
-                >
+              {/* ปุ่มหลักคือ "คัดลอก" (ช่างส่งข้อความเข้าแชตบ่อยสุด) · ส่งออกเป็นไฟล์รวมอยู่กลุ่มเดียวด้านล่าง */}
+              <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <button type="button" className="btn btn-navy px-3 text-sm" onClick={() => void onCopy(false)}>
                   {copied === "plain" ? (
                     <Check className="h-4 w-4 shrink-0" aria-hidden />
                   ) : (
@@ -198,13 +180,9 @@ export function ResultPanel({
                   )}
                   {copied === "plain" ? "คัดลอกแล้ว" : "คัดลอก"}
                 </button>
-                <button type="button" className="btn btn-secondary px-3 text-sm" onClick={() => void onShare()}>
+                <button type="button" className="btn btn-secondary px-4 text-sm" onClick={() => void onShare()}>
                   <Share2 className="h-4 w-4 shrink-0" aria-hidden />
-                  แชร์
-                </button>
-                <button type="button" className="btn btn-secondary px-3 text-sm" onClick={() => void onSaveImage()}>
-                  <ImageDown className="h-4 w-4 shrink-0" aria-hidden />
-                  บันทึกรูป
+                  แชร์ข้อความ
                 </button>
               </div>
               {result.explain ? (
@@ -217,6 +195,14 @@ export function ResultPanel({
                   {copied === "formula" ? "คัดลอกพร้อมสูตรแล้ว" : "คัดลอกพร้อมสูตร (ส่งให้ช่างอีกคน)"}
                 </button>
               ) : null}
+              <ExportPanel
+                title={title}
+                subtitle={subtitle}
+                fileSlug={fileSlug}
+                result={result}
+                inputs={inputs}
+                onNotice={(next) => flash(next)}
+              />
             </>
           )}
 
