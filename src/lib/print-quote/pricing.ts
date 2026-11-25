@@ -81,8 +81,8 @@ export function fileStatus(stats: MeshStats | null, process: Process, readError?
       text: `ใหญ่เกิน ${limit} มม. (ยาว ${longest.toFixed(0)} มม.) แบ่งชิ้นหรือให้ร้านดู`,
     };
   }
+  if (longest < 1) return { level: "warn", text: "ขนาดเล็กผิดปกติ หน่วยไฟล์อาจไม่ใช่มิลลิเมตร ร้านเช็คให้", autoPrice: false };
   if (stats.volumeCm3 < 0.01) return { level: "error", text: "โมเดลไม่มีเนื้อ หรือผิวไม่ปิด คำนวณไม่ได้" };
-  if (longest < 1) return { level: "warn", text: "ขนาดเล็กผิดปกติ หน่วยไฟล์อาจไม่ใช่มิลลิเมตร", autoPrice: false };
   if (stats.triangles > PRINT_CONFIG.maxTrianglesAuto) {
     return { level: "warn", text: "ไฟล์ละเอียดเกินจำเป็น ร้านจะประเมินให้", autoPrice: false };
   }
@@ -126,7 +126,7 @@ export type QuoteLine = { stats: MeshStats; qty: number };
 
 /** Whole-order estimate. null fields = not calibrated yet. */
 export function estimateOrder(lines: QuoteLine[], process: Process, quality: Quality) {
-  if (!lines.length) return { printTHB: null, hours: null, pieces: 0, minApplied: false };
+  if (!lines.length) return { printTHB: null, hours: null, pieces: 0, minApplied: false, lineTHB: [] as (number | null)[] };
   const pieces = lines.reduce((s, l) => s + l.qty, 0);
   const per = lines.map((l) => ({ l, e: estimatePiece(l.stats, process, quality) }));
   const prices = per.map(({ l, e }) => (e.priceTHB == null ? null : e.priceTHB * l.qty));
@@ -151,7 +151,22 @@ export function estimateOrder(lines: QuoteLine[], process: Process, quality: Qua
     const sum = per.reduce((s, { l, e }) => s + e.hours * l.qty, 0);
     hours = Number.isFinite(sum) ? sum + PRINT_CONFIG.fdm.setupHours : null;
   }
-  return { printTHB: roundPrice(printTHB), hours, pieces, minApplied };
+  const total = roundPrice(printTHB);
+  return { printTHB: total, hours, pieces, minApplied, lineTHB: splitTotal(total, per.map(({ l, e }) => e.hours * l.qty)) };
+}
+
+/**
+ * Share an order total across its lines by print time, each share a multiple of ฿5,
+ * so the per-file prices the customer sees always add up to the order total.
+ */
+export function splitTotal(total: number | null, weights: number[]): (number | null)[] {
+  if (total == null || !weights.length || weights.some((w) => !Number.isFinite(w))) return weights.map(() => null);
+  const sum = weights.reduce((s, w) => s + w, 0) || 1;
+  const out = weights.map((w) => Math.round((total * w) / sum / 5) * 5);
+  const diff = total - out.reduce((s, v) => s + v, 0);
+  const big = weights.indexOf(Math.max(...weights));
+  out[big] += diff;
+  return out;
 }
 
 export function formatHours(h: number | null) {

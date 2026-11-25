@@ -92,6 +92,31 @@ function parseObj(text: string): Float32Array | null {
 const UNIT_MM: Record<string, number> = { micron: 0.001, millimeter: 1, centimeter: 10, inch: 25.4, foot: 304.8, meter: 1000 };
 
 /** 3MF = zip of XML ".model" files. Meshes from every part are merged (transforms ignored). */
+type Mat = number[]; // 3MF 4×3 affine, row-vector: p' = [x y z 1] · M
+const IDENT: Mat = [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+
+function parseMat(a: string): Mat {
+  const t = /\btransform="([^"]+)"/.exec(a)?.[1];
+  if (!t) return IDENT;
+  const m = t.trim().split(/\s+/).map(Number);
+  return m.length === 12 && m.every(Number.isFinite) ? m : IDENT;
+}
+
+/** First apply a, then b. */
+function mul(a: Mat, b: Mat): Mat {
+  const r: Mat = new Array(12);
+  for (let i = 0; i < 4; i++)
+    for (let j = 0; j < 3; j++)
+      r[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j] + (i === 3 ? b[9 + j] : 0);
+  return r;
+}
+
+type Obj3mf = { tri: number[] | null; comps: { path: string; id: string; m: Mat }[] };
+
+/**
+ * 3MF: honours <build> items, <components> (incl. Bambu/Prusa p:path sub-models)
+ * and transforms, so copies placed on the plate are all counted.
+ */
 function parse3mf(buf: ArrayBuffer): Float32Array | null {
   let files: Record<string, Uint8Array>;
   try {
@@ -99,31 +124,90 @@ function parse3mf(buf: ArrayBuffer): Float32Array | null {
   } catch {
     return null;
   }
-  const out: number[] = [];
   const dec = new TextDecoder();
-  for (const data of Object.values(files)) {
+  const norm = (p: string) => p.replace(/^\/+/, "");
+  const models = new Map<string, { objects: Map<string, Obj3mf>; build: { id: string; m: Mat }[] | null; unit: number }>();
+  let tooBig = false;
+  for (const [name, data] of Object.entries(files)) {
     const xml = dec.decode(data);
     const unit = UNIT_MM[/<model[^>]*\bunit="([a-z]+)"/i.exec(xml)?.[1] ?? "millimeter"] ?? 1;
-    for (const m of xml.matchAll(/<mesh\b[^>]*>([\s\S]*?)<\/mesh>/g)) {
-      const v: number[] = [];
-      for (const t of m[1].matchAll(/<vertex\b([^>]*)\/?>/g)) {
-        const a = t[1];
-        v.push(
-          parseFloat(/\bx="([^"]+)"/.exec(a)?.[1] ?? "NaN") * unit,
-          parseFloat(/\by="([^"]+)"/.exec(a)?.[1] ?? "NaN") * unit,
-          parseFloat(/\bz="([^"]+)"/.exec(a)?.[1] ?? "NaN") * unit,
-        );
-      }
-      for (const t of m[1].matchAll(/<triangle\b([^>]*)\/?>/g)) {
-        const a = t[1];
-        for (const k of ["v1", "v2", "v3"]) {
-          const idx = parseInt(new RegExp(`\\b${k}="(\\d+)"`).exec(a)?.[1] ?? "-1", 10);
-          if (idx < 0 || idx * 3 + 2 >= v.length) return null;
-          out.push(v[idx * 3], v[idx * 3 + 1], v[idx * 3 + 2]);
+    const objects = new Map<string, Obj3mf>();
+    let triCount = 0;
+    for (const o of xml.matchAll(/<object\b([^>]*)>([\s\S]*?)<\/object>/g)) {
+      const id = /\bid="([^"]+)"/.exec(o[1])?.[1];
+      if (!id) continue;
+      const body = o[2];
+      let tri: number[] | null = null;
+      const mesh = /<mesh\b[^>]*>([\s\S]*?)<\/mesh>/.exec(body);
+      if (mesh) {
+        const v: number[] = [];
+        for (const t of mesh[1].matchAll(/<vertex\b([^>]*)\/?>/g)) {
+          const a = t[1];
+          v.push(
+            parseFloat(/\bx="([^"]+)"/.exec(a)?.[1] ?? "NaN"),
+            parseFloat(/\by="([^"]+)"/.exec(a)?.[1] ?? "NaN"),
+            parseFloat(/\bz="([^"]+)"/.exec(a)?.[1] ?? "NaN"),
+          );
         }
-        if (out.length / 9 > MAX_TRIANGLES) return null;
+        tri = [];
+        for (const t of mesh[1].matchAll(/<triangle\b([^>]*)\/?>/g)) {
+          const a = t[1];
+          for (const k of ["v1", "v2", "v3"]) {
+            const idx = parseInt(new RegExp(`\\b${k}="(\\d+)"`).exec(a)?.[1] ?? "-1", 10);
+            if (idx < 0 || idx * 3 + 2 >= v.length) return null;
+            tri.push(v[idx * 3], v[idx * 3 + 1], v[idx * 3 + 2]);
+          }
+          if (++triCount > MAX_TRIANGLES) tooBig = true;
+        }
       }
+      const comps: Obj3mf["comps"] = [];
+      for (const c of body.matchAll(/<component\b([^>]*)\/?>/g)) {
+        const cid = /\bobjectid="([^"]+)"/.exec(c[1])?.[1];
+        if (!cid) continue;
+        const path = /\b(?:p:)?path="([^"]+)"/.exec(c[1])?.[1];
+        comps.push({ path: path ? norm(path) : norm(name), id: cid, m: parseMat(c[1]) });
+      }
+      objects.set(id, { tri, comps });
     }
+    const b = /<build\b[^>]*>([\s\S]*?)<\/build>/.exec(xml);
+    const build = b
+      ? [...b[1].matchAll(/<item\b([^>]*)\/?>/g)]
+          .map((it) => ({ id: /\bobjectid="([^"]+)"/.exec(it[1])?.[1] ?? "", m: parseMat(it[1]) }))
+          .filter((it) => it.id)
+      : null;
+    models.set(norm(name), { objects, build, unit });
+  }
+  if (tooBig) return null;
+
+  const out: number[] = [];
+  const push = (tri: number[], m: Mat, unit: number) => {
+    for (let i = 0; i < tri.length; i += 3) {
+      const x = tri[i], y = tri[i + 1], z = tri[i + 2];
+      out.push(
+        (x * m[0] + y * m[3] + z * m[6] + m[9]) * unit,
+        (x * m[1] + y * m[4] + z * m[7] + m[10]) * unit,
+        (x * m[2] + y * m[5] + z * m[8] + m[11]) * unit,
+      );
+    }
+    if (out.length / 9 > MAX_TRIANGLES) throw new Error("too big");
+  };
+  const place = (path: string, id: string, m: Mat, unit: number, depth: number) => {
+    const obj = models.get(path)?.objects.get(id);
+    if (!obj || depth > 16) return;
+    if (obj.tri) push(obj.tri, m, unit);
+    for (const c of obj.comps) place(c.path, c.id, mul(c.m, m), unit, depth + 1);
+  };
+
+  try {
+    const roots = [...models.entries()].filter(([, md]) => md.build && md.build.length);
+    if (roots.length) {
+      for (const [path, md] of roots) for (const it of md.build!) place(path, it.id, it.m, md.unit, 0);
+    } else {
+      // No build list: fall back to every mesh as-is.
+      for (const md of models.values()) for (const o of md.objects.values()) if (o.tri) push(o.tri, IDENT, md.unit);
+    }
+  } catch {
+    return null;
   }
   if (!out.length || out.some((n) => !Number.isFinite(n))) return null;
   return new Float32Array(out);

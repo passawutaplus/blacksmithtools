@@ -32,10 +32,13 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
     loadMesh(G, tri, stats);
     draw(G);
 
-    let down = false, px = 0, py = 0;
+    // engaged: the customer clicked the viewer, so the wheel zooms instead of scrolling the page.
+    let down = false, engaged = false, px = 0, py = 0;
     const redraw = () => draw(G);
     const onDown = (e: PointerEvent) => {
+      e.preventDefault(); // no text selection while dragging
       down = true;
+      engaged = true;
       px = e.clientX;
       py = e.clientY;
       cv.setPointerCapture(e.pointerId);
@@ -49,7 +52,9 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
       redraw();
     };
     const onUp = () => (down = false);
+    const onLeave = () => (engaged = false);
     const onWheel = (e: WheelEvent) => {
+      if (!engaged && !e.ctrlKey) return; // let the page scroll
       e.preventDefault();
       view.current.zoom = Math.min(3, Math.max(0.4, view.current.zoom - e.deltaY * 0.001));
       redraw();
@@ -58,11 +63,13 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
     cv.addEventListener("pointermove", onMove);
     cv.addEventListener("pointerup", onUp);
     cv.addEventListener("wheel", onWheel, { passive: false });
+    cv.addEventListener("pointerleave", onLeave);
     return () => {
       cv.removeEventListener("pointerdown", onDown);
       cv.removeEventListener("pointermove", onMove);
       cv.removeEventListener("pointerup", onUp);
       cv.removeEventListener("wheel", onWheel);
+      cv.removeEventListener("pointerleave", onLeave);
       G.gl.deleteBuffer(G.buf);
       glRef.current = null;
     };
@@ -83,7 +90,7 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
   }
 
   return (
-    <div className="relative h-[270px] bg-[#f7f8f9] [background-image:linear-gradient(#eef0f2_1px,transparent_1px),linear-gradient(90deg,#eef0f2_1px,transparent_1px)] [background-size:20px_20px]">
+    <div className="relative h-[270px] select-none bg-[#f7f8f9] [background-image:linear-gradient(#eef0f2_1px,transparent_1px),linear-gradient(90deg,#eef0f2_1px,transparent_1px)] [background-size:20px_20px]">
       <div className="absolute left-2.5 top-2.5 z-10 flex" role="group" aria-label="มุมมอง">
         {(Object.keys(VIEWS) as ViewName[]).map((v) => (
           <button
@@ -91,7 +98,7 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
             type="button"
             onClick={() => setView(v)}
             aria-pressed={active === v}
-            className={`-mr-px border border-navy px-2.5 py-0.5 text-[11px] font-medium tracking-wide ${
+            className={`-mr-px h-8 border border-navy px-2.5 text-[11px] md:h-auto md:py-0.5 font-medium tracking-wide ${
               active === v ? "bg-navy text-white" : "bg-white text-navy"
             }`}
           >
@@ -113,7 +120,7 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
             aria-pressed={mode === m}
             aria-label={label}
             title={label}
-            className={`-mr-px grid h-[22px] w-7 place-items-center border border-navy ${
+            className={`-mr-px grid h-8 w-9 place-items-center md:h-[22px] md:w-7 border border-navy ${
               mode === m ? "bg-navy text-white" : "bg-white text-navy"
             }`}
           >
@@ -135,7 +142,7 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
       </span>
       <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1 text-[11px] text-muted">
         <RotateCw className="h-3 w-3" aria-hidden />
-        ลากเพื่อหมุน · ล้อเมาส์ซูม
+        ลากเพื่อหมุน · คลิกแล้วเลื่อนล้อเพื่อซูม
       </span>
     </div>
   );

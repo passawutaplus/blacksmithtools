@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analyseMesh, parseMesh } from "../print-quote/mesh";
 import { zipSync } from "fflate";
-import { estimateOrder, estimatePiece, fileStatus, parcelFee } from "../print-quote/pricing";
+import { estimateOrder, estimatePiece, fileStatus, parcelFee, splitTotal } from "../print-quote/pricing";
 
 // 10 mm cube as 12 outward-facing triangles.
 const V = [
@@ -72,6 +72,20 @@ f 4 1 5 8`;
     expect(analyseMesh(m!.tri)!.volumeCm3).toBeCloseTo(1, 4);
   });
 
+  it("counts every 3MF build item and component transform (Bambu-style sub-model)", () => {
+    const verts = V.map(([x, y, z]) => `<vertex x="${x}" y="${y}" z="${z}"/>`).join("");
+    const tris = F.map(([a, b, c]) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join("");
+    const sub = `<?xml version="1.0"?><model unit="millimeter"><resources><object id="1" type="model"><mesh><vertices>${verts}</vertices><triangles>${tris}</triangles></mesh></object></resources><build/></model>`;
+    const root = `<?xml version="1.0"?><model unit="millimeter" xmlns:p="http://schemas.microsoft.com/3dmanufacturing/production/1015/06"><resources><object id="2" type="model"><components><component p:path="/3D/Objects/object_1.model" objectid="1" transform="1 0 0 0 1 0 0 0 1 0 0 0"/></components></object></resources><build><item objectid="2" transform="1 0 0 0 1 0 0 0 1 100 100 0"/><item objectid="2" transform="0 1 0 -1 0 0 0 0 1 130 100 0"/></build></model>`;
+    const zip = zipSync({
+      "3D/3dmodel.model": new TextEncoder().encode(root),
+      "3D/Objects/object_1.model": new TextEncoder().encode(sub),
+    });
+    const s = analyseMesh(parseMesh("plate.3mf", zip.buffer as ArrayBuffer)!.tri)!;
+    expect(s.volumeCm3).toBeCloseTo(2, 4); // two copies
+    expect(s.size[0]).toBeCloseTo(30, 4); // 100..110 and 120..130
+  });
+
   it("marks STEP as shop-checked, not an error", () => {
     expect(fileStatus(null, "fdm", undefined, true)).toMatchObject({ level: "warn", autoPrice: false });
   });
@@ -127,5 +141,25 @@ describe("print-quote pricing", () => {
     expect(parcelFee(null)).toBe(50);
     expect(parcelFee(999)).toBe(50);
     expect(parcelFee(1000)).toBe(0);
+  });
+
+  it("per-file prices always add up to the order total, in ฿5 steps", () => {
+    const o = estimateOrder(
+      [
+        { stats: { ...s, areaCm2: 1660, volumeCm3: 211.6 }, qty: 1 },
+        { stats: { ...s, areaCm2: 173, volumeCm3: 67.7 }, qty: 3 },
+        { stats: { ...s, areaCm2: 10, volumeCm3: 1 }, qty: 1 },
+      ],
+      "fdm",
+      "normal",
+    );
+    expect(o.lineTHB.reduce((a, b) => a! + b!, 0)).toBe(o.printTHB);
+    o.lineTHB.forEach((v) => expect(v! % 5).toBe(0));
+    expect(splitTotal(70, [0.1, 0.2])).toEqual([25, 45]);
+  });
+
+  it("warns about unit for sub-millimetre parts instead of calling them broken", () => {
+    const t = { ...s, size: [0.6, 0.6, 0.6] as [number, number, number], volumeCm3: 0.0002 };
+    expect(fileStatus(t, "fdm")).toMatchObject({ level: "warn", autoPrice: false });
   });
 });

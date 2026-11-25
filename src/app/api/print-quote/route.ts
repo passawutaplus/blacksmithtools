@@ -30,13 +30,13 @@ function alertText(id: string, q: QuoteRequest) {
       return `• ${f.name} × ${f.qty}${size}${flag}${want}${note}${link}`;
     })
     .join("\n");
-  const price = q.estimate.printTHB != null ? `฿${q.estimate.printTHB.toLocaleString("th-TH")}` : "ยังไม่มีสูตร";
+  const price = q.estimate.printTHB != null ? `฿${q.estimate.printTHB.toLocaleString("th-TH")}` : "ร้านประเมิน";
   const c = q.contact;
   return [
     `🧊 ขอใบเสนอราคาพิมพ์ 3D #${id}`,
     `${proc.label} · layer ${proc.layerMm[q.quality]} มม.`,
     files,
-    `ราคาประเมิน: ${price} + ส่ง ${q.shipping === "parcel" ? (parcelFee(q.estimate.printTHB) ? `฿${PRINT_CONFIG.shippingTHB}` : "ฟรี (ยอด 1,000+)") : "ไรเดอร์ เก็บปลายทาง"}`,
+    `ราคาที่เว็บคำนวณ (ตรวจไฟล์ก่อนยืนยัน): ${price} + ส่ง ${q.shipping === "parcel" ? (parcelFee(q.estimate.printTHB) ? `฿${PRINT_CONFIG.shippingTHB}` : "ฟรี (ยอด 1,000+)") : "ไรเดอร์ เก็บปลายทาง"}`,
     `👤 ${c.name} · ${c.phone}${c.lineId ? ` · LINE ${c.lineId}` : ""}`,
     `📦 ${c.address} ${c.subdistrict} ${c.district} ${c.province} ${c.zip}`,
     c.wantDate ? `📅 ต้องการรับ ${c.wantDate}` : "",
@@ -63,6 +63,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg && !msg.startsWith("Invalid") ? msg : "ข้อมูลไม่ครบ" }, { status: 400 });
   }
   const q = parsed.data;
+
+  // The estimate comes from the customer's browser: never trust it. Drop values that break
+  // the shop's own rules (below the minimum, not ending in 0/5); the admin confirms the real price.
+  const p = q.estimate.printTHB;
+  const min = PRINT_CONFIG[q.process].minOrderTHB;
+  if (p != null && ((min != null && p < min) || p % 5 !== 0)) q.estimate.printTHB = null;
+  // Unprintable files are not part of the request.
+  q.files = q.files.filter((f) => f.status !== "error");
+  if (!q.files.length) return NextResponse.json({ error: "ยังไม่มีไฟล์ที่ใช้ได้" }, { status: 400 });
 
   // Files are only kept when the customer agreed.
   if (!q.keepFiles) q.files.forEach((f) => delete f.blobPath);

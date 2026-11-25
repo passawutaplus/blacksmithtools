@@ -35,7 +35,6 @@ import {
 import { ACCEPTED_EXT, analyseMesh, fileExt, isCadFile, MAX_FILE_BYTES, parseMesh, type MeshStats } from "@/lib/print-quote/mesh";
 import {
   estimateOrder,
-  estimatePiece,
   fileStatus,
   formatHours,
   parcelFee,
@@ -49,6 +48,7 @@ import { ThaiAddressFields } from "@/components/ThaiAddressFields";
 import { renderThumb } from "./mesh-gl";
 import { ModelViewer } from "./ModelViewer";
 
+const MAX_FILES = 30;
 const sessionId = customAlphabet("abcdefghijklmnopqrstuvwxyz0123456789", 16);
 
 type Item = {
@@ -163,7 +163,7 @@ function Field({
 }
 
 const inputCls = (icon: boolean) =>
-  `w-full rounded-[3px] border border-[#b7bfc5] bg-white py-2 pr-2.5 text-[13.5px] outline-navy ${icon ? "pl-9" : "pl-2.5"}`;
+  `w-full rounded-[3px] border border-[#b7bfc5] bg-white py-2 pr-2.5 text-base outline-navy md:text-[13.5px] ${icon ? "pl-9" : "pl-2.5"}`;
 
 export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string }) {
   const [process, setProcess] = useState<Process>("fdm");
@@ -188,6 +188,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLDivElement>(null);
@@ -209,7 +210,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
     (r) => r.st && r.it.stats && (r.st.level === "ok" || (r.st.level === "warn" && r.st.autoPrice)),
   );
   const order = estimateOrder(
-    priceable.map((r) => ({ stats: r.it.stats!, qty: r.it.qty })),
+    priceable.map((r) => ({ stats: r.it.stats!, qty: Math.max(1, r.it.qty) })),
     process,
     quality,
   );
@@ -217,15 +218,28 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
   const counts = { ok: 0, warn: 0, error: 0 };
   rows.forEach((r) => r.st && counts[r.st.level]++);
   const usable = rows.filter((r) => r.st && r.st.level !== "error");
-  const pieces = usable.reduce((s, r) => s + r.it.qty, 0);
+  const lineTHB = new Map(priceable.map((r, i) => [r.it.id, order.lineTHB[i]]));
+  const pricedPieces = priceable.reduce((s, r) => s + Math.max(1, r.it.qty), 0);
+  const shopPieces = usable.reduce((s, r) => s + Math.max(1, r.it.qty), 0) - pricedPieces;
 
   function update(id: string, patch: Partial<Item>) {
     setItems((list) => list.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    // Any change after sending allows sending an updated request.
+    if (!("open" in patch) && !("loading" in patch)) setDone(null);
   }
 
   async function addFiles(files: FileList | File[]) {
     setDone(null);
-    for (const file of Array.from(files)) {
+    const list = Array.from(files);
+    const room = MAX_FILES - items.length;
+    if (list.length > room) {
+      setNotice(
+        room > 0
+          ? `เพิ่มได้อีก ${room} ไฟล์ (สูงสุด ${MAX_FILES} ไฟล์ต่อคำขอ) ไฟล์ที่เหลือส่งทาง LINE หรือส่งคำขอแยก`
+          : `ครบ ${MAX_FILES} ไฟล์แล้ว ไฟล์ที่เหลือส่งทาง LINE หรือส่งคำขอแยก`,
+      );
+    } else setNotice(null);
+    for (const file of list.slice(0, Math.max(0, room))) {
       const id = sessionId();
       const base: Item = {
         id,
@@ -238,10 +252,10 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
         want: ["", "", ""],
         note: "",
       };
-      setItems((l) => (l.length >= 30 ? l : [...l, base]));
+      setItems((l) => (l.length >= MAX_FILES ? l : [...l, base]));
       await new Promise((r) => setTimeout(r, 0));
       let patch: Partial<Item> = { loading: false };
-      if (!(ACCEPTED_EXT as readonly string[]).includes(fileExt(file.name))) patch.readError = "รับเฉพาะไฟล์ STL, OBJ, 3MF และ STEP";
+      if (!(ACCEPTED_EXT as readonly string[]).includes(fileExt(file.name))) patch.readError = "ไม่ใช่ไฟล์ 3D (รับ STL, OBJ, 3MF, STEP) ถ้าเป็นรูปหรือแบบร่าง ส่งทาง LINE แทนได้";
       else if (file.size > MAX_FILE_BYTES) patch.readError = "ไฟล์ใหญ่เกิน 50 MB";
       else if (isCadFile(file.name)) patch.cad = true;
       else {
@@ -259,12 +273,18 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
   }
 
   function summaryText(id?: string) {
-    const lines = usable.map((r) => `• ${r.it.name} × ${r.it.qty}`).join("\n");
+    const lines = usable
+      .map((r) => {
+        const want = r.it.want.some(Boolean) ? `\n   ขนาดที่ต้องการ ${r.it.want.map((w) => w || "-").join("×")} มม.` : "";
+        const note = r.it.note.trim() ? `\n   หมายเหตุ: ${r.it.note.trim().slice(0, 200)}` : "";
+        return `• ${r.it.name} × ${Math.max(1, r.it.qty)}${want}${note}`;
+      })
+      .join("\n");
     return [
       `ขอใบเสนอราคาพิมพ์ 3D${id ? ` #${id}` : ""}`,
       `${cfg.label} · layer ${cfg.layerMm[quality]} มม.`,
       lines,
-      order.printTHB != null ? `ราคาประเมิน ${baht(order.printTHB)}` : "",
+      calculated && order.printTHB != null ? `ราคาประเมินจากเว็บ ${baht(order.printTHB)} (รอร้านยืนยัน)` : "",
       shipping === "parcel" ? `จัดส่ง: พัสดุ ${shipFee === 0 ? "ส่งฟรี" : `฿${PRINT_CONFIG.shippingTHB}`}` : "จัดส่ง: ด่วน Grab/ไรเดอร์ เก็บปลายทาง",
     ]
       .filter(Boolean)
@@ -281,7 +301,33 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
   async function saveImage() {
     if (!sheetRef.current) return;
     const { default: html2canvas } = await import("html2canvas-pro");
-    const canvas = await html2canvas(sheetRef.current, { scale: 2, backgroundColor: "#ffffff" });
+    const when = new Date().toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+    const canvas = await html2canvas(sheetRef.current, {
+      scale: 2,
+      backgroundColor: "#ffffff",
+      // Add shop name, date, request no. and the file list to the saved picture only.
+      onclone: (doc, el) => {
+        el.style.width = "420px";
+        const head = doc.createElement("div");
+        head.style.cssText = "font-size:13px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #3a4c58";
+        head.innerHTML = `<b style="font-size:16px">BlackSmith Tools · ใบประเมินราคาพิมพ์ 3D</b><br><span style="color:#c5ced4"></span>`;
+        head.querySelector("span")!.textContent = `${done ? `เลขที่ ${done} · ` : ""}${when} · layer ${cfg.layerMm[quality]} มม.`;
+        el.prepend(head);
+        const list = doc.createElement("div");
+        list.style.cssText = "font-size:12px;margin-top:10px;color:#c5ced4;line-height:1.6";
+        for (const r of usable) {
+          const row = doc.createElement("div");
+          const amt = lineTHB.get(r.it.id);
+          row.textContent = `• ${r.it.name} × ${Math.max(1, r.it.qty)}  ${calculated && amt != null ? baht(amt) : "ร้านประเมิน"}`;
+          list.append(row);
+        }
+        const foot = doc.createElement("div");
+        foot.style.cssText = "margin-top:8px;font-size:11px";
+        foot.textContent = "ราคาประมาณการ ร้านยืนยันราคาทาง LINE @black_smith ก่อนเริ่มพิมพ์";
+        list.append(foot);
+        el.append(list);
+      },
+    });
     const a = document.createElement("a");
     a.href = canvas.toDataURL("image/png");
     a.download = `blacksmith-3d-quote-${new Date().toISOString().slice(0, 10)}.png`;
@@ -291,11 +337,12 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
   async function submit() {
     setError(null);
     if (!usable.length) return setError("ยังไม่มีไฟล์ที่ใช้ได้");
-    const files = rows.map((r) => ({
+    const sendRows = usable;
+    const files = sendRows.map((r) => ({
       name: r.it.name.slice(0, 200),
       sizeBytes: r.it.size,
       dims: r.it.stats ? (r.it.stats.size.map((n) => Math.round(n * 10) / 10) as [number, number, number]) : null,
-      qty: r.it.qty,
+      qty: Math.max(1, r.it.qty),
       status: r.st?.level ?? "error",
       statusText: (r.st?.text ?? "").slice(0, 200),
       wantMm: r.it.want,
@@ -314,16 +361,16 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
     const check = quoteRequestSchema.safeParse(payload);
     if (!check.success) {
       formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-      const msg = check.error.issues[0]?.message;
-      return setError(msg && !msg.startsWith("Invalid") ? msg : "กรอกข้อมูลผู้สั่งให้ครบ");
+      let msgs = [...new Set(check.error.issues.map((i) => i.message).filter((m) => m && !m.startsWith("Invalid")))];
+      if (msgs.includes("เลือกตำบล/แขวง")) msgs = msgs.filter((m) => !m.includes("รหัสไปรษณีย์"));
+      return setError(msgs.length ? `ยังขาด: ${msgs.join(" · ")}` : "กรอกข้อมูลผู้สั่งให้ครบ");
     }
     try {
       if (keepFiles && uploadsOn) {
         const { upload } = await import("@vercel/blob/client");
-        for (let i = 0; i < rows.length; i++) {
-          const r = rows[i];
-          if (!r.st || r.st.level === "error") continue;
-          setSending(`กำลังอัปโหลด ${i + 1}/${rows.length}`);
+        for (let i = 0; i < sendRows.length; i++) {
+          const r = sendRows[i];
+          setSending(`กำลังอัปโหลด ${i + 1}/${sendRows.length}`);
           const blob = await upload(`print-quotes/${session}/${storageName(r.it.name)}`, r.it.file, {
             access: "private",
             handleUploadUrl: "/api/print-quote/upload",
@@ -376,8 +423,8 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                 value={quality}
                 onChange={setQuality}
                 options={[
-                  { v: "normal", label: `ปกติ ${cfg.layerMm.normal}` },
-                  { v: "fine", label: `ละเอียด ${cfg.layerMm.fine}` },
+                  { v: "normal", label: `ปกติ ${cfg.layerMm.normal} มม.` },
+                  { v: "fine", label: `ละเอียด ${cfg.layerMm.fine} มม.` },
                 ]}
               />
             </div>
@@ -415,7 +462,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                 <span className="ml-1.5 text-[11.5px]">STL · OBJ · 3MF · STEP</span>
                 <br />
                 หรือ{" "}
-                <button type="button" onClick={() => inputRef.current?.click()} className="text-forge underline">
+                <button type="button" onClick={() => inputRef.current?.click()} className="px-1 py-2 text-forge underline">
                   เลือกไฟล์
                 </button>
                 <input
@@ -432,6 +479,12 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
               </div>
             </div>
 
+            {notice && (
+              <p role="status" className="mt-2.5 flex items-start gap-1.5 text-[12.5px] text-[#a8680b]">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+                {notice}
+              </p>
+            )}
             <div className="mt-3.5 rounded-[3px] border border-[#d9dcdf]">
               {!items.length ? (
                 <p className="p-6 text-center text-[13px] text-muted">ยังไม่มีไฟล์</p>
@@ -441,11 +494,11 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                     <span />
                     <span>ไฟล์</span>
                     <span>จำนวน</span>
-                    <span className="text-right">ราคา/ชิ้น</span>
+                    <span className="text-right">ราคา</span>
                     <span />
                   </div>
                   {rows.map(({ it, st }) => {
-                    const est = it.stats && st && st.level !== "error" ? estimatePiece(it.stats, process, quality) : null;
+                    const line = lineTHB.get(it.id) ?? null;
                     const canPrice = st && (st.level === "ok" || (st.level === "warn" && st.autoPrice));
                     return (
                       <div key={it.id} className="border-t border-[#d9dcdf] first:border-t-0 md:[&:nth-child(2)]:border-t-0">
@@ -478,18 +531,20 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                           </div>
                           <div className="col-start-2 md:col-start-auto">
                             {st && st.level !== "error" && (
-                              <div className="flex h-8 w-[104px] items-center overflow-hidden rounded-[3px] border border-navy">
-                                <button type="button" aria-label="ลดจำนวน" onClick={() => update(it.id, { qty: Math.max(1, it.qty - 1) })} className="grid h-full w-[30px] place-items-center bg-navy text-white">
+                              <div className="flex h-10 w-[124px] items-center overflow-hidden rounded-[3px] border border-navy md:h-8 md:w-[104px]">
+                                <button type="button" aria-label="ลดจำนวน" onClick={() => update(it.id, { qty: Math.max(1, it.qty - 1) })} className="grid h-full w-10 place-items-center bg-navy text-white md:w-[30px]">
                                   <Minus className="h-4 w-4" />
                                 </button>
                                 <input
                                   aria-label="จำนวน"
                                   inputMode="numeric"
-                                  value={it.qty}
-                                  onChange={(e) => update(it.id, { qty: Math.min(10000, Math.max(1, parseInt(e.target.value) || 1)) })}
-                                  className="w-11 border-0 text-center text-sm outline-none"
+                                  value={it.qty || ""}
+                                  onChange={(e) => update(it.id, { qty: Math.min(10000, parseInt(e.target.value.replace(/\D/g, "")) || 0) })}
+                                  onBlur={() => it.qty < 1 && update(it.id, { qty: 1 })}
+                                  onFocus={(e) => e.target.select()}
+                                  className="w-11 border-0 text-center text-base outline-none md:text-sm"
                                 />
-                                <button type="button" aria-label="เพิ่มจำนวน" onClick={() => update(it.id, { qty: Math.min(10000, it.qty + 1) })} className="grid h-full w-[30px] place-items-center bg-navy text-white">
+                                <button type="button" aria-label="เพิ่มจำนวน" onClick={() => update(it.id, { qty: Math.min(10000, it.qty + 1) })} className="grid h-full w-10 place-items-center bg-navy text-white md:w-[30px]">
                                   <Plus className="h-4 w-4" />
                                 </button>
                               </div>
@@ -502,8 +557,12 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                               <span className="text-[13px] font-normal text-[#a8680b]">ร้านประเมิน</span>
                             ) : calculated ? (
                               <>
-                                {est?.priceTHB != null ? baht(est.priceTHB) : "฿ —"}
-                                {est?.priceTHB == null && <small className="block text-[11px] font-normal text-muted">รอร้านยืนยัน</small>}
+                                {line != null ? baht(line) : "฿ —"}
+                                {line == null ? (
+                                  <small className="block text-[11px] font-normal text-muted">รอร้านยืนยัน</small>
+                                ) : (
+                                  it.qty > 1 && <small className="block text-[11px] font-normal text-muted">{it.qty} ชิ้น</small>
+                                )}
                               </>
                             ) : (
                               <small className="text-[11px] font-normal text-muted">กดคำนวณ</small>
@@ -554,8 +613,8 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                               <dl className="grid grid-cols-[1fr_auto] rounded-[3px] border border-[#d9dcdf] bg-white text-[12.5px] [&>*]:border-b [&>*]:border-[#d9dcdf] [&>*]:px-2.5 [&>*]:py-1.5 [&>*:nth-last-child(-n+2)]:border-b-0">
                                 <dt>ขนาดที่ตรวจพบ</dt>
                                 <dd className="text-right font-medium">{dims(it.stats)} มม.</dd>
-                                <dt>เทียบพื้นที่พิมพ์</dt>
-                                <dd className="text-right font-medium">{Math.round((Math.max(...it.stats.size) / cfg.maxMm) * 100)}%</dd>
+                                <dt>ด้านยาวสุด / เครื่องรับได้</dt>
+                                <dd className="text-right font-medium">{Math.round(Math.max(...it.stats.size))} / {cfg.maxMm} มม.</dd>
                                 <dt>ผิวโมเดล</dt>
                                 <dd className={`text-right font-medium ${it.stats.openEdges || it.stats.nonManifoldEdges ? "text-[#a8680b]" : "text-[#2f7a4d]"}`}>
                                   {it.stats.openEdges || it.stats.nonManifoldEdges ? "ร้านซ่อมให้" : "สมบูรณ์"}
@@ -617,7 +676,11 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
               <button
                 type="button"
                 disabled={!priceable.length}
-                onClick={() => setCalculated(true)}
+                onClick={() => {
+                  setCalculated(true);
+                  if (window.matchMedia("(max-width: 1023px)").matches)
+                    setTimeout(() => sheetRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 50);
+                }}
                 className="ml-auto flex items-center gap-2 rounded-[3px] bg-navy px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40"
               >
                 <Calculator className="h-4 w-4" aria-hidden />
@@ -688,8 +751,10 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
               </div>
             </div>
             <p className="flex items-center gap-1.5 px-4 pb-4 text-[11.5px] text-muted">
-              <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
-              ใช้เพื่อติดต่อและจัดส่งงานนี้เท่านั้น ตาม<a href="/privacy" className="underline">นโยบายความเป็นส่วนตัว</a>
+              <ShieldCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              <span>
+                ใช้เพื่อติดต่อและจัดส่งงานนี้เท่านั้น ตาม<a href="/privacy" className="underline">นโยบายความเป็นส่วนตัว</a>
+              </span>
             </p>
           </Section>
         </div>
@@ -703,7 +768,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
           </p>
           <div className="mt-2 border-t border-[#3a4c58] text-[13px] [&>div]:flex [&>div]:items-center [&>div]:justify-between [&>div]:border-b [&>div]:border-[#3a4c58] [&>div]:py-2">
             <div>
-              <span className="flex items-center gap-1.5 text-[#c5ced4]"><Box className="h-4 w-4" aria-hidden />ค่าพิมพ์ ({pieces} ชิ้น)</span>
+              <span className="flex items-center gap-1.5 text-[#c5ced4]"><Box className="h-4 w-4" aria-hidden />ค่าพิมพ์ {pricedPieces} ชิ้น{shopPieces > 0 ? ` (+${shopPieces} รอร้านประเมิน)` : ""}</span>
               <b>{calculated && order.printTHB != null ? baht(order.printTHB) : "฿ —"}</b>
             </div>
             <div>
@@ -728,12 +793,12 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
           <ul className="list-disc pl-4">
             <li>ร้านอาจต้องตรวจไฟล์ก่อนพิมพ์ และอาจมีส่วนลดเพิ่มหลังตรวจ</li>
             <li>ค่าส่ง ฿{PRINT_CONFIG.shippingTHB}/ออเดอร์ ส่งฟรีเมื่อยอดสั่ง {PRINT_CONFIG.freeShipFromTHB.toLocaleString("th-TH")} บาทขึ้นไป อาจเปลี่ยนตามการตรวจออเดอร์ก่อนพิมพ์จริง</li>
-            <li>ไฟล์ที่ขึ้นเตือน ร้านจะประเมินให้แยก</li>
+            <li>ไฟล์ที่ขึ้น “ร้านประเมิน” (เช่น STEP) ยังไม่รวมในราคานี้ ร้านแจ้งราคาให้หลังตรวจ</li>
           </ul>
         </div>
 
         <label className="flex cursor-pointer items-start gap-2.5 rounded-[3px] border border-[#d9dcdf] bg-white px-3.5 py-3 text-[12.5px]">
-          <input type="checkbox" checked={keepFiles} onChange={(e) => setKeepFiles(e.target.checked)} className="mt-0.5 h-4 w-4 accent-navy" />
+          <input type="checkbox" checked={keepFiles} onChange={(e) => setKeepFiles(e.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-navy" />
           <span>
             <b className="font-medium">ส่งไฟล์ให้ร้าน ใช้เพื่องานนี้เท่านั้น</b>
             <small className="block text-[11.5px] text-muted">
