@@ -508,7 +508,7 @@ export function calcHomePump(v: Values) {
       ? {
           kind: "steps",
           unit: "W",
-          need: round(watts, 0) || 1,
+          need: ceil(watts) || 1,
           needLabel: "กำลังที่ต้องการ",
           items: HOME_PUMP_WATTS.map((w) => ({ label: `${w} W`, value: w, state: w === cls ? "chosen" : w < watts ? "under" : "over" })),
         }
