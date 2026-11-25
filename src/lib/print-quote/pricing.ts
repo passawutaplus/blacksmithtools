@@ -30,16 +30,16 @@ export const PRINT_CONFIG = {
      * Print-time model at 0.25 mm: hours = hPerCm2 × surface area + hPerCm3 × volume.
      * Walls dominate at 15% infill, so area matters more than weight (thin tall parts are slow).
      * Fitted to the shop's real Bambu Studio jobs (model printing time → billed price):
-     *  - M18 GEN3 stubby 8h05m → ฿560 · mil blower 1h58m → ฿140 · M18 battery holder 1h28m → ฿105
-     *  - M12 battery holder → ฿70
+     *  - M12 holder 1h01m → ฿70 · M18 holder 1h28m → ฿105 · blower 1h58m → ฿140
+     *  - M18 GEN3 stubby 8h05m → ฿560 · 6× M18 holder on one plate 8h44m → ฿630
      */
-    timeModel: { hPerCm2: 0.0042, hPerCm3: 0.00507 },
+    timeModel: { hPerCm2: 0.00433, hPerCm3: 0.00402 },
     /** Fine 0.15 mm takes ~0.25/0.15 longer — provisional until a real fine-layer job is checked. */
     qualityTimeFactor: { normal: 1, fine: 0.25 / 0.15 } as Record<Quality, number>,
-    /** Order print time is billed in steps of this many hours (nearest): 8h05m → 8 h = ฿560. */
+    /** Bambu "total time" (print + prepare) is billed to the nearest step: 8h12m → 8 h = ฿560, 8h51m → 9 h = ฿630. */
     billStepHours: 0.5,
-    /** Fixed setup time per plate (hours). */
-    setupHours: 0.25,
+    /** Bambu Studio "prepare time" per plate (6m26s on the P2S). */
+    setupHours: 6.43 / 60,
   },
   resin: {
     label: "Resin SLA/DLP",
@@ -130,7 +130,7 @@ export function estimateOrder(lines: QuoteLine[], process: Process, quality: Qua
     const c = PRINT_CONFIG.fdm;
     const printHours = per.reduce((s, { l, e }) => s + e.hours * l.qty, 0);
     const grams = per.reduce((s, { l, e }) => s + e.grams * l.qty, 0);
-    const billed = Math.round(printHours / c.billStepHours) * c.billStepHours;
+    const billed = Math.round((printHours + c.setupHours) / c.billStepHours) * c.billStepHours;
     printTHB = billed * c.perHourTHB! + grams * (c.perGramTHB ?? 0);
   }
   const min = PRINT_CONFIG[process].minOrderTHB;
