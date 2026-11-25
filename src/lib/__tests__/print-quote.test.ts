@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analyseMesh, parseMesh } from "../print-quote/mesh";
 import { zipSync } from "fflate";
-import { estimateOrder, fileStatus, parcelFee } from "../print-quote/pricing";
+import { estimateOrder, estimatePiece, fileStatus, parcelFee } from "../print-quote/pricing";
 
 // 10 mm cube as 12 outward-facing triangles.
 const V = [
@@ -112,6 +112,13 @@ describe("print-quote pricing", () => {
     expect(job(454, 36.2)).toBe(140); // blower, 1h58m
     expect(job(1660, 211.6)).toBe(560); // M18 GEN3 stubby, 8h05m
     expect(job(256, 87.2, 6)).toBe(630); // 6× M18 holder on one plate, 8h44m
+  });
+
+  it("keeps every price ending in 0 or 5", () => {
+    for (const [a, v] of [[39, 5.8], [173, 67.7], [454, 36.2], [218, 54.7]]) {
+      const p = estimatePiece({ ...s, areaCm2: a, volumeCm3: v }, "fdm", "normal").priceTHB!;
+      expect(p % 5).toBe(0);
+    }
   });
 
   it("ships free from 1,000 THB", () => {

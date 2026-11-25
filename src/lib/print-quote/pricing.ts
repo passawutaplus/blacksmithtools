@@ -92,6 +92,11 @@ export function fileStatus(stats: MeshStats | null, process: Process, readError?
   return { level: "ok", text: "ไฟล์ปกติ พิมพ์ได้" };
 }
 
+/** Shop rule: prices always end in 0 or 5 (nearest ฿5, at least ฿5). */
+export function roundPrice(thb: number | null) {
+  return thb == null || !Number.isFinite(thb) ? null : Math.max(5, Math.round(thb / 5) * 5);
+}
+
 export type PieceEstimate = { grams: number; hours: number; priceTHB: number | null };
 
 /** Estimate for ONE piece. Price is null while the rates are not calibrated. */
@@ -103,7 +108,7 @@ export function estimatePiece(stats: MeshStats, process: Process, quality: Quali
     const hours = (c.timeModel.hPerCm2 * stats.areaCm2 + c.timeModel.hPerCm3 * stats.volumeCm3) * c.qualityTimeFactor[quality];
     const priceTHB =
       c.perGramTHB != null && c.perHourTHB != null ? grams * c.perGramTHB + hours * c.perHourTHB : null;
-    return { grams, hours, priceTHB };
+    return { grams, hours, priceTHB: roundPrice(priceTHB) };
   }
   const c = PRINT_CONFIG.resin;
   const grams = stats.volumeCm3 * (c.supportFactor ?? NaN) * c.density;
@@ -114,7 +119,7 @@ export function estimatePiece(stats: MeshStats, process: Process, quality: Quali
     c.perGramTHB != null && c.perHourTHB != null && c.supportFactor != null && c.secPerLayer != null
       ? grams * c.perGramTHB + hours * c.perHourTHB
       : null;
-  return { grams, hours, priceTHB };
+  return { grams, hours, priceTHB: roundPrice(priceTHB) };
 }
 
 export type QuoteLine = { stats: MeshStats; qty: number };
@@ -146,7 +151,7 @@ export function estimateOrder(lines: QuoteLine[], process: Process, quality: Qua
     const sum = per.reduce((s, { l, e }) => s + e.hours * l.qty, 0);
     hours = Number.isFinite(sum) ? sum + PRINT_CONFIG.fdm.setupHours : null;
   }
-  return { printTHB: printTHB == null ? null : Math.ceil(printTHB), hours, pieces, minApplied };
+  return { printTHB: roundPrice(printTHB), hours, pieces, minApplied };
 }
 
 export function formatHours(h: number | null) {
