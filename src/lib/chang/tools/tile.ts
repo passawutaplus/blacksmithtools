@@ -1,5 +1,5 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, round, str } from "../math";
+import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
 import { ADHESIVE_PER_TROWEL, DISCLAIMER_AB, GROUT_DENSITY, TILE, TILE_WASTE } from "../constants";
 
 const TILES: Record<string, { w: number; h: number }> = {
@@ -12,6 +12,23 @@ const TILES: Record<string, { w: number; h: number }> = {
   "80": { w: 0.8, h: 0.8 },
 };
 
+/** ด่านตรวจของสายกระเบื้อง: ช่องกรอกอยู่ในช่วง และหักส่วนที่ไม่ปูแล้วต้องเหลือพื้นที่ */
+function guard(id: string, v: Values) {
+  const bad = guardTool(tileTools, id, v);
+  if (bad) return bad;
+  const gross = num(v, "w", 4) * num(v, "l", 5);
+  const deduct = num(v, "deduct", 0);
+  if (deduct < gross) return null;
+  return blockedResult({
+    headline: `หักที่ไม่ปู ${fmt(deduct, 1)} ตร.ม. มากกว่าพื้นที่ห้อง (${fmt(gross, 1)} ตร.ม.) — ไม่เหลือพื้นที่ให้ปู`,
+    rows: [
+      { label: "พื้นที่ห้อง", value: `${fmt(gross, 2)} ตร.ม.` },
+      { label: "หักที่ไม่ปู", value: `${fmt(deduct, 2)} ตร.ม.` },
+    ],
+    tip: "ตรวจขนาดห้องกับพื้นที่ที่หักอีกครั้ง",
+  });
+}
+
 export function tileArea(v: Values) {
   const w = num(v, "w", 4);
   const l = num(v, "l", 5);
@@ -20,6 +37,8 @@ export function tileArea(v: Values) {
 }
 
 export function calcTileQty(v: Values) {
+  const bad = guard("qty", v);
+  if (bad) return bad;
   const net = tileArea(v);
   const size = str(v, "size", "60");
   const perBox = num(v, "perBox", 4);
@@ -113,6 +132,8 @@ export function calcTileQty(v: Values) {
 }
 
 export function calcGrout(v: Values) {
+  const bad = guard("grout", v);
+  if (bad) return bad;
   const net = tileArea(v);
   const size = str(v, "size", "60");
   const joint = num(v, "joint", 2);
@@ -157,8 +178,8 @@ export function calcGrout(v: Values) {
       steps: [
         {
           label: "ความยาวร่องใน 1 ตร.ม.",
-          expr: "(L + W) ÷ (L × W)  โดย L, W เป็น มม.",
-          subst: `(${fmt(L)} + ${fmt(W)}) ÷ (${fmt(L)} × ${fmt(W)}) = ${fmt((L + W) / (L * W), 5)} ม./ตร.มม.`,
+          expr: "(L + W) ÷ (L × W) × 1,000  โดย L, W เป็น มม.",
+          subst: `(${fmt(L)} + ${fmt(W)}) ÷ (${fmt(L)} × ${fmt(W)}) × 1,000 = ${fmt(((L + W) / (L * W)) * 1000, 2)} ม./ตร.ม.`,
           note: "กระเบื้องแผ่นเล็กมีร่องต่อพื้นที่มากกว่า จึงกินยาแนวมากกว่า",
         },
         {
@@ -169,7 +190,7 @@ export function calcGrout(v: Values) {
         },
         {
           label: "แปลงปริมาตรเป็นน้ำหนัก",
-          expr: "อัตราใช้ = ความยาวร่อง × หน้าตัดร่อง × ความหนาแน่น",
+          expr: "อัตราใช้ = ความยาวร่อง (ม./ตร.ม.) × หน้าตัดร่อง (ตร.มม.) × ความหนาแน่น (กก./ล.) ÷ 1,000",
           subst: `= ${fmt(kgM2, 2)} กก./ตร.ม.`,
         },
         {
@@ -202,6 +223,8 @@ export function calcGrout(v: Values) {
 }
 
 export function calcAdhesive(v: Values) {
+  const bad = guard("adhesive", v);
+  if (bad) return bad;
   const net = tileArea(v);
   const trowel = str(v, "trowel", "10");
   const rate = ADHESIVE_PER_TROWEL[trowel] ?? ADHESIVE_PER_TROWEL["10"];
@@ -276,6 +299,8 @@ export function calcAdhesive(v: Values) {
 }
 
 export function calcLeveling(v: Values) {
+  const bad = guard("leveling", v);
+  if (bad) return bad;
   const net = tileArea(v);
   const size = str(v, "size", "60");
   const t = TILES[size] ?? TILES["60"];
@@ -329,6 +354,8 @@ export function calcLeveling(v: Values) {
 }
 
 export function calcTrim(v: Values) {
+  const bad = guardTool(tileTools, "trim", v);
+  if (bad) return bad;
   const w = num(v, "w", 4);
   const l = num(v, "l", 5);
   const doors = num(v, "doors", 1);
@@ -396,9 +423,9 @@ const groutOptions = [
 ];
 
 const roomFields = [
-  { type: "number" as const, key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 0.5, step: 0.1 },
-  { type: "number" as const, key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 0.5, step: 0.1 },
-  { type: "number" as const, key: "deduct", label: "หักที่ไม่ปู", unit: "ตร.ม.", default: 0, min: 0, step: 0.1 },
+  { type: "number" as const, key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
+  { type: "number" as const, key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 0.5, max: 100, step: 0.1 },
+  { type: "number" as const, key: "deduct", label: "หักที่ไม่ปู", unit: "ตร.ม.", default: 0, min: 0, max: 10000, step: 0.1 },
 ];
 
 export const tileTools: ToolDef[] = [
@@ -409,7 +436,7 @@ export const tileTools: ToolDef[] = [
     fields: [
       ...roomFields,
       { type: "select", key: "size", label: "ขนาดกระเบื้อง", default: "60", options: sizeOptions },
-      { type: "number", key: "perBox", label: "แผ่น/กล่อง", unit: "แผ่น", default: 4, min: 1 },
+      { type: "number", key: "perBox", label: "แผ่น/กล่อง", unit: "แผ่น", default: 4, min: 1, max: 100 },
       {
         type: "select",
         key: "pattern",
@@ -423,7 +450,7 @@ export const tileTools: ToolDef[] = [
           { value: "custom", label: "กำหนดเผื่อเสียเอง" },
         ],
       },
-      { type: "number", key: "waste", label: "เผื่อเสียเอง (ถ้าเลือกกำหนดเอง)", unit: "%", default: 10, min: 0 },
+      { type: "number", key: "waste", label: "เผื่อเสียเอง (ถ้าเลือกกำหนดเอง)", unit: "%", default: 10, min: 0, max: 30, when: { key: "pattern", is: "custom" } },
     ],
     calc: calcTileQty,
   },
@@ -434,8 +461,8 @@ export const tileTools: ToolDef[] = [
     fields: [
       ...roomFields,
       { type: "select", key: "size", label: "ขนาดกระเบื้อง", default: "60", options: sizeOptions },
-      { type: "number", key: "joint", label: "ร่องยาแนว", unit: "มม.", default: 2, min: 1, step: 0.5 },
-      { type: "number", key: "thick", label: "หนาแผ่น", unit: "มม.", default: 9, min: 5 },
+      { type: "number", key: "joint", label: "ร่องยาแนว", unit: "มม.", default: 2, min: 1, max: 20, step: 0.5 },
+      { type: "number", key: "thick", label: "หนาแผ่น", unit: "มม.", default: 9, min: 5, max: 30 },
       { type: "select", key: "grout", label: "ชนิดยาแนว", default: "cement", options: groutOptions },
     ],
     calc: calcGrout,
@@ -473,9 +500,9 @@ export const tileTools: ToolDef[] = [
     name: "คิ้ว + ใบตัด",
     blurb: "เส้นคิ้วและใบเพชร",
     fields: [
-      { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 0.5, step: 0.1 },
-      { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 0.5, step: 0.1 },
-      { type: "number", key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0 },
+      { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
+      { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 0.5, max: 100, step: 0.1 },
+      { type: "number", key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0, max: 10 },
     ],
     calc: calcTrim,
   },
@@ -487,7 +514,7 @@ export const tileJob: JobDef = {
   fields: [
     ...roomFields,
     { type: "select", key: "size", label: "ขนาดกระเบื้อง", default: "60", options: sizeOptions },
-    { type: "number", key: "perBox", label: "แผ่น/กล่อง", unit: "แผ่น", default: 4, min: 1 },
+    { type: "number", key: "perBox", label: "แผ่น/กล่อง", unit: "แผ่น", default: 4, min: 1, max: 100 },
     {
       type: "select",
       key: "pattern",
@@ -500,8 +527,8 @@ export const tileJob: JobDef = {
         { value: "herring", label: "ก้างปลา" },
       ],
     },
-    { type: "number", key: "joint", label: "ร่องยาแนว", unit: "มม.", default: 2, min: 1, step: 0.5 },
-    { type: "number", key: "thick", label: "หนาแผ่น", unit: "มม.", default: 9, min: 5 },
+    { type: "number", key: "joint", label: "ร่องยาแนว", unit: "มม.", default: 2, min: 1, max: 20, step: 0.5 },
+    { type: "number", key: "thick", label: "หนาแผ่น", unit: "มม.", default: 9, min: 5, max: 30 },
     { type: "select", key: "grout", label: "ชนิดยาแนว", default: "cement", options: groutOptions },
     {
       type: "select",
@@ -515,9 +542,12 @@ export const tileJob: JobDef = {
         { value: "12", label: "12 มม." },
       ],
     },
-    { type: "number", key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0 },
+    { type: "number", key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0, max: 10 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(tileJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(tileJob.fields, input);
     const qty = calcTileQty(v);
     const grout = calcGrout(v);
     const adh = calcAdhesive(v);

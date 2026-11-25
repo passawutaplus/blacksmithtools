@@ -1,6 +1,21 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, round, str } from "../math";
-import { DISCLAIMER_AB, WASTE_DEFAULT } from "../constants";
+import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
+import { DISCLAIMER_AB, ROOF, WASTE_DEFAULT } from "../constants";
+
+/** ด่านตรวจของสายหลังคา: ช่องกรอกอยู่ในช่วง + ความชันไม่เกินที่สูตรรองรับ */
+const guard = (id: string, v: Values) => guardTool(roofTools, id, v) ?? pitchGuard(v);
+
+function pitchGuard(v: Values) {
+  const pitch = num(v, "pitch", 30);
+  const deg = str(v, "pitchUnit", "pct") === "deg" ? pitch : pitchDegrees(pitch);
+  const max = ROOF.maxPitchDeg.value;
+  if (deg <= max) return null;
+  return blockedResult({
+    headline: `ความชัน ${fmt(deg, 1)}° ชันเกินที่คิดให้ได้ (ไม่เกิน ${max}°) — ตรวจหน่วยความชันอีกครั้ง`,
+    rows: [{ label: "ช่วงที่คิดได้", value: `ไม่เกิน ${max}° หรือราว ${fmt(Math.tan((max * Math.PI) / 180) * 100)}%` }],
+    tip: "หลังคาบ้านทั่วไปชัน 5–45° ถ้าชันกว่านี้เป็นงานผนังเอียง ให้คิดจากความยาวแนวลาดที่วัดจริง",
+  });
+}
 
 export function pitchPercent(v: Values): number {
   const pitch = num(v, "pitch", 30);
@@ -19,6 +34,8 @@ export function trueRoofArea(plan: number, pitchPct: number) {
 }
 
 export function calcRoofArea(v: Values) {
+  const bad = guard("area", v);
+  if (bad) return bad;
   const w = num(v, "w", 8);
   const l = num(v, "l", 12);
   const pitch = pitchPercent(v);
@@ -37,7 +54,7 @@ export function calcRoofArea(v: Values) {
       parts: [
         { label: "พื้นที่แปลน (มองจากบน)", value: plan, display: `${fmt(plan, 1)} ตร.ม.`, tone: "mute" },
         { label: `เพิ่มจากความชัน ${fmt(pitch)}%`, value: slopeAdd, display: `${fmt(slopeAdd, 1)} ตร.ม.`, tone: "accent" },
-        { label: "เผื่อเสีย/ซ้อนทับ 10%", value: wasteAdd, display: `${fmt(wasteAdd, 1)} ตร.ม.`, tone: "warn" },
+        { label: `เผื่อเสีย/ซ้อนทับ ${fmt(wastePct)}%`, value: wasteAdd, display: `${fmt(wasteAdd, 1)} ตร.ม.`, tone: "warn" },
       ],
       totalLabel: "พื้นที่หลังคารวมเผื่อ",
       totalDisplay: `${fmt(withWaste, 1)} ตร.ม.`,
@@ -52,7 +69,7 @@ export function calcRoofArea(v: Values) {
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
-      summary: "พื้นที่หลังคาจริง (ตามผิวเอียง) มากกว่าพื้นที่แปลนที่มองจากด้านบน ตามอัตราส่วนของมุมชัน (pitch factor = √(1 + (ชัน%)²)) แล้วเผื่อเสีย/ซ้อนทับอีก 10%",
+      summary: "พื้นที่หลังคาจริง (ตามผิวเอียง) มากกว่าพื้นที่แปลนที่มองจากด้านบน ตามอัตราส่วนของมุมชัน (pitch factor = √(1 + (ชัน%)²)) แล้วเผื่อเสีย/ซ้อนทับตามที่กรอก",
       steps: [
         { label: "พื้นที่แปลน", expr: "กว้าง × ยาว", subst: `${fmt(w)} × ${fmt(l)} = ${fmt(plan, 1)} ตร.ม.` },
         {
@@ -73,6 +90,8 @@ export function calcRoofArea(v: Values) {
 }
 
 export function calcRoofMaterial(v: Values) {
+  const bad = guard("material", v);
+  if (bad) return bad;
   const area = trueRoofArea(num(v, "w", 8) * num(v, "l", 12), pitchPercent(v)) * (1 + num(v, "waste", WASTE_DEFAULT.value) / 100);
   const kind = str(v, "kind", "metal");
   if (kind === "tile") {
@@ -97,7 +116,7 @@ export function calcRoofMaterial(v: Values) {
       explain: {
         risk: "A",
         updatedAt: "2026-08-21",
-        summary: "จำนวนแผ่นกระเบื้องหลังคา = พื้นที่หลังคาจริง (รวมเผื่อ 10%) × อัตราแผ่นต่อตารางเมตรของกระเบื้องรุ่นนั้น",
+        summary: "จำนวนแผ่นกระเบื้องหลังคา = พื้นที่หลังคาจริง (รวมเผื่อ) × อัตราแผ่นต่อตารางเมตรของกระเบื้องรุ่นนั้น",
         steps: [{ label: "จำนวนแผ่น", expr: "ปัดขึ้น(พื้นที่ × แผ่น/ตร.ม.)", subst: `${fmt(area, 1)} × ${perM2} = ${n} แผ่น` }],
         assumptions: ["อัตราแผ่น/ตร.ม. เป็นค่าจากสเปกผู้ผลิตกระเบื้องแต่ละรุ่น (ขึ้นกับขนาดแผ่นและระยะซ้อนทับ/แนวตะปู)"],
         caveats: ["ยังไม่รวมครอบสัน ครอบตะเข้ และแผ่นกันลมที่ต้องนับแยกตามความยาวจริง", DISCLAIMER_AB],
@@ -105,42 +124,93 @@ export function calcRoofMaterial(v: Values) {
       },
     });
   }
+  // เมทัลชีทนับเป็น "แถว" ตามแนวชายคา × จำนวนแผ่นต่อแถวตามแนวลาด — หารพื้นที่ตรง ๆ จะได้แผ่นน้อยเกินจริง
+  // เพราะเศษปลายแผ่นเอาไปต่อแถวอื่นไม่ได้ (รอยต่อกลางลาดต้องซ้อนและรั่วง่าย)
+  const w = num(v, "w", 8);
+  const l = num(v, "l", 12);
+  const wastePct = num(v, "waste", WASTE_DEFAULT.value);
+  const pitch = pitchPercent(v);
+  const lean = str(v, "shape", "gable") === "lean";
+  const sides = lean ? 1 : 2;
   const coverW = num(v, "coverW", 0.7);
   const len = num(v, "sheetLen", 6);
-  const need = area / (coverW * len);
-  const sheets = ceil(need);
-  const lastUsed = need - Math.floor(need) || 1;
+  const lap = ROOF.endLap.value;
+  const slopeLen = (w / sides) * Math.sqrt(1 + (pitch / 100) ** 2);
+  const rows = ceil(l / coverW);
+  const perRun = slopeLen <= len ? 1 : ceil((slopeLen - lap) / (len - lap));
+  const base = sides * rows * perRun;
+  const sheets = ceil(base * (1 + wastePct / 100));
+  const spare = sheets - base;
+  const shapeName = lean ? "เพิงหมาแหงน (ลาดทางเดียว)" : "จั่ว 2 ด้าน";
 
   return resultX({
     title: "จำนวนแผ่นหลังคา",
     headline: `${sheets} แผ่นเมทัลชีท`,
     chart: {
-      kind: "packs",
-      unitLabel: `แผ่น ${fmt(coverW, 2)}×${fmt(len, 1)} ม.`,
-      count: sheets,
-      lastUsed,
-      note: `พื้นที่รวมเผื่อ ${fmt(area, 1)} ตร.ม. ÷ พื้นที่คลุม/แผ่น ${fmt(coverW * len, 2)} ตร.ม.`,
+      kind: "stack",
+      parts: [
+        { label: `นับตามแถว (${sides} ด้าน × ${rows} แถว × ${perRun} แผ่น)`, value: base, display: `${base} แผ่น`, tone: "accent" },
+        ...(spare > 0 ? [{ label: `เผื่อเสีย ${fmt(wastePct)}%`, value: spare, display: `${spare} แผ่น`, tone: "warn" as const }] : []),
+      ],
+      totalLabel: `แผ่น ${fmt(coverW, 2)}×${fmt(len, 1)} ม.`,
+      totalDisplay: `${sheets} แผ่น`,
     },
     rows: [
-      { label: "พื้นที่รวมเผื่อ", value: `${fmt(area, 1)} ตร.ม.` },
-      { label: "ความกว้างคลุม", value: `${fmt(coverW, 2)} ม.` },
-      { label: "ยาวแผ่น", value: `${fmt(len, 1)} ม.` },
-      { label: "จำนวนแผ่น", value: `${sheets} แผ่น`, emphasize: true },
+      { label: "ทรงหลังคา", value: shapeName },
+      { label: "ยาวแนวลาดต่อด้าน", value: `${fmt(slopeLen, 2)} ม.` },
+      { label: "แถวตามแนวชายคา", value: `${rows} แถว/ด้าน (คลุมแผ่นละ ${fmt(coverW, 2)} ม.)` },
+      {
+        label: "แผ่นต่อแถว",
+        value: perRun === 1 ? `1 แผ่น (แผ่นยาว ${fmt(len, 1)} ม. ถึงสัน)` : `${perRun} แผ่น ต่อซ้อนปลาย ${fmt(lap * 100)} ซม.`,
+      },
+      { label: "นับตามแถว", value: `${base} แผ่น` },
+      { label: `จำนวนแผ่น (เผื่อ ${fmt(wastePct)}%)`, value: `${sheets} แผ่น`, emphasize: true },
     ],
-    tip: "เผื่อซ้อนทับตามลอน อย่าคิดจากความกว้างแผ่นเต็ม",
+    tip:
+      perRun === 1
+        ? `สั่งตัดยาว ${fmt(Math.ceil(slopeLen * 10) / 10, 1)} ม. ตามแนวลาดได้ จะไม่เหลือเศษปลายแผ่น`
+        : "แนวลาดยาวกว่าแผ่น ต้องต่อซ้อนปลาย ถ้าสั่งแผ่นยาวถึงสันได้จะรั่วยากกว่า",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
-      summary: "จำนวนแผ่นเมทัลชีท = พื้นที่หลังคาจริง (รวมเผื่อ) ÷ พื้นที่คลุมจริงต่อแผ่น (ความกว้างคลุม×ยาวแผ่น) — ความกว้างคลุมต้องเป็นค่าคลุมจริงหลังซ้อนลอน ไม่ใช่ความกว้างเต็มแผ่น",
-      steps: [{ label: "จำนวนแผ่น", expr: "ปัดขึ้น(พื้นที่ ÷ (กว้างคลุม × ยาวแผ่น))", subst: `${fmt(area, 1)} ÷ (${fmt(coverW, 2)} × ${fmt(len, 1)}) = ${sheets} แผ่น` }],
-      assumptions: ["ความกว้างคลุมที่กรอกคือความกว้างใช้งานจริงหลังซ้อนทับลอนข้าง (effective coverage) ไม่ใช่ความกว้างเต็มแผ่นก่อนซ้อน"],
-      caveats: ["แผ่นสั่งตัดยาวพิเศษราคาต่อแผ่นสูงขึ้น ควรเทียบราคากับแผ่นยาวมาตรฐาน + ต่อแนวก่อนสั่ง", DISCLAIMER_AB],
-      refs: [{ label: "สเปกเมทัลชีทตามผู้ผลิต (ความกว้างคลุมจริงหลังซ้อนลอน)" }],
+      updatedAt: "2026-11-25",
+      summary:
+        "เมทัลชีทนับเป็นแถว: จำนวนแถว = ยาวชายคา ÷ ความกว้างคลุม (ปัดขึ้น) × จำนวนแผ่นต่อแถวตามแนวลาด × จำนวนด้าน แล้วเผื่อเสีย — ไม่ใช้วิธีหารพื้นที่ เพราะเศษปลายแผ่นใช้ต่อไม่ได้",
+      steps: [
+        {
+          label: "ยาวแนวลาดต่อด้าน",
+          expr: lean ? "กว้างแปลน × √(1 + (ชัน/100)²)" : "(กว้างแปลน ÷ 2) × √(1 + (ชัน/100)²)",
+          subst: `${fmt(w / sides, 2)} × √(1 + ${fmt(pitch / 100, 2)}²) = ${fmt(slopeLen, 2)} ม.`,
+        },
+        { label: "จำนวนแถวต่อด้าน", expr: "ปัดขึ้น(ยาวแปลน ÷ กว้างคลุม)", subst: `${fmt(l, 1)} ÷ ${fmt(coverW, 2)} → ${rows} แถว` },
+        {
+          label: "แผ่นต่อแถว",
+          expr: `ถ้าแนวลาด ≤ ยาวแผ่น ใช้ 1 แผ่น · ถ้ายาวกว่า = ปัดขึ้น((แนวลาด − ${lap}) ÷ (ยาวแผ่น − ${lap}))`,
+          subst: `แนวลาด ${fmt(slopeLen, 2)} ม. แผ่นยาว ${fmt(len, 1)} ม. → ${perRun} แผ่น`,
+        },
+        {
+          label: "จำนวนแผ่นรวม",
+          expr: "ปัดขึ้น(ด้าน × แถว × แผ่นต่อแถว × (1 + เผื่อเสีย))",
+          subst: `${sides} × ${rows} × ${perRun} = ${base} แผ่น → เผื่อ ${fmt(wastePct)}% = ${sheets} แผ่น`,
+        },
+      ],
+      constants: [ROOF.endLap],
+      assumptions: [
+        "ด้านกว้างแปลนคือด้านที่น้ำไหลลง (แนวลาด) ด้านยาวแปลนคือแนวสัน/ชายคา และขนาดแปลนรวมชายคายื่นแล้ว",
+        "ความกว้างคลุมที่กรอกคือความกว้างใช้งานจริงหลังซ้อนทับลอนข้าง (effective coverage) ไม่ใช่ความกว้างเต็มแผ่นก่อนซ้อน",
+      ],
+      caveats: [
+        "หลังคาปั้นหยาหรือมีตะเข้ แผ่นต้องตัดเฉียง จำนวนจริงมากกว่านี้ ให้นับจากแบบ",
+        "แผ่นสั่งตัดยาวพิเศษราคาต่อแผ่นสูงขึ้น ควรเทียบราคากับแผ่นยาวมาตรฐาน + ต่อแนวก่อนสั่ง",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "คู่มือติดตั้งเมทัลชีทของผู้ผลิต (ความกว้างคลุมจริงและระยะซ้อนปลายแผ่น)" }],
     },
   });
 }
 
 export function calcGutter(v: Values) {
+  const bad = guard("gutter", v);
+  if (bad) return bad;
   const area = trueRoofArea(num(v, "w", 8) * num(v, "l", 12), pitchPercent(v));
   const gutterMm = area < 50 ? 100 : area < 120 ? 125 : 150;
   const down = ceil(area / 50);
@@ -188,6 +258,8 @@ export function calcGutter(v: Values) {
 }
 
 export function calcRidge(v: Values) {
+  const bad = guardTool(roofTools, "ridge", v);
+  if (bad) return bad;
   const ridge = num(v, "ridge", 12);
   const hips = num(v, "hips", 4);
   const hipLen = num(v, "hipLen", 6);
@@ -231,6 +303,8 @@ export function calcRidge(v: Values) {
 }
 
 export function calcFastener(v: Values) {
+  const bad = guard("fastener", v);
+  if (bad) return bad;
   const area = trueRoofArea(num(v, "w", 8) * num(v, "l", 12), pitchPercent(v)) * (1 + num(v, "waste", WASTE_DEFAULT.value) / 100);
   const zone = str(v, "zone", "mid");
   const per = zone === "edge" ? 10 : zone === "coast" ? 12 : 6;
@@ -275,9 +349,25 @@ export function calcFastener(v: Values) {
   });
 }
 
+const metalFields = [
+  {
+    type: "select" as const,
+    key: "shape",
+    label: "ทรงหลังคา",
+    default: "gable",
+    options: [
+      { value: "gable", label: "จั่ว 2 ด้าน" },
+      { value: "lean", label: "เพิงหมาแหงน (ลาดทางเดียว)" },
+    ],
+    when: { key: "kind", is: "metal" },
+  },
+  { type: "number" as const, key: "coverW", label: "กว้างคลุม (เมทัล)", unit: "ม.", default: 0.7, min: 0.3, max: 1.5, step: 0.01, when: { key: "kind", is: "metal" } },
+  { type: "number" as const, key: "sheetLen", label: "ยาวแผ่น", unit: "ม.", default: 6, min: 1, max: 12, step: 0.1, when: { key: "kind", is: "metal" } },
+];
+
 const roof = [
-  { type: "number" as const, key: "w", label: "กว้างแปลน", unit: "ม.", default: 8, min: 2, step: 0.1 },
-  { type: "number" as const, key: "l", label: "ยาวแปลน", unit: "ม.", default: 12, min: 2, step: 0.1 },
+  { type: "number" as const, key: "w", label: "กว้างแปลน (แนวลาด)", unit: "ม.", default: 8, min: 2, max: 100, step: 0.1 },
+  { type: "number" as const, key: "l", label: "ยาวแปลน (แนวสัน)", unit: "ม.", default: 12, min: 2, max: 100, step: 0.1 },
   {
     type: "select" as const,
     key: "pitchUnit",
@@ -288,7 +378,7 @@ const roof = [
       { value: "deg", label: "องศา (17° ≈ 30%)" },
     ],
   },
-  { type: "number" as const, key: "pitch", label: "ความชัน", default: 30, min: 5 },
+  { type: "number" as const, key: "pitch", label: "ความชัน", default: 30, min: 2, max: 173 },
   { type: "number" as const, key: "waste", label: "เผื่อเสีย/ซ้อนทับ", unit: "%", default: 10, min: 0, max: 25 },
 ];
 
@@ -310,9 +400,8 @@ export const roofTools: ToolDef[] = [
           { value: "tile", label: "กระเบื้องลอน" },
         ],
       },
-      { type: "number", key: "coverW", label: "กว้างคลุม (เมทัล)", unit: "ม.", default: 0.7, min: 0.5, step: 0.01, when: { key: "kind", is: "metal" } },
-      { type: "number", key: "sheetLen", label: "ยาวแผ่น", unit: "ม.", default: 6, min: 1, step: 0.1, when: { key: "kind", is: "metal" } },
-      { type: "number", key: "perM2", label: "แผ่นกระเบื้อง/ตร.ม.", default: 10, min: 6, when: { key: "kind", is: "tile" } },
+      ...metalFields,
+      { type: "number", key: "perM2", label: "แผ่นกระเบื้อง/ตร.ม.", default: 10, min: 3, max: 150, when: { key: "kind", is: "tile" } },
     ],
     calc: calcRoofMaterial,
   },
@@ -322,9 +411,9 @@ export const roofTools: ToolDef[] = [
     name: "สันครอบ + ตะเข้สัน",
     blurb: "ความยาวครอบ",
     fields: [
-      { type: "number", key: "ridge", label: "ยาวสัน", unit: "ม.", default: 12, min: 0, step: 0.1 },
-      { type: "number", key: "hips", label: "จำนวนตะเข้สัน", unit: "เส้น", default: 4, min: 0 },
-      { type: "number", key: "hipLen", label: "ยาวตะเข้/เส้น", unit: "ม.", default: 6, min: 0, step: 0.1 },
+      { type: "number", key: "ridge", label: "ยาวสัน", unit: "ม.", default: 12, min: 0, max: 500, step: 0.1 },
+      { type: "number", key: "hips", label: "จำนวนตะเข้สัน", unit: "เส้น", default: 4, min: 0, max: 20 },
+      { type: "number", key: "hipLen", label: "ยาวตะเข้/เส้น", unit: "ม.", default: 6, min: 0, max: 50, step: 0.1 },
     ],
     calc: calcRidge,
   },
@@ -365,13 +454,15 @@ export const roofJob: JobDef = {
         { value: "tile", label: "กระเบื้อง" },
       ],
     },
-    { type: "number", key: "coverW", label: "กว้างคลุมเมทัล", unit: "ม.", default: 0.7, step: 0.01 },
-    { type: "number", key: "sheetLen", label: "ยาวแผ่น", unit: "ม.", default: 6, step: 0.1 },
-    { type: "number", key: "ridge", label: "ยาวสัน", unit: "ม.", default: 12, min: 0, step: 0.1 },
-    { type: "number", key: "hips", label: "ตะเข้สัน", unit: "เส้น", default: 0, min: 0 },
-    { type: "number", key: "hipLen", label: "ยาวตะเข้/เส้น", unit: "ม.", default: 6, min: 0, step: 0.1 },
+    ...metalFields,
+    { type: "number", key: "ridge", label: "ยาวสัน", unit: "ม.", default: 12, min: 0, max: 500, step: 0.1 },
+    { type: "number", key: "hips", label: "ตะเข้สัน", unit: "เส้น", default: 0, min: 0, max: 20 },
+    { type: "number", key: "hipLen", label: "ยาวตะเข้/เส้น", unit: "ม.", default: 6, min: 0, max: 50, step: 0.1 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(roofJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(roofJob.fields, input);
     const area = calcRoofArea(v);
     const mat = calcRoofMaterial(v);
     const gutter = calcGutter(v);

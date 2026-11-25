@@ -1,32 +1,36 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, invalidResult, jobFromParts, num, parseList, resultX, round, str } from "../math";
-import { DISCLAIMER_AB, DISCLAIMER_C, MATERIAL, UNIT, WELD } from "../constants";
+import {
+  blockedResult,
+  ceil,
+  fmt,
+  guardInputs,
+  guardTool,
+  invalidResult,
+  jobFromParts,
+  num,
+  parseLengthList,
+  resultX,
+  round,
+  str,
+  withDefaults,
+} from "../math";
+import {
+  DISCLAIMER_AB,
+  DISCLAIMER_C,
+  MATERIAL,
+  STEEL_CHANNEL,
+  STEEL_H_BEAM,
+  STEEL_SECTION_SOURCE,
+  STEEL_W_BEAM,
+  UNIT,
+  WELD,
+} from "../constants";
 
-const H_BEAM: Record<string, number> = {
-  "150x75": 14.0,
-  "200x100": 21.3,
-  "250x125": 29.6,
-  "300x150": 36.7,
-  "350x175": 49.6,
-  "400x200": 56.6,
-};
-const W_BEAM: Record<string, number> = {
-  "100x100": 16.9,
-  "125x125": 23.8,
-  "150x150": 31.5,
-  "200x200": 49.9,
-  "250x250": 72.4,
-  "300x300": 94.0,
-};
-const C_CH: Record<string, number> = {
-  "75": 6.92,
-  "100": 8.92,
-  "125": 12.3,
-  "150": 16.6,
-  "200": 22.4,
-};
+const guard = (id: string, v: Values) => guardTool(steelTools, id, v);
 
 export function calcSteelWeight(v: Values) {
+  const bad = guard("weight", v);
+  if (bad) return bad;
   const shape = str(v, "shape", "plate");
   const len = num(v, "len", 6);
   const qty = num(v, "qty", 1);
@@ -41,7 +45,7 @@ export function calcSteelWeight(v: Values) {
     const w = num(v, "w", 1200) / 1000;
     const t = num(v, "t", 6) / 1000;
     kgm = w * t * density;
-    note = `แผ่น ${fmt(num(v, "w"))}×${fmt(t * 1000)} มม.`;
+    note = `แผ่น ${fmt(w * 1000)}×${fmt(t * 1000)} มม.`;
     expr = "กก./ม. = กว้าง(ม.) × หนา(ม.) × ความหนาแน่น";
     subst = `${fmt(w, 3)} × ${fmt(t, 4)} × ${fmt(density)} = ${fmt(kgm, 2)} กก./ม.`;
   } else if (shape === "round") {
@@ -53,26 +57,38 @@ export function calcSteelWeight(v: Values) {
   } else if (shape === "pipe") {
     const od = num(v, "od", 48.3);
     const t = num(v, "t", 3.2);
+    if (t >= od / 2) {
+      return blockedResult({
+        headline: `ท่อหนา ${fmt(t, 1)} มม. ไม่ได้ — ต้องน้อยกว่าครึ่งของ Ø นอก (${fmt(od / 2, 1)} มม.)`,
+        tip: "ความหนาผนังท่อต้องน้อยกว่ารัศมีนอก ถ้าเป็นเหล็กตันให้เลือกรูปพรรณ “กลมตัน”",
+      });
+    }
     kgm = ((od - t) * t * Math.PI * (density / 1000)) / 1000;
     note = `ท่อ Ø ${fmt(od)} × ${fmt(t)} มม.`;
     expr = "กก./ม. = (Ø − หนา) × หนา × π × 7.85 ÷ 1,000";
     subst = `(${fmt(od, 1)} − ${fmt(t, 1)}) × ${fmt(t, 1)} × π × 7.85 ÷ 1,000 = ${fmt(kgm, 2)} กก./ม.`;
   } else if (shape === "h") {
     const key = str(v, "hsize", "200x100");
-    kgm = H_BEAM[key] ?? 21.3;
-    note = `H ${key}`;
+    const sec = STEEL_H_BEAM[key];
+    if (!sec) return invalidResult(`ไม่มี H ${key} ในตาราง — เลือกขนาดจากรายการ`);
+    kgm = sec.kgm;
+    note = `H ${key}×${sec.t1}×${sec.t2}`;
     expr = "เปิดตารางน้ำหนักหน้าตัดมาตรฐาน";
     subst = `H ${key} → ${fmt(kgm, 2)} กก./ม.`;
   } else if (shape === "w") {
     const key = str(v, "wsize", "150x150");
-    kgm = W_BEAM[key] ?? 31.5;
-    note = `W ${key}`;
+    const sec = STEEL_W_BEAM[key];
+    if (!sec) return invalidResult(`ไม่มี W ${key} ในตาราง — เลือกขนาดจากรายการ`);
+    kgm = sec.kgm;
+    note = `W ${key}×${sec.t1}×${sec.t2}`;
     expr = "เปิดตารางน้ำหนักหน้าตัดมาตรฐาน";
     subst = `W ${key} → ${fmt(kgm, 2)} กก./ม.`;
   } else {
     const key = str(v, "csize", "100");
-    kgm = C_CH[key] ?? 8.92;
-    note = `C ${key}`;
+    const sec = STEEL_CHANNEL[key];
+    if (!sec) return invalidResult(`ไม่มี C ${key} ในตาราง — เลือกขนาดจากรายการ`);
+    kgm = sec.kgm;
+    note = `รางน้ำ C ${sec.h}×${sec.b}×${sec.t1}×${sec.t2}`;
     expr = "เปิดตารางน้ำหนักหน้าตัดมาตรฐาน";
     subst = `C ${key} → ${fmt(kgm, 2)} กก./ม.`;
   }
@@ -83,14 +99,14 @@ export function calcSteelWeight(v: Values) {
     headline: `${fmt(total, 1)} กก.`,
     rows: [
       { label: "หน้าตัด", value: note },
-      { label: "กก./ม.", value: `${fmt(kgm, 2)}` },
+      { label: "กก./ม.", value: `${fmt(kgm, 2)} กก./ม.` },
       { label: "ยาว × จำนวน", value: `${fmt(len, 2)} ม. × ${fmt(qty)}` },
       { label: "น้ำหนักรวม", value: `${fmt(total, 1)} กก.`, emphasize: true },
     ],
     tip: "ใช้เช็กน้ำหนักก่อนสั่งของและคิดค่าขนส่ง เหล็กชุบหรือสแตนเลสคนละตัวเลข",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary: "น้ำหนักรวม = น้ำหนักต่อเมตร × ความยาว × จำนวนเส้น",
       steps: [
         { label: "น้ำหนักต่อเมตร", expr, subst },
@@ -103,7 +119,7 @@ export function calcSteelWeight(v: Values) {
       constants: fromTable ? [] : [MATERIAL.steelDensity, ...(shape === "round" ? [MATERIAL.rebarFactor] : [])],
       assumptions: [
         "เหล็กกล้าคาร์บอนความหนาแน่น 7,850 กก./ลบ.ม.",
-        fromTable ? "ใช้น้ำหนักตามตารางหน้าตัดมาตรฐานที่ผู้ผลิตไทยใช้" : "คิดจากปริมาตรหน้าตัดจริง",
+        fromTable ? "ใช้น้ำหนักตามตารางหน้าตัดมาตรฐาน JIS G3192 / มอก. 1227 (รางน้ำคือรางรีดร้อน ไม่ใช่ตัวซีพับเย็น)" : "คิดจากปริมาตรหน้าตัดจริง",
       ],
       caveats: [
         "เหล็กที่ขายจริงมีค่าคลาดเคลื่อนน้ำหนักได้ตามเกรด (เหล็กเบา/เหล็กเต็ม) ต่างกันได้หลายเปอร์เซ็นต์",
@@ -111,7 +127,7 @@ export function calcSteelWeight(v: Values) {
         DISCLAIMER_AB,
       ],
       refs: [
-        { label: "มอก. 1227 เหล็กโครงสร้างรูปพรรณรีดร้อน / JIS G3101" },
+        { label: STEEL_SECTION_SOURCE },
         { label: "มอก. 20 / 24 เหล็กเส้นเสริมคอนกรีต (น้ำหนักต่อเมตรตามเส้นผ่านศูนย์กลาง)" },
       ],
     },
@@ -119,6 +135,8 @@ export function calcSteelWeight(v: Values) {
 }
 
 export function calcWeld(v: Values) {
+  const bad = guard("weld", v);
+  if (bad) return bad;
   const kind = str(v, "kind", "fillet");
   const z = num(v, "z", 6);
   const len = num(v, "len", 4);
@@ -227,13 +245,25 @@ export function packBfd(stock: number, kerf: number, parts: number[]) {
 }
 
 export function calcCut(v: Values) {
+  const bad = guard("cut", v);
+  if (bad) return bad;
   const stock = num(v, "stock", 6000);
   const kerf = num(v, "kerf", 3);
-  const parts = parseList(str(v, "parts", "1200, 1200, 800, 2500, 900"));
+  const { values: parts, dropped } = parseLengthList(str(v, "parts", "1200, 1200, 800, 2500, 900"), stock);
   if (parts.length === 0) {
     return invalidResult("ใส่ความยาวชิ้นงานก่อน คั่นด้วยจุลภาค เช่น 1200, 800, 2500");
   }
-  const tooLong = parts.filter((p) => p + kerf > stock);
+  const tooLong = parts.filter((p) => p > stock);
+  if (tooLong.length) {
+    return blockedResult({
+      headline: `มี ${tooLong.length} ชิ้นยาวกว่าเส้นวัตถุดิบ ${fmt(stock)} มม. — ตัดไม่ได้`,
+      tip: "แก้ความยาวชิ้นงาน เปลี่ยนเป็นเส้นวัตถุดิบที่ยาวขึ้น หรือแบ่งชิ้นนั้นแล้วต่อเชื่อม ถ้าพิมพ์เลขหลักพันด้วยจุลภาค (เช่น 1,200) ให้เว้นวรรคระหว่างชิ้น",
+      rows: [
+        { label: "ชิ้นที่ยาวเกินเส้น", value: `${tooLong.map((x) => fmt(x)).join(" · ")} มม.`, emphasize: true },
+        { label: "อ่านรายการได้", value: `${parts.map((x) => fmt(x)).join(" · ")} มม.` },
+      ],
+    });
+  }
   const { bars, remain } = packBfd(stock, kerf, parts);
   const used = bars.length;
   const scrap = remain.reduce((a, b) => a + b, 0);
@@ -243,7 +273,9 @@ export function calcCut(v: Values) {
 
   return resultX({
     title: "วางแผนตัดเหล็ก",
-    headline: `ใช้ ${used} เส้น · เศษ ${fmt(pct, 1)}%`,
+    headline: dropped.length
+      ? `ใช้ ${used} เส้น · เศษ ${fmt(pct, 1)}% — ข้าม ${dropped.length} รายการที่อ่านไม่ออก`
+      : `ใช้ ${used} เส้น · เศษ ${fmt(pct, 1)}%`,
     chart: {
       kind: "packs",
       unitLabel: `เส้น ${fmt(stock)} มม.`,
@@ -255,7 +287,8 @@ export function calcCut(v: Values) {
       { label: "ชิ้นงาน", value: `${parts.length} ชิ้น รวม ${fmt(totalNeed)} มม.` },
       { label: "เส้นวัตถุดิบ", value: `${used} เส้น × ${fmt(stock)} มม.`, emphasize: true },
       { label: "เศษรวม", value: `${fmt(scrap)} มม. (${fmt(pct, 1)}%)` },
-      ...(tooLong.length ? [{ label: "ชิ้นยาวเกินเส้น", value: tooLong.map((x) => `${x}`).join(", ") }] : []),
+      { label: "อ่านรายการได้", value: `${parts.map((x) => fmt(x)).join(" · ")} มม.` },
+      ...(dropped.length ? [{ label: "อ่านไม่ออก (ข้ามไป)", value: dropped.join(" · "), emphasize: true }] : []),
       ...bars.map((b, i) => ({
         label: `เส้นที่ ${i + 1}`,
         value: `${b.join(" + ")} · เหลือ ${fmt(remain[i])} มม.`,
@@ -264,7 +297,7 @@ export function calcCut(v: Values) {
     tip: "จัดแบบ Best Fit Decreasing เผื่อ kerf เลื่อย งานจริงเผื่อหน้าตัดอีกนิด",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary: "จัดเรียงชิ้นงานจากยาวไปสั้น (Best Fit Decreasing) ใส่ลงเส้นวัตถุดิบให้เศษเหลือน้อยที่สุดในแต่ละเส้น รวมเผื่อ kerf ของใบเลื่อย/จานตัดทุกรอยตัด",
       steps: [
         { label: "จำนวนชิ้นงานที่ต้องตัด", expr: "รวมความยาวที่ต้องการ", subst: `${parts.length} ชิ้น = ${fmt(totalNeed)} มม.` },
@@ -282,7 +315,8 @@ export function calcCut(v: Values) {
       assumptions: [`เผื่อ kerf (ความหนาใบตัด) ${fmt(kerf)} มม. ต่อรอยตัด`, "อัลกอริทึมเป็นแบบประมาณ (heuristic) ไม่ใช่คำตอบที่เศษน้อยที่สุดเสมอไป"],
       caveats: [
         "เหล็กหน้างานอาจมีความยาวจริงคลาดเคลื่อนจากสเปก ±20–50 มม. ควรเผื่อวัดจริงก่อนตัด",
-        tooLong.length ? "มีชิ้นงานที่ยาวเกินเส้นวัตถุดิบ ต้องต่อแนวเชื่อมหรือสั่งเส้นยาวพิเศษ" : "",
+        "เลขที่พิมพ์แบบมีจุลภาคหลักพัน (1,200) จะอ่านเป็น 1200 เมื่อไม่เกินความยาวเส้น — ดูแถว “อ่านรายการได้” ว่าตรงกับที่ตั้งใจ",
+        dropped.length ? `มี ${dropped.length} รายการที่อ่านเป็นความยาวไม่ได้และไม่ถูกนับ: ${dropped.join(" · ")}` : "",
         DISCLAIMER_AB,
       ].filter(Boolean),
       refs: [{ label: "อัลกอริทึม Cutting Stock / Best Fit Decreasing (การตัดวัสดุให้เศษน้อยที่สุด)" }],
@@ -291,6 +325,8 @@ export function calcCut(v: Values) {
 }
 
 export function calcDeflection(v: Values) {
+  const bad = guard("deflection", v);
+  if (bad) return bad;
   const L = num(v, "L", 4);
   const w = num(v, "w", 400);
   const I = num(v, "I", 2140);
@@ -358,9 +394,11 @@ export function calcDeflection(v: Values) {
 }
 
 export function calcThermal(v: Values) {
+  const bad = guard("thermal", v);
+  if (bad) return bad;
   const L = num(v, "L", 12);
   const dT = num(v, "dT", 40);
-  const alpha = 12e-6;
+  const alpha = MATERIAL.steelAlpha.value;
   const dL = L * 1000 * alpha * dT;
   const joint = dL < 8 ? 10 : ceil(dL + 4);
 
@@ -415,7 +453,7 @@ export const steelTools: ToolDef[] = [
   {
     id: "weight",
     name: "น้ำหนักเหล็กรูปพรรณ",
-    blurb: "แผ่น ท่อ H W ฉาก C",
+    blurb: "แผ่น กลมตัน ท่อ H W รางน้ำ",
     fields: [
       {
         type: "select",
@@ -428,22 +466,22 @@ export const steelTools: ToolDef[] = [
           { value: "pipe", label: "ท่อกลม" },
           { value: "h", label: "H-Beam" },
           { value: "w", label: "W / เสา" },
-          { value: "c", label: "C-Channel" },
+          { value: "c", label: "รางน้ำ (Channel รีดร้อน)" },
         ],
       },
-      { type: "number", key: "len", label: "ยาว", unit: "ม.", default: 6, min: 0.1, step: 0.1 },
-      { type: "number", key: "qty", label: "จำนวน", unit: "เส้น", default: 1, min: 1 },
-      { type: "number", key: "w", label: "กว้างแผ่น", unit: "มม.", default: 1200, min: 10, when: { key: "shape", is: "plate" } },
-      { type: "number", key: "t", label: "หนาแผ่น/ท่อ", unit: "มม.", default: 6, min: 0.5, step: 0.1, when: { key: "shape", is: ["plate", "pipe"] } },
-      { type: "number", key: "d", label: "Ø เหล็กกลม", unit: "มม.", default: 12, min: 6, when: { key: "shape", is: "round" } },
-      { type: "number", key: "od", label: "Ø นอกท่อ", unit: "มม.", default: 48.3, min: 10, step: 0.1, when: { key: "shape", is: "pipe" } },
+      { type: "number", key: "len", label: "ยาว", unit: "ม.", default: 6, min: 0.1, max: 24, step: 0.1 },
+      { type: "number", key: "qty", label: "จำนวน", unit: "เส้น", default: 1, min: 1, max: 10000 },
+      { type: "number", key: "w", label: "กว้างแผ่น", unit: "มม.", default: 1200, min: 10, max: 3000, when: { key: "shape", is: "plate" } },
+      { type: "number", key: "t", label: "หนาแผ่น/ท่อ", unit: "มม.", default: 6, min: 0.5, max: 100, step: 0.1, when: { key: "shape", is: ["plate", "pipe"] } },
+      { type: "number", key: "d", label: "Ø เหล็กกลม", unit: "มม.", default: 12, min: 6, max: 300, when: { key: "shape", is: "round" } },
+      { type: "number", key: "od", label: "Ø นอกท่อ", unit: "มม.", default: 48.3, min: 10, max: 1000, step: 0.1, when: { key: "shape", is: "pipe" } },
       {
         type: "select",
         key: "hsize",
         label: "ขนาด H",
         default: "200x100",
         when: { key: "shape", is: "h" },
-        options: Object.keys(H_BEAM).map((k) => ({ value: k, label: `H ${k}` })),
+        options: Object.keys(STEEL_H_BEAM).map((k) => ({ value: k, label: `H ${k}` })),
       },
       {
         type: "select",
@@ -451,7 +489,7 @@ export const steelTools: ToolDef[] = [
         label: "ขนาด W",
         default: "150x150",
         when: { key: "shape", is: "w" },
-        options: Object.keys(W_BEAM).map((k) => ({ value: k, label: `W ${k}` })),
+        options: Object.keys(STEEL_W_BEAM).map((k) => ({ value: k, label: `W ${k}` })),
       },
       {
         type: "select",
@@ -459,7 +497,7 @@ export const steelTools: ToolDef[] = [
         label: "ขนาด C",
         default: "100",
         when: { key: "shape", is: "c" },
-        options: Object.keys(C_CH).map((k) => ({ value: k, label: `C ${k}` })),
+        options: Object.entries(STEEL_CHANNEL).map(([k, c]) => ({ value: k, label: `C ${c.h}×${c.b}` })),
       },
     ],
     calc: calcSteelWeight,
@@ -480,8 +518,8 @@ export const steelTools: ToolDef[] = [
           { value: "sq", label: "Square" },
         ],
       },
-      { type: "number", key: "z", label: "ขาเชื่อม / ลึก", unit: "มม.", default: 6, min: 3 },
-      { type: "number", key: "len", label: "ยาวแนว", unit: "ม.", default: 4, min: 0.1, step: 0.1 },
+      { type: "number", key: "z", label: "ขาเชื่อม / ลึก", unit: "มม.", default: 6, min: 3, max: 40 },
+      { type: "number", key: "len", label: "ยาวแนว", unit: "ม.", default: 4, min: 0.1, max: 1000, step: 0.1 },
       {
         type: "select",
         key: "process",
@@ -501,8 +539,8 @@ export const steelTools: ToolDef[] = [
     name: "วางแผนตัดเหล็ก",
     blurb: "ลดเศษแบบ Best Fit",
     fields: [
-      { type: "number", key: "stock", label: "ยาววัตถุดิบ", unit: "มม.", default: 6000, min: 500 },
-      { type: "number", key: "kerf", label: "เผื่อตัด (ความหนาใบตัด)", unit: "มม.", default: 3, min: 0, step: 0.5 },
+      { type: "number", key: "stock", label: "ยาววัตถุดิบ", unit: "มม.", default: 6000, min: 500, max: 12000 },
+      { type: "number", key: "kerf", label: "เผื่อตัด (ความหนาใบตัด)", unit: "มม.", default: 3, min: 0, max: 10, step: 0.5 },
       {
         type: "text",
         key: "parts",
@@ -518,9 +556,9 @@ export const steelTools: ToolDef[] = [
     name: "ระยะโก่งคาน",
     blurb: "เทียบ L/360 · L/240",
     fields: [
-      { type: "number", key: "L", label: "ช่วงคาน", unit: "ม.", default: 4, min: 0.5, step: 0.1 },
-      { type: "number", key: "w", label: "โหลดกระจาย", unit: "กก./ม.", default: 400, min: 10 },
-      { type: "number", key: "I", label: "โมเมนต์ความเฉื่อย I", unit: "ซม.⁴", default: 2140, min: 50 },
+      { type: "number", key: "L", label: "ช่วงคาน", unit: "ม.", default: 4, min: 0.5, max: 20, step: 0.1 },
+      { type: "number", key: "w", label: "โหลดกระจาย", unit: "กก./ม.", default: 400, min: 10, max: 20000 },
+      { type: "number", key: "I", label: "โมเมนต์ความเฉื่อย I", unit: "ซม.⁴", default: 2140, min: 10, max: 1000000 },
     ],
     calc: calcDeflection,
   },
@@ -529,8 +567,8 @@ export const steelTools: ToolDef[] = [
     name: "การขยายตัวจากความร้อน",
     blurb: "ΔL = L·α·ΔT",
     fields: [
-      { type: "number", key: "L", label: "ยาวชิ้น", unit: "ม.", default: 12, min: 0.5, step: 0.1 },
-      { type: "number", key: "dT", label: "ต่างอุณหภูมิ", unit: "°C", default: 40, min: 1 },
+      { type: "number", key: "L", label: "ยาวชิ้น", unit: "ม.", default: 12, min: 0.5, max: 500, step: 0.1 },
+      { type: "number", key: "dT", label: "ต่างอุณหภูมิ", unit: "°C", default: 40, min: 1, max: 200 },
     ],
     calc: calcThermal,
   },
@@ -548,20 +586,20 @@ export const steelJob: JobDef = {
       options: [
         { value: "h", label: "H-Beam" },
         { value: "w", label: "W / เสา" },
-        { value: "c", label: "C-Channel" },
+        { value: "c", label: "รางน้ำ (Channel รีดร้อน)" },
         { value: "pipe", label: "ท่อกลม" },
         { value: "plate", label: "แผ่น" },
       ],
     },
-    { type: "number", key: "len", label: "ยาว/เส้น", unit: "ม.", default: 6, min: 0.1, step: 0.1 },
-    { type: "number", key: "qty", label: "จำนวนเส้น", default: 4, min: 1 },
+    { type: "number", key: "len", label: "ยาว/เส้น", unit: "ม.", default: 6, min: 0.1, max: 24, step: 0.1 },
+    { type: "number", key: "qty", label: "จำนวนเส้น", default: 4, min: 1, max: 10000 },
     {
       type: "select",
       key: "hsize",
       label: "ขนาด H",
       default: "200x100",
       when: { key: "shape", is: "h" },
-      options: Object.keys(H_BEAM).map((k) => ({ value: k, label: `H ${k}` })),
+      options: Object.keys(STEEL_H_BEAM).map((k) => ({ value: k, label: `H ${k}` })),
     },
     {
       type: "select",
@@ -569,7 +607,7 @@ export const steelJob: JobDef = {
       label: "ขนาด W",
       default: "150x150",
       when: { key: "shape", is: "w" },
-      options: Object.keys(W_BEAM).map((k) => ({ value: k, label: `W ${k}` })),
+      options: Object.keys(STEEL_W_BEAM).map((k) => ({ value: k, label: `W ${k}` })),
     },
     {
       type: "select",
@@ -577,16 +615,19 @@ export const steelJob: JobDef = {
       label: "ขนาด C",
       default: "100",
       when: { key: "shape", is: "c" },
-      options: Object.keys(C_CH).map((k) => ({ value: k, label: `C ${k}` })),
+      options: Object.entries(STEEL_CHANNEL).map(([k, c]) => ({ value: k, label: `C ${c.h}×${c.b}` })),
     },
-    { type: "number", key: "od", label: "Ø นอกท่อ", unit: "มม.", default: 48.3, step: 0.1, when: { key: "shape", is: "pipe" } },
-    { type: "number", key: "t", label: "หนา", unit: "มม.", default: 3.2, step: 0.1, when: { key: "shape", is: ["pipe", "plate"] } },
-    { type: "number", key: "w", label: "กว้างแผ่น", unit: "มม.", default: 1200, when: { key: "shape", is: "plate" } },
+    { type: "number", key: "od", label: "Ø นอกท่อ", unit: "มม.", default: 48.3, min: 10, max: 1000, step: 0.1, when: { key: "shape", is: "pipe" } },
+    { type: "number", key: "t", label: "หนา", unit: "มม.", default: 3.2, min: 0.5, max: 100, step: 0.1, when: { key: "shape", is: ["pipe", "plate"] } },
+    { type: "number", key: "w", label: "กว้างแผ่น", unit: "มม.", default: 1200, min: 10, max: 3000, when: { key: "shape", is: "plate" } },
     { type: "text", key: "parts", label: "ตัดเป็นชิ้น (มม.)", default: "1500, 1500, 1200, 900" },
-    { type: "number", key: "stock", label: "ยาววัตถุดิบ", unit: "มม.", default: 6000 },
-    { type: "number", key: "kerf", label: "kerf", unit: "มม.", default: 3 },
+    { type: "number", key: "stock", label: "ยาววัตถุดิบ", unit: "มม.", default: 6000, min: 500, max: 12000 },
+    { type: "number", key: "kerf", label: "kerf", unit: "มม.", default: 3, min: 0, max: 10 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(steelJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(steelJob.fields, input);
     const wt = calcSteelWeight(v);
     const cut = calcCut(v);
     return jobFromParts({

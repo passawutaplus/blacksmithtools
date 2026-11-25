@@ -1,6 +1,20 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, round, str } from "../math";
+import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
 import { BRICKS, DISCLAIMER_AB, DISCLAIMER_C, LINTEL, MASONRY, MIX } from "../constants";
+
+const guard = (id: string, v: Values) => guardTool(masonryTools, id, v) ?? wallGuard(v);
+
+/** หักช่องเปิดจนไม่เหลือผนัง = กรอกผิด ต้องบอก ไม่ใช่ตอบ 0 ก้อนเงียบ ๆ */
+function wallGuard(v: Values) {
+  if (v.w === undefined && v.h === undefined) return null;
+  const gross = num(v, "w", 4) * num(v, "h", 3);
+  const open = num(v, "open", 0);
+  if (open < gross) return null;
+  return blockedResult({
+    headline: `หักช่องเปิด ${fmt(open, 2)} ตร.ม. มากกว่าพื้นที่ผนัง ${fmt(gross, 2)} ตร.ม. — ไม่เหลือผนังให้คิด`,
+    tip: "เช็กขนาดผนังและพื้นที่ประตู-หน้าต่างที่หักออกอีกครั้ง",
+  });
+}
 
 function brickOf(v: Values) {
   const kind = str(v, "kind", "clayTis77");
@@ -25,6 +39,8 @@ export function bricksPerM2(faceL: number, faceH: number, joint: number) {
 }
 
 export function calcBrick(v: Values) {
+  const bad = guard("brick", v);
+  if (bad) return bad;
   const net = wallM2(v);
   const b = brickOf(v);
   const joint = jointOf(v, b);
@@ -108,6 +124,8 @@ export function calcBrick(v: Values) {
 }
 
 export function calcMortar(v: Values) {
+  const bad = guard("mortar", v);
+  if (bad) return bad;
   const net = wallM2(v);
   const b = brickOf(v);
   const joint = jointOf(v, b);
@@ -240,6 +258,8 @@ export function calcMortar(v: Values) {
 }
 
 export function calcPlaster(v: Values) {
+  const bad = guard("plaster", v);
+  if (bad) return bad;
   const net = wallM2(v);
   const kind = str(v, "pkind", "normal");
   const sides = Math.max(1, Math.round(num(v, "sides", 1)));
@@ -312,8 +332,16 @@ export function calcPlaster(v: Values) {
 }
 
 export function calcLintel(v: Values) {
+  const bad = guardTool(masonryTools, "lintel", v);
+  if (bad) return bad;
   const n = num(v, "n", 2);
   const width = num(v, "width", 1);
+  if (width > LINTEL.maxSpan.value) {
+    return blockedResult({
+      headline: `ช่องเปิดกว้าง ${fmt(width, 2)} ม. เกิน ${fmt(LINTEL.maxSpan.value)} ม. — ต้องให้วิศวกรออกแบบคานทับหลัง`,
+      tip: "ทับหลัง 10×10 ซม. เหล็ก RB6 ใช้ได้กับช่องเปิดไม่เกิน 2 ม. กว้างกว่านี้ต้องเป็นคานคอนกรีตเสริมเหล็กหรือคานเหล็กที่วิศวกรกำหนดหน้าตัดและเหล็กเสริม เครื่องมือนี้จึงไม่ให้ตัวเลขเหล็ก",
+    });
+  }
   const bearing = MASONRY.lintelBearing.value;
   const len = width + bearing * 2;
   const conc = n * len * 0.1 * 0.1;
@@ -342,7 +370,7 @@ export function calcLintel(v: Values) {
     tip: "ช่องเปิดทุกบานควรมีทับหลัง อย่าให้อิฐรับเอง",
     explain: {
       risk: "C",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary: "ทับหลังต้องยาวกว่าช่องเปิด โดยฝังเข้าผนังทั้งสองข้างเพื่อถ่ายน้ำหนักอิฐด้านบนลงเสา/ผนังข้างช่อง",
       steps: [
         {
@@ -373,15 +401,21 @@ export function calcLintel(v: Values) {
 }
 
 export function calcMix(v: Values) {
+  const bad = guardTool(masonryTools, "mix", v);
+  if (bad) return bad;
   const m3 = num(v, "m3", 0.3);
   const ratio = str(v, "ratio", "124");
   const parts = ratio === "112" ? [1, 1, 2] : ratio === "136" ? [1, 3, 6] : [1, 2, 4];
   const sum = parts[0] + parts[1] + parts[2];
-  const cementM3 = (m3 * parts[0]) / sum;
+  // ปูน ทราย หิน ตวงแบบหลวมรวมกันต้องมากกว่าปริมาตรคอนกรีตที่เทได้ เพราะเนื้อเล็กเข้าไปอุดช่องว่างเนื้อใหญ่
+  const dryFactor = MIX.dryVolume.value;
+  const dryM3 = m3 * dryFactor;
+  const cementM3 = (dryM3 * parts[0]) / sum;
   const cementKg = cementM3 * MASONRY.cementBulkDensity.value;
-  const bags = ceil(cementKg / MASONRY.bag.value);
-  const sand = round(((m3 * parts[1]) / sum) * MIX.sandBulking.value, 2);
-  const rock = round(((m3 * parts[2]) / sum) * MIX.rockVoids.value, 2);
+  const bagsExact = cementKg / MASONRY.bag.value;
+  const bags = ceil(bagsExact);
+  const sand = round((dryM3 * parts[1]) / sum, 2);
+  const rock = round((dryM3 * parts[2]) / sum, 2);
   const water = round(cementKg * (MASONRY.waterPerBag.value / MASONRY.bag.value), 0);
 
   return resultX({
@@ -398,7 +432,7 @@ export function calcMix(v: Values) {
       totalDisplay: parts.join(" : "),
     },
     rows: [
-      { label: "ปูนซีเมนต์", value: `${bags} ถุง`, emphasize: true },
+      { label: "ปูนซีเมนต์", value: `${bags} ถุง (คิดได้ ${fmt(bagsExact, 1)} ถุง)`, emphasize: true },
       { label: "ทราย", value: `${fmt(sand, 2)} ลบ.ม.` },
       { label: "หิน", value: `${fmt(rock, 2)} ลบ.ม.` },
       { label: "น้ำประมาณ", value: `${fmt(water)} ลิตร` },
@@ -406,23 +440,29 @@ export function calcMix(v: Values) {
     tip: "1:2:4 งานบ้านทั่วไป อย่าใส่น้ำจนไหล กำลังอัดจะตกลงเยอะกว่าที่คิด",
     explain: {
       risk: "C",
-      updatedAt: "2026-08-21",
-      summary: "แบ่งปริมาตรงานตามสัดส่วน ปูน:ทราย:หิน แล้วแปลงส่วนของปูนเป็นถุง",
+      updatedAt: "2026-11-25",
+      summary: `ปริมาตรวัสดุแห้ง = ปริมาตรคอนกรีต × ${dryFactor} แล้วแบ่งตามสัดส่วน ปูน:ทราย:หิน และแปลงส่วนของปูนเป็นถุง`,
       steps: [
         {
+          label: "ปริมาตรวัสดุแห้งรวม",
+          expr: `V_แห้ง = ปริมาตรคอนกรีต × ${dryFactor}`,
+          subst: `V_แห้ง = ${fmt(m3, 2)} × ${dryFactor} = ${fmt(dryM3, 3)} ลบ.ม.`,
+          note: "ปูน ทราย หิน ตอนตวงยังหลวมและมีช่องว่าง พอผสมน้ำแล้วยุบลง จึงต้องใช้วัสดุแห้งมากกว่าปริมาตรที่เทได้ราว 1.5 เท่า",
+        },
+        {
           label: "ส่วนของปูนซีเมนต์",
-          expr: "V_ปูน = ปริมาตรงาน × ส่วนปูน ÷ ผลรวมส่วน",
-          subst: `V_ปูน = ${fmt(m3, 2)} × ${parts[0]} ÷ ${sum} = ${fmt(cementM3, 3)} ลบ.ม.`,
+          expr: "V_ปูน = V_แห้ง × ส่วนปูน ÷ ผลรวมส่วน",
+          subst: `V_ปูน = ${fmt(dryM3, 3)} × ${parts[0]} ÷ ${sum} = ${fmt(cementM3, 3)} ลบ.ม.`,
         },
         {
           label: "แปลงเป็นถุง",
           expr: `ถุง = V_ปูน × ${MASONRY.cementBulkDensity.value} ÷ ${MASONRY.bag.value} ปัดขึ้น`,
-          subst: `${fmt(cementKg, 1)} กก. ÷ ${MASONRY.bag.value} = ${bags} ถุง`,
+          subst: `${fmt(cementKg, 1)} กก. ÷ ${MASONRY.bag.value} = ${fmt(bagsExact, 2)} → ${bags} ถุง`,
         },
         {
           label: "ทรายและหิน",
-          expr: "ปริมาตรงาน × ส่วนของตัวเอง ÷ ผลรวมส่วน",
-          subst: `ทราย ${fmt(sand, 2)} ลบ.ม. (×เผื่อช่องว่าง) · หิน ${fmt(rock, 2)} ลบ.ม.`,
+          expr: "V_แห้ง × ส่วนของตัวเอง ÷ ผลรวมส่วน",
+          subst: `ทราย ${fmt(dryM3, 3)} × ${parts[1]} ÷ ${sum} = ${fmt(sand, 2)} ลบ.ม. · หิน ${fmt(dryM3, 3)} × ${parts[2]} ÷ ${sum} = ${fmt(rock, 2)} ลบ.ม.`,
         },
         {
           label: "น้ำที่ใช้ผสม",
@@ -431,10 +471,11 @@ export function calcMix(v: Values) {
           note: "เติมน้ำทีละน้อย ให้ได้ความข้นที่เทได้พอดี",
         },
       ],
-      constants: [MASONRY.cementBulkDensity, MASONRY.waterPerBag, MASONRY.bag],
+      constants: [MIX.dryVolume, MASONRY.cementBulkDensity, MASONRY.waterPerBag, MASONRY.bag],
       assumptions: [
         "ผสมตามสัดส่วนปริมาตรแบบหน้างาน ไม่ใช่การออกแบบส่วนผสมตามกำลังอัดที่ต้องการ",
         "วัสดุแห้งพอสมควร ทรายไม่อุ้มน้ำเกินปกติ",
+        "ทรายและหินเป็นปริมาตรตวงหลวม ยังไม่บวกเผื่อหกหล่น — ทรายชื้นพองตัวได้อีก 15–30% สั่งเผื่อตามสภาพกอง",
       ],
       caveats: [
         "สัดส่วนปริมาตรให้กำลังอัดไม่แน่นอนเท่าการออกแบบส่วนผสมโดยห้องปฏิบัติการ",
@@ -451,9 +492,9 @@ export function calcMix(v: Values) {
 }
 
 const wall = [
-  { type: "number" as const, key: "w", label: "กว้างผนัง", unit: "ม.", default: 4, min: 0.5, step: 0.1 },
-  { type: "number" as const, key: "h", label: "สูงผนัง", unit: "ม.", default: 3, min: 0.5, step: 0.1 },
-  { type: "number" as const, key: "open", label: "หักประตู/หน้าต่าง", unit: "ตร.ม.", default: 0, min: 0, step: 0.1 },
+  { type: "number" as const, key: "w", label: "กว้างผนัง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
+  { type: "number" as const, key: "h", label: "สูงผนัง", unit: "ม.", default: 3, min: 0.5, max: 20, step: 0.1 },
+  { type: "number" as const, key: "open", label: "หักประตู/หน้าต่าง", unit: "ตร.ม.", default: 0, min: 0, max: 2000, step: 0.1 },
 ];
 
 const brickKind = {
@@ -517,10 +558,10 @@ export const masonryTools: ToolDef[] = [
   {
     id: "lintel",
     name: "ทับหลังช่องเปิด",
-    blurb: "RB6 หน้าตัด 10×10 — ยังไม่รวมเสาเอ็น",
+    blurb: "RB6 หน้าตัด 10×10 ช่องเปิดไม่เกิน 2 ม. — ยังไม่รวมเสาเอ็น",
     fields: [
-      { type: "number", key: "n", label: "จำนวนช่องเปิด", unit: "ช่อง", default: 2, min: 0 },
-      { type: "number", key: "width", label: "กว้างช่องเฉลี่ย", unit: "ม.", default: 1, min: 0.4, step: 0.1 },
+      { type: "number", key: "n", label: "จำนวนช่องเปิด", unit: "ช่อง", default: 2, min: 0, max: 100 },
+      { type: "number", key: "width", label: "กว้างช่องเฉลี่ย", unit: "ม.", default: 1, min: 0.4, max: 6, step: 0.1 },
     ],
     calc: calcLintel,
   },
@@ -529,7 +570,7 @@ export const masonryTools: ToolDef[] = [
     name: "สัดส่วนผสม + น้ำ",
     blurb: "ปูน ทราย หิน ตามปริมาตร",
     fields: [
-      { type: "number", key: "m3", label: "คอนกรีตที่ต้องการ", unit: "ลบ.ม.", default: 0.3, min: 0.05, step: 0.05 },
+      { type: "number", key: "m3", label: "คอนกรีตที่ต้องการ", unit: "ลบ.ม.", default: 0.3, min: 0.05, max: 100, step: 0.05 },
       {
         type: "select",
         key: "ratio",
@@ -554,14 +595,17 @@ export const masonryJob: JobDef = {
     brickKind,
     jointField,
     { type: "number", key: "sides", label: "ฉาบกี่ด้าน", unit: "ด้าน", default: 2, min: 1, max: 2 },
-    { type: "number", key: "n", label: "ช่องเปิด (ทับหลัง)", unit: "ช่อง", default: 1, min: 0 },
-    { type: "number", key: "width", label: "กว้างช่องเฉลี่ย", unit: "ม.", default: 1, min: 0.4, step: 0.1 },
+    { type: "number", key: "n", label: "ช่องเปิด (ทับหลัง)", unit: "ช่อง", default: 1, min: 0, max: 100 },
+    { type: "number", key: "width", label: "กว้างช่องเฉลี่ย", unit: "ม.", default: 1, min: 0.4, max: 6, step: 0.1 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(masonryJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(masonryJob.fields, input);
     const brick = calcBrick(v);
     const mortar = calcMortar(v);
     const plaster = calcPlaster({ ...v, pkind: brickOf(v).thinBed ? "thin" : "normal" });
-    const lintel = num(v, "n") > 0 ? calcLintel(v) : null;
+    const lintel = num(v, "n", 1) > 0 ? calcLintel(v) : null;
     const parts = [brick, mortar, plaster, ...(lintel ? [lintel] : [])];
     return jobFromParts({
       title: "งานก่อฉาบผนัง",

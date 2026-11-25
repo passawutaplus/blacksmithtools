@@ -1,25 +1,39 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, round, stepTable, str } from "../math";
+import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, stepTable, str, withDefaults } from "../math";
 import {
   BREAKER_SIZES,
+  CABLE_METHODS,
   CABLE_TABLE_5_20,
   CABLE_TABLE_SOURCE,
   DISCLAIMER_AB,
   DISCLAIMER_C,
+  AC,
   ELEC,
   GROUND_WIRE_TABLE,
   KG_CIRCUITS,
-  KG_CIRCUITS_MIN,
+  KG_CIRCUITS_BANDS,
+  KG_CIRCUITS_MAX,
   KG_SOURCE,
   KT_AIR_PVC,
   KT_SOURCE,
+  PUMP,
   SOLAR,
 } from "../constants";
 
+const guard = (id: string, v: Values) => guardTool(electricalTools, id, v);
+
 type CableColumn = "g1c2" | "g1c3" | "g2c2" | "g2c3";
 
+/** ตัวคูณกลุ่มวงจร — เกิน 9 วงจรใช้ค่าของจุดตารางถัดไป (12/16/20) เกิน 20 วงจรไม่มีค่า คืน null */
+export function groupingFactor(circuits: number): number | null {
+  const exact = KG_CIRCUITS[circuits];
+  if (exact !== undefined) return exact;
+  if (circuits > KG_CIRCUITS_MAX || circuits < 1) return null;
+  return KG_CIRCUITS_BANDS.find(([upTo]) => circuits <= upTo)?.[1] ?? null;
+}
+
 function cableColumn(method: string, phase: string): CableColumn {
-  const group = method === "embed" ? "g1" : "g2";
+  const group = method === "embed" ? CABLE_METHODS.embed.group : CABLE_METHODS.surface.group;
   const conductors = phase === "3" ? "c3" : "c2";
   return `${group}${conductors}` as CableColumn;
 }
@@ -42,6 +56,8 @@ function pickGround(breaker: number): number {
 }
 
 export function calcCable(v: Values) {
+  const bad = guard("cable", v);
+  if (bad) return bad;
   const mode = str(v, "mode", "amp");
   const volts = num(v, "volts", 220);
   const watts = num(v, "watts", 2200);
@@ -59,7 +75,14 @@ export function calcCable(v: Values) {
   const breaker = pickedBreaker.amp;
 
   const kt = stepTable(temp, KT_AIR_PVC, KT_AIR_PVC[KT_AIR_PVC.length - 1][1]);
-  const kg = KG_CIRCUITS[circ] ?? KG_CIRCUITS_MIN;
+  const kgHit = groupingFactor(circ);
+  if (kgHit === null) {
+    return blockedResult({
+      headline: `${fmt(circ)} วงจรในท่อเดียวเกินตารางตัวคูณ (สูงสุด ${KG_CIRCUITS_MAX} วงจร) — แยกท่อ`,
+      tip: "สายอัดแน่นในท่อเดียวระบายความร้อนไม่ได้ แยกเป็นหลายท่อหรือใช้รางเดินสาย แล้วคิดใหม่ตามจำนวนวงจรต่อท่อ",
+    });
+  }
+  const kg = kgHit;
   const needed = breaker / (kt * kg);
 
   const column = cableColumn(method, phase);
@@ -69,7 +92,7 @@ export function calcCable(v: Values) {
   const tableAmp = cable[column];
   const usable = tableAmp * kt * kg;
   const ground = pickGround(breaker);
-  const methodLabel = method === "embed" ? "ท่อฝังผนัง/ฝ้า (กลุ่ม 1)" : "ท่อเดินลอยเกาะผนัง (กลุ่ม 2)";
+  const methodLabel = method === "embed" ? CABLE_METHODS.embed.label : CABLE_METHODS.surface.label;
   const conductorLabel = phase === "3" ? "3 เฟส (ตัวนำ 3 เส้น)" : "1 เฟส (ตัวนำ 2 เส้น)";
 
   const caveats = [
@@ -84,7 +107,7 @@ export function calcCable(v: Values) {
     caveats.unshift(`อุณหภูมิ ${fmt(temp)} °C เกินช่วงตารางตัวคูณ (สูงสุด 60 °C) — ผลลัพธ์ใช้ค่าต่ำสุดของตาราง ให้ปรึกษาวิศวกร`);
   }
   if (circ > 9) {
-    caveats.unshift(`มี ${fmt(circ)} วงจรในท่อเดียวกัน เกินช่วงตาราง — ใช้ตัวคูณต่ำสุด ${KG_CIRCUITS_MIN} และควรแยกท่อ`);
+    caveats.unshift(`มี ${fmt(circ)} วงจรในท่อเดียวกัน — ใช้ตัวคูณ ${kg} ของช่วง 10–20 วงจร (IEC B.52.17) สายจะใหญ่ขึ้นมาก ควรแยกท่อ`);
   }
   if (cable.mm2 >= 50) {
     caveats.unshift("ขนาดนี้เป็นงานเมน/สายป้อน ไม่ใช่วงจรย่อยในบ้าน ต้องมีวิศวกรออกแบบ");
@@ -129,7 +152,7 @@ export function calcCable(v: Values) {
       : "สายทองแดง THW ในท่อ ตามแนวตาราง วสท. — เดินไกลให้เช็กแรงดันตกต่อ",
     explain: {
       risk: "C",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary: "IL → ×1.25 → เลือกเบรกเกอร์ → It = เบรกเกอร์ ÷ (Kt × Kg) → เลือกสายจากตาราง วสท. 5-20",
       steps: [
         {
@@ -173,6 +196,7 @@ export function calcCable(v: Values) {
         "สายทองแดงหุ้มฉนวนพีวีซี ตัวนำ 70 °C ตาม มอก. 11-2553 เดินในท่อ",
         "อุณหภูมิโดยรอบอ้างอิงของตารางคือ 40 °C (ไม่ใช่ 30 °C แบบมาตรฐานเก่า)",
         "1 วงจร 1 เฟส นับตัวนำกระแส 2 เส้น · 3 เฟส นับ 3 เส้น",
+        "ท่อฝังในผนังอิฐ-ปูนหรือคอนกรีต ระบายความร้อนได้ใกล้เคียงท่อเกาะผนัง จึงอยู่กลุ่ม 2 · กลุ่ม 1 ใช้เมื่อท่ออยู่ในฝ้า/ผนังที่มีฉนวนกันความร้อนหุ้ม",
       ],
       caveats: [...caveats, DISCLAIMER_C],
       refs: [
@@ -189,6 +213,8 @@ export function calcCable(v: Values) {
 }
 
 export function calcVdrop(v: Values) {
+  const bad = guard("vdrop", v);
+  if (bad) return bad;
   const il = num(v, "il", 15);
   const len = num(v, "len", 30);
   const mm2 = num(v, "mm2", 2.5);
@@ -202,6 +228,18 @@ export function calcVdrop(v: Values) {
   const totalLimit = ELEC.vdTotalLimit.value;
   const okBranch = pct <= branchLimit;
   const okTotal = pct <= totalLimit;
+  if (pct > ELEC.vdModelMax.value) {
+    // สายเล็ก/ไกลจนแรงดันตกเกินครึ่ง: สูตรเส้นตรงให้ "แรงดันปลายทางติดลบ" ได้ ซึ่งไม่มีจริง — ไม่ตอบตัวเลข
+    return blockedResult({
+      headline: `แรงดันตกเกิน ${ELEC.vdModelMax.value}% — สาย ${fmt(mm2, 1)} ตร.มม. เล็กเกินไปสำหรับระยะ ${fmt(len)} ม. ที่ ${fmt(il, 1)} A`,
+      rows: [
+        { label: "เกณฑ์วงจรย่อย", value: `ไม่เกิน ${branchLimit}%` },
+        { label: "เกณฑ์รวมทั้งระบบ", value: `ไม่เกิน ${totalLimit}%` },
+        { label: "สรุป", value: "ใช้สายนี้ไม่ได้ — ขยายสายหรือย่อระยะแล้วคิดใหม่" },
+      ],
+      tip: "ขยับขนาดสายขึ้นหลายไซซ์ หรือย้ายตู้ไฟให้ใกล้โหลด แล้วคิดใหม่ ถ้าระยะไกลมากให้วิศวกรไฟฟ้าออกแบบ",
+    });
+  }
 
   const chartMax = Math.max(totalLimit + 1, Math.ceil(pct * 1.25));
 
@@ -236,7 +274,7 @@ export function calcVdrop(v: Values) {
       : "ขยับสายขึ้นหนึ่งไซซ์แล้วคิดใหม่ หรือย้ายตู้ไฟให้ใกล้โหลดขึ้น",
     explain: {
       risk: "B",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary:
         phase === "3"
           ? "VD = √3 × L × I × ρ ÷ A  แล้วเทียบเป็น % ของแรงดันระบบ"
@@ -282,24 +320,34 @@ export function calcVdrop(v: Values) {
 }
 
 export function calcSolar(v: Values) {
+  const bad = guard("solar", v);
+  if (bad) return bad;
   const kwh = num(v, "kwh", 400);
   const sun = num(v, "sun", 4.5);
   const panel = num(v, "panel", 450);
   const rate = num(v, "rate", 4.2);
-  const price = num(v, "price", 45000);
+  const pricePerKwp = num(v, "pricePerKwp", SOLAR.pricePerKwp.value);
   const derate = SOLAR.derate.value;
   const needKw = kwh / (sun * 30 * derate);
   const needW = needKw * 1000;
   const n = ceil(needKw / (panel / 1000));
+  const installKw = (n * panel) / 1000;
   const area = n * SOLAR.panelArea.value;
-  const monthSave = Math.min(kwh, n * (panel / 1000) * sun * 30 * derate) * rate;
-  const payback = monthSave > 0 ? price / monthSave : 0;
+  const price = installKw * pricePerKwp;
+  const monthSave = Math.min(kwh, installKw * sun * 30 * derate) * rate;
+  // เซฟเป็น 0 (ค่าไฟ 0 บาท) = ไม่มีวันคืนทุน ห้ามตอบ "0 เดือน"
+  const paybackMonths = monthSave > 0 ? price / monthSave : null;
+  const paybackText =
+    paybackMonths === null ? "ไม่คืนทุนในเงื่อนไขนี้" : `${fmt(paybackMonths / 12, 1)} ปี (${fmt(ceil(paybackMonths))} เดือน)`;
   const chosenW = n * panel;
   const ladder = [n - 2, n - 1, n, n + 1, n + 2].filter((x) => x > 0).map((x) => x * panel);
 
   return resultX({
     title: "คืนทุนโซลาร์",
-    headline: `ประมาณ ${n} แผง · คืนทุน ${fmt(payback, 1)} เดือน`,
+    headline:
+      paybackMonths === null
+        ? `ประมาณ ${fmt(n)} แผง · ไม่คืนทุนในเงื่อนไขนี้`
+        : `ประมาณ ${fmt(n)} แผง · คืนทุนราว ${fmt(paybackMonths / 12, 1)} ปี`,
     chart:
       ladder.length > 1
         ? {
@@ -316,16 +364,18 @@ export function calcSolar(v: Values) {
         : undefined,
     rows: [
       { label: "กำลังที่ต้องใช้", value: `${fmt(needKw, 2)} kWp` },
-      { label: "จำนวนแผง", value: `${n} แผง × ${fmt(panel)} W`, emphasize: true },
+      { label: "จำนวนแผง", value: `${fmt(n)} แผง × ${fmt(panel)} W = ${fmt(installKw, 2)} kWp`, emphasize: true },
       { label: "พื้นที่หลังคา", value: `${fmt(area, 1)} ตร.ม.` },
+      { label: "ราคาชุดโดยประมาณ", value: `${fmt(price)} บาท (${fmt(pricePerKwp)} บาท/kWp)` },
       { label: "เซฟค่าไฟ/เดือน", value: `${fmt(ceil(monthSave))} บาท` },
-      { label: "คืนทุนคร่าว", value: `${fmt(payback, 1)} เดือน` },
+      { label: "คืนทุนคร่าว", value: paybackText, emphasize: true },
     ],
-    tip: "คิด on-grid คร่าว ๆ ไม่รวมมิเตอร์เน็ตมิเตอร์และเงื่อนไขการไฟฟ้า ใช้คุยลูกค้าเบื้องต้น",
+    tip: "ราคาต่อ kWp เป็นค่าประมาณตลาด แก้เป็นราคาจากใบเสนอราคาจริงได้ · คิดว่าไฟที่ผลิตถูกใช้เองทั้งหมด บ้านที่กลางวันไม่มีคนอยู่จะคืนทุนช้ากว่านี้",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
-      summary: "กำลังแผงที่ต้องติด = ค่าไฟที่อยากประหยัด ÷ (ชั่วโมงแดดเทียบเท่า × วัน × ประสิทธิภาพระบบ) แล้วแปลงเป็นจำนวนแผง",
+      updatedAt: "2026-11-25",
+      summary:
+        "กำลังแผงที่ต้องติด = หน่วยไฟต่อเดือน ÷ (ชั่วโมงแดดเทียบเท่า × 30 × ประสิทธิภาพระบบ) → จำนวนแผง → ราคาชุด = kWp ที่ติด × ราคาต่อ kWp → คืนทุน = ราคาชุด ÷ ค่าไฟที่เซฟต่อเดือน",
       steps: [
         {
           label: "กำลังติดตั้งที่ต้องการ",
@@ -336,26 +386,43 @@ export function calcSolar(v: Values) {
         {
           label: "จำนวนแผง",
           expr: "n = kWp ÷ (กำลังแผง ÷ 1000) ปัดขึ้น",
-          subst: `${fmt(needKw, 2)} ÷ ${fmt(panel / 1000, 2)} = ${n} แผง`,
+          subst: `${fmt(needKw, 2)} ÷ ${fmt(panel / 1000, 2)} = ${fmt(n)} แผง (ติดจริง ${fmt(installKw, 2)} kWp)`,
+        },
+        {
+          label: "ราคาชุดโดยประมาณ",
+          expr: "ราคา = kWp ที่ติดจริง × ราคาต่อ kWp",
+          subst: `${fmt(installKw, 2)} × ${fmt(pricePerKwp)} = ${fmt(price)} บาท`,
+          note: "ราคาต่อ kWp เป็นสมมติฐานที่แก้ได้ ไม่ใช่ราคากลาง",
         },
         {
           label: "ค่าไฟที่ประหยัดได้และระยะคืนทุน",
-          expr: "เซฟ/เดือน = ผลิตไฟ × ค่าไฟ/หน่วย · คืนทุน = ราคาชุด ÷ เซฟ/เดือน",
-          subst: `เซฟ ${fmt(ceil(monthSave))} บาท/เดือน → คืนทุน ${fmt(payback, 1)} เดือน`,
+          expr: "เซฟ/เดือน = min(ไฟที่ใช้, ไฟที่ผลิต) × ค่าไฟ/หน่วย · คืนทุน = ราคาชุด ÷ เซฟ/เดือน",
+          subst:
+            paybackMonths === null
+              ? `เซฟ ${fmt(ceil(monthSave))} บาท/เดือน → ไม่คืนทุน`
+              : `${fmt(price)} ÷ ${fmt(ceil(monthSave))} = ${fmt(ceil(paybackMonths))} เดือน ≈ ${fmt(paybackMonths / 12, 1)} ปี`,
         },
       ],
-      assumptions: ["ระบบ on-grid ผลิตไฟใช้เองเป็นหลัก ไม่ได้คิดการขายไฟคืนหรือมิเตอร์สุทธิ", "ทิศทางและมุมติดตั้งแผงเหมาะสม ไม่มีเงาบังช่วงกลางวัน"],
+      constants: [SOLAR.derate, SOLAR.panelArea, SOLAR.pricePerKwp],
+      assumptions: [
+        "ระบบ on-grid ผลิตไฟใช้เองทั้งหมดในเวลากลางวัน ไม่ได้คิดการขายไฟคืนหรือมิเตอร์สุทธิ",
+        `ราคาติดตั้ง ${fmt(pricePerKwp)} บาท/kWp (ค่าตั้งต้น ${fmt(SOLAR.pricePerKwp.value)} = กลางช่วงตลาด ${SOLAR.pricePerKwp.range} บาท/kWp ปี 2568–2569)`,
+        "ทิศทางและมุมติดตั้งแผงเหมาะสม ไม่มีเงาบังช่วงกลางวัน ไม่คิดค่าล้างแผง ค่าเสื่อมแผง และการขึ้นค่าไฟ",
+      ],
       caveats: [
+        "บ้านที่กลางวันใช้ไฟน้อยจะใช้ไฟโซลาร์เองได้แค่บางส่วน ระยะคืนทุนจริงยาวกว่าตัวเลขนี้",
         "ชั่วโมงแดดเทียบเท่า (peak sun hours) แต่ละพื้นที่และฤดูต่างกัน ค่าไฟจริงที่ประหยัดได้อาจสูง/ต่ำกว่านี้",
         "ยังไม่รวมค่าใช้จ่ายขออนุญาตเชื่อมต่อกับการไฟฟ้า (PEA/MEA) และเงื่อนไขมิเตอร์ที่เปลี่ยนได้ตามนโยบาย",
         DISCLAIMER_AB,
       ],
-      refs: [{ label: "แนวปฏิบัติงานประเมินระบบโซลาร์เซลล์ on-grid บ้านพักอาศัย" }],
+      refs: [{ label: "แนวปฏิบัติงานประเมินระบบโซลาร์เซลล์ on-grid บ้านพักอาศัย" }, { label: SOLAR.pricePerKwp.source }],
     },
   });
 }
 
 export function calcString(v: Values) {
+  const bad = guard("string", v);
+  if (bad) return bad;
   const voc = num(v, "voc", 49.5);
   const vmp = num(v, "vmp", 41.5);
   const n = num(v, "n", 10);
@@ -422,6 +489,8 @@ export function calcString(v: Values) {
 }
 
 export function calcBattery(v: Values) {
+  const bad = guard("battery", v);
+  if (bad) return bad;
   const wh = num(v, "wh", 2000);
   const days = num(v, "days", 1);
   const dod = num(v, "dod", 80) / 100;
@@ -449,7 +518,7 @@ export function calcBattery(v: Values) {
       { label: "ความจุ", value: `${fmt(ceil(ah))} Ah @ ${fmt(volt)} V` },
       { label: "DoD ที่ใช้คิด", value: `${fmt(dod * 100)}%` },
     ],
-    tip: "ลิเธียม DoD 80% ได้ ตะกั่วกรดอย่าลากเกิน 50% ถ้าใส่ 50 ในช่อง DoD",
+    tip: "ลิเธียมใช้ DoD 80% ได้ ถ้าเป็นแบตตะกั่วกรดให้ใส่ 50 ในช่อง DoD เพราะลากลึกกว่านั้นแบตเสื่อมเร็ว",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -483,17 +552,21 @@ export function calcBattery(v: Values) {
 }
 
 export function calcElecUnit(v: Values) {
+  const bad = guard("unit", v);
+  if (bad) return bad;
   const from = str(v, "from", "w");
   const x = num(v, "x", 1000);
   const volts = num(v, "volts", 220);
   const pf = num(v, "pf", 1);
   let w = x;
   if (from === "a") w = x * volts * pf;
-  if (from === "hp") w = x * 746;
-  if (from === "btu") w = x / 3.412;
+  const wPerHp = PUMP.hpPerKw.value * 1000;
+  const btuPerW = AC.wattToBtu.value;
+  if (from === "hp") w = x * wPerHp;
+  if (from === "btu") w = x / btuPerW;
   const amp = w / (volts * Math.max(pf, 0.1));
-  const hp = w / 746;
-  const btu = w * 3.412;
+  const hp = w / wPerHp;
+  const btu = w * btuPerW;
   const designAmp = amp * ELEC.continuousFactor.value;
   const chosenIdx = BREAKER_SIZES.findIndex((b) => b >= designAmp);
   const chosenBreaker = chosenIdx < 0 ? undefined : BREAKER_SIZES[chosenIdx];
@@ -561,9 +634,9 @@ export const electricalTools: ToolDef[] = [
           { value: "watt", label: "วัตต์" },
         ],
       },
-      { type: "number", key: "il", label: "กระแสโหลด", unit: "A", default: 15, min: 0.1, step: 0.1, when: { key: "mode", is: "amp" } },
-      { type: "number", key: "watts", label: "กำลัง (ถ้าคิดจากวัตต์)", unit: "W", default: 2200, min: 0, when: { key: "mode", is: "watt" } },
-      { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220, min: 100 },
+      { type: "number", key: "il", label: "กระแสโหลด", unit: "A", default: 15, min: 0.1, max: 400, step: 0.1, when: { key: "mode", is: "amp" } },
+      { type: "number", key: "watts", label: "กำลัง (ถ้าคิดจากวัตต์)", unit: "W", default: 2200, min: 1, max: 200000, when: { key: "mode", is: "watt" } },
+      { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220, min: 100, max: 1000 },
       {
         type: "select",
         key: "phase",
@@ -581,12 +654,12 @@ export const electricalTools: ToolDef[] = [
         label: "วิธีเดินสาย",
         default: "surface",
         options: [
-          { value: "surface", label: "ร้อยท่อเดินลอยเกาะผนัง/เพดาน" },
-          { value: "embed", label: "ร้อยท่อฝังในผนัง/ในฝ้า" },
+          { value: "surface", label: CABLE_METHODS.surface.label },
+          { value: "embed", label: CABLE_METHODS.embed.label },
         ],
       },
-      { type: "number", key: "temp", label: "อุณหภูมิรอบ", unit: "°C", default: 40, min: 15 },
-      { type: "number", key: "circ", label: "จำนวนวงจรในท่อเดียวกัน", unit: "วงจร", default: 1, min: 1 },
+      { type: "number", key: "temp", label: "อุณหภูมิรอบ", unit: "°C", default: 40, min: 15, max: 60 },
+      { type: "number", key: "circ", label: "จำนวนวงจรในท่อเดียวกัน", unit: "วงจร", default: 1, min: 1, max: 20 },
     ],
     calc: calcCable,
   },
@@ -595,10 +668,10 @@ export const electricalTools: ToolDef[] = [
     name: "แรงดันตก",
     blurb: "เช็กไม่เกิน 5% ตอนเดินไกล",
     fields: [
-      { type: "number", key: "il", label: "กระแส", unit: "A", default: 15, min: 0.1, step: 0.1 },
-      { type: "number", key: "len", label: "ระยะสาย", unit: "ม.", default: 30, min: 1 },
-      { type: "number", key: "mm2", label: "ขนาดสาย", unit: "ตร.มม.", default: 2.5, min: 1, step: 0.5 },
-      { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220 },
+      { type: "number", key: "il", label: "กระแส", unit: "A", default: 15, min: 0.1, max: 400, step: 0.1 },
+      { type: "number", key: "len", label: "ระยะสาย", unit: "ม.", default: 30, min: 1, max: 1000 },
+      { type: "number", key: "mm2", label: "ขนาดสาย", unit: "ตร.มม.", default: 2.5, min: 1, max: 400, step: 0.5 },
+      { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220, min: 12, max: 1000 },
       {
         type: "select",
         key: "phase",
@@ -617,11 +690,20 @@ export const electricalTools: ToolDef[] = [
     name: "คืนทุนโซลาร์",
     blurb: "จำนวนแผง พื้นที่หลังคา คืนทุนคร่าว",
     fields: [
-      { type: "number", key: "kwh", label: "ใช้ไฟ/เดือน", unit: "หน่วย", default: 400, min: 50 },
-      { type: "number", key: "sun", label: "ชั่วโมงแดด", unit: "ชม.", default: 4.5, min: 3, step: 0.1 },
-      { type: "number", key: "panel", label: "แผง", unit: "W", default: 450, min: 300 },
-      { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: 4.2, step: 0.1 },
-      { type: "number", key: "price", label: "ราคาชุดโดยประมาณ", unit: "บาท", default: 45000, min: 0 },
+      { type: "number", key: "kwh", label: "ใช้ไฟ/เดือน", unit: "หน่วย", default: 400, min: 50, max: 10000 },
+      { type: "number", key: "sun", label: "ชั่วโมงแดด", unit: "ชม.", default: 4.5, min: 2.5, max: 7, step: 0.1 },
+      { type: "number", key: "panel", label: "แผง", unit: "W", default: 450, min: 300, max: 800 },
+      { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: 4.2, min: 1, max: 20, step: 0.1 },
+      {
+        type: "number",
+        key: "pricePerKwp",
+        label: "ราคาติดตั้งต่อ kWp (ค่าประมาณ แก้ได้)",
+        unit: "บาท/kWp",
+        default: SOLAR.pricePerKwp.value,
+        min: 10000,
+        max: 100000,
+        step: 500,
+      },
     ],
     calc: calcSolar,
   },
@@ -630,11 +712,11 @@ export const electricalTools: ToolDef[] = [
     name: "จัดสตริงโซลาร์",
     blurb: "ให้เข้าอินเวอร์เตอร์",
     fields: [
-      { type: "number", key: "voc", label: "Voc แผง", unit: "V", default: 49.5, step: 0.1 },
-      { type: "number", key: "vmp", label: "Vmp แผง", unit: "V", default: 41.5, step: 0.1 },
-      { type: "number", key: "n", label: "แผงต่อสตริง", unit: "แผง", default: 10, min: 1 },
-      { type: "number", key: "vmin", label: "แรงดัน MPPT ต่ำสุด", unit: "V", default: 200 },
-      { type: "number", key: "vmax", label: "แรงดันสูงสุดเครื่อง", unit: "V", default: 500 },
+      { type: "number", key: "voc", label: "Voc แผง", unit: "V", default: 49.5, min: 5, max: 100, step: 0.1 },
+      { type: "number", key: "vmp", label: "Vmp แผง", unit: "V", default: 41.5, min: 5, max: 100, step: 0.1 },
+      { type: "number", key: "n", label: "แผงต่อสตริง", unit: "แผง", default: 10, min: 1, max: 40 },
+      { type: "number", key: "vmin", label: "แรงดัน MPPT ต่ำสุด", unit: "V", default: 200, min: 50, max: 1000 },
+      { type: "number", key: "vmax", label: "แรงดันสูงสุดเครื่อง", unit: "V", default: 500, min: 100, max: 1500 },
     ],
     calc: calcString,
   },
@@ -643,11 +725,11 @@ export const electricalTools: ToolDef[] = [
     name: "ขนาดแบตเตอรี่",
     blurb: "Off-grid / hybrid คร่าว ๆ",
     fields: [
-      { type: "number", key: "wh", label: "ใช้ไฟ/วัน", unit: "Wh", default: 2000, min: 100 },
-      { type: "number", key: "days", label: "สำรอง", unit: "วัน", default: 1, min: 0.5, step: 0.5 },
-      { type: "number", key: "dod", label: "ความลึกการคายประจุ (DoD)", unit: "%", default: 80, min: 30 },
-      { type: "number", key: "eff", label: "ประสิทธิภาพ", unit: "%", default: 90, min: 70 },
-      { type: "number", key: "volt", label: "แรงดันชุด", unit: "V", default: 24 },
+      { type: "number", key: "wh", label: "ใช้ไฟ/วัน", unit: "Wh", default: 2000, min: 100, max: 200000 },
+      { type: "number", key: "days", label: "สำรอง", unit: "วัน", default: 1, min: 0.5, max: 7, step: 0.5 },
+      { type: "number", key: "dod", label: "ความลึกการคายประจุ (DoD)", unit: "%", default: 80, min: 30, max: 100 },
+      { type: "number", key: "eff", label: "ประสิทธิภาพ", unit: "%", default: 90, min: 70, max: 100 },
+      { type: "number", key: "volt", label: "แรงดันชุด", unit: "V", default: 24, min: 6, max: 1000 },
     ],
     calc: calcBattery,
   },
@@ -668,8 +750,8 @@ export const electricalTools: ToolDef[] = [
           { value: "btu", label: "BTU/ชม." },
         ],
       },
-      { type: "number", key: "x", label: "ตัวเลข", default: 1000, min: 0, step: 0.1 },
-      { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220 },
+      { type: "number", key: "x", label: "ตัวเลข", default: 1000, min: 0, max: 1000000, step: 0.1 },
+      { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220, min: 12, max: 1000 },
       { type: "number", key: "pf", label: "เพาเวอร์แฟกเตอร์ (PF)", default: 1, min: 0.1, max: 1, step: 0.05 },
     ],
     calc: calcElecUnit,
@@ -680,19 +762,19 @@ export const electricalJob: JobDef = {
   name: "คิดทั้งงานไฟบ้าน",
   blurb: "โหลดครั้งเดียว ได้สาย เบรกเกอร์ และแรงดันตก",
   fields: [
-    { type: "number", key: "il", label: "กระแสโหลด", unit: "A", default: 15, min: 0.1, step: 0.1 },
-    { type: "number", key: "temp", label: "อุณหภูมิรอบ", unit: "°C", default: 40, min: 15 },
-    { type: "number", key: "circ", label: "วงจรในท่อ", unit: "วงจร", default: 1, min: 1 },
-    { type: "number", key: "len", label: "ระยะเดินสาย", unit: "ม.", default: 25, min: 1 },
-    { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220 },
+    { type: "number", key: "il", label: "กระแสโหลด", unit: "A", default: 15, min: 0.1, max: 400, step: 0.1 },
+    { type: "number", key: "temp", label: "อุณหภูมิรอบ", unit: "°C", default: 40, min: 15, max: 60 },
+    { type: "number", key: "circ", label: "วงจรในท่อ", unit: "วงจร", default: 1, min: 1, max: 20 },
+    { type: "number", key: "len", label: "ระยะเดินสาย", unit: "ม.", default: 25, min: 1, max: 1000 },
+    { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220, min: 100, max: 1000 },
     {
       type: "select",
       key: "method",
       label: "วิธีเดินสาย",
       default: "surface",
       options: [
-        { value: "surface", label: "ท่อเดินลอยเกาะผนัง" },
-        { value: "embed", label: "ท่อฝังผนัง/ฝ้า" },
+        { value: "surface", label: CABLE_METHODS.surface.label },
+        { value: "embed", label: CABLE_METHODS.embed.label },
       ],
     },
     {
@@ -706,20 +788,20 @@ export const electricalJob: JobDef = {
       ],
     },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(electricalJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(electricalJob.fields, input);
     const cable = calcCable(v);
     const mm2 = Number(String(cable.rows.find((r) => r.label === "ขนาดสายแนะนำ")?.value).replace(/[^\d.]/g, "")) || 2.5;
     const drop = calcVdrop({ ...v, mm2: Number.isFinite(mm2) && mm2 > 0 ? mm2 : 2.5 });
-    return {
-      ...jobFromParts({
-        title: "งานไฟบ้าน",
-        headline: cable.headline ?? "งานไฟบ้าน",
-        rows: [...cable.rows, ...drop.rows.filter((r) => r.emphasize || r.label === "สรุป")],
-        tip: "งานเมนเข้าบ้าน สามเฟสโรงงาน หรืองานที่ต้องขออนุญาต ให้วิศวกรไฟฟ้าเซ็นก่อน",
-        parts: [cable, drop],
-        chart: cable.chart,
-      }),
-      invalid: cable.invalid,
-    };
+    return jobFromParts({
+      title: "งานไฟบ้าน",
+      headline: cable.headline ?? "งานไฟบ้าน",
+      rows: [...cable.rows, ...drop.rows.filter((r) => r.emphasize || r.label === "สรุป")],
+      tip: "งานเมนเข้าบ้าน สามเฟสโรงงาน หรืองานที่ต้องขออนุญาต ให้วิศวกรไฟฟ้าเซ็นก่อน",
+      parts: [cable, drop],
+      chart: cable.chart,
+    });
   },
 };

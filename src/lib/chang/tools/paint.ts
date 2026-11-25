@@ -1,5 +1,5 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, str } from "../math";
+import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, str, withDefaults } from "../math";
 import { DISCLAIMER_AB, UNIT } from "../constants";
 
 function wallBreakdown(v: Values) {
@@ -15,11 +15,32 @@ function wallBreakdown(v: Values) {
   return { gross, openings, factor, net };
 }
 
+/** พื้นที่ที่ใช้คิดวัสดุ: ถ้าส่ง `area` (ตร.ม.) มาตรง ๆ และเป็นค่าบวกให้ใช้ค่านั้น ไม่งั้นคิดจากขนาดห้อง */
 function wallNet(v: Values) {
-  return wallBreakdown(v).net;
+  const given = num(v, "area", 0);
+  return given > 0 ? given : wallBreakdown(v).net;
+}
+
+/** ด่านตรวจของสายงานสี: ช่องกรอกอยู่ในช่วง และหักช่องเปิดแล้วต้องเหลือผนังให้ทา */
+function guard(id: string, v: Values) {
+  const bad = guardTool(paintTools, id, v);
+  if (bad) return bad;
+  if (num(v, "area", 0) > 0) return null;
+  const { gross, openings } = wallBreakdown(v);
+  if (openings < gross) return null;
+  return blockedResult({
+    headline: `ประตู-หน้าต่างรวม ${fmt(openings, 1)} ตร.ม. มากกว่าผนังทั้งห้อง (${fmt(gross, 1)} ตร.ม.) — ตรวจจำนวนบานกับขนาดห้อง`,
+    rows: [
+      { label: "พื้นที่รอบห้อง", value: `${fmt(gross, 2)} ตร.ม.` },
+      { label: "ช่องเปิดที่หัก", value: `${fmt(openings, 2)} ตร.ม. (ประตู 1.8 · หน้าต่าง 1.2 ตร.ม./บาน)` },
+    ],
+    tip: "ลดจำนวนประตู-หน้าต่าง หรือตรวจขนาดห้องอีกครั้ง",
+  });
 }
 
 export function calcWallArea(v: Values) {
+  const bad = guard("area", v);
+  if (bad) return bad;
   const { gross, openings, factor, net } = wallBreakdown(v);
   const netBeforeFactor = Math.max(0, gross - openings);
 
@@ -70,7 +91,9 @@ export function calcWallArea(v: Values) {
 }
 
 export function calcPaintQty(v: Values) {
-  const net = num(v, "area", 0) || wallNet(v);
+  const bad = guard("qty", v);
+  if (bad) return bad;
+  const net = wallNet(v);
   const covP = Math.max(num(v, "covP", 30), 1);
   const coatsP = num(v, "coatsP", 1);
   const covT = Math.max(num(v, "covT", 32), 1);
@@ -78,9 +101,12 @@ export function calcPaintQty(v: Values) {
   const primerGal = (net * coatsP) / covP;
   const topGal = (net * coatsT) / covT;
   const pack = (gals: number) => {
-    const pails = Math.floor(gals / UNIT.paintPail.value);
-    const rest = ceil(gals - pails * UNIT.paintPail.value);
-    return pails > 0 ? `${pails} ถังใหญ่ + ${rest} แกลลอน` : rest > 0 ? `${rest} แกลลอน` : "0 แกลลอน";
+    // ปัดขึ้นเป็นแกลลอนเต็มก่อน แล้วค่อยจัดเป็นถังใหญ่ — กัน "1 ถังใหญ่ + 0 แกลลอน" และ "+ 5 แกลลอน" (ซึ่งคือถังใหญ่อีกใบ)
+    const total = ceil(gals);
+    const pails = Math.floor(total / UNIT.paintPail.value);
+    const rest = total - pails * UNIT.paintPail.value;
+    if (pails === 0) return `${rest} แกลลอน`;
+    return rest > 0 ? `${pails} ถังใหญ่ + ${rest} แกลลอน` : `${pails} ถังใหญ่`;
   };
   return resultX({
     title: "ปริมาณสี",
@@ -114,7 +140,7 @@ export function calcPaintQty(v: Values) {
     tip: "1 แกลลอน = 3.785 ลิตร · 1 ถังใหญ่ = 5 แกลลอน สั่ง Lot เดียวกันสีไม่เพี้ยน",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary: "ปริมาณสี = พื้นที่ทาสี × จำนวนเที่ยว ÷ ความครอบคลุมต่อแกลลอน",
       steps: [
         {
@@ -158,7 +184,9 @@ export function calcPaintQty(v: Values) {
 }
 
 export function calcSkim(v: Values) {
-  const net = num(v, "area", 0) || wallNet(v);
+  const bad = guard("skim", v);
+  if (bad) return bad;
+  const net = wallNet(v);
   const rate = 1.8;
   const coats = 2;
   const bagSize = 20;
@@ -208,7 +236,9 @@ export function calcSkim(v: Values) {
 }
 
 export function calcWallpaper(v: Values) {
-  const net = num(v, "area", 0) || wallNet(v);
+  const bad = guard("wallpaper", v);
+  if (bad) return bad;
+  const net = wallNet(v);
   const roll = num(v, "roll", 5.3);
   const waste = num(v, "waste", 15) / 100;
   const need = net * (1 + waste);
@@ -258,7 +288,9 @@ export function calcWallpaper(v: Values) {
 }
 
 export function calcConsumables(v: Values) {
-  const net = num(v, "area", 0) || wallNet(v);
+  const bad = guard("consumables", v);
+  if (bad) return bad;
+  const net = wallNet(v);
   const tape = ceil(net / 20);
   const roller = Math.max(1, ceil(net / 40));
   const brush = 2;
@@ -308,11 +340,11 @@ export function calcConsumables(v: Values) {
 }
 
 const room = [
-  { type: "number" as const, key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 1, step: 0.1 },
-  { type: "number" as const, key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 1, step: 0.1 },
-  { type: "number" as const, key: "h", label: "สูงห้อง", unit: "ม.", default: 2.6, min: 2, step: 0.1 },
-  { type: "number" as const, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0 },
-  { type: "number" as const, key: "windows", label: "หน้าต่าง", unit: "บาน", default: 1, min: 0 },
+  { type: "number" as const, key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 1, max: 100, step: 0.1 },
+  { type: "number" as const, key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 1, max: 100, step: 0.1 },
+  { type: "number" as const, key: "h", label: "สูงห้อง", unit: "ม.", default: 2.6, min: 2, max: 15, step: 0.1 },
+  { type: "number" as const, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+  { type: "number" as const, key: "windows", label: "หน้าต่าง", unit: "บาน", default: 1, min: 0, max: 20 },
   {
     type: "select" as const,
     key: "surf",
@@ -334,10 +366,10 @@ export const paintTools: ToolDef[] = [
     blurb: "รองพื้น + ทับหน้า เป็นแกลลอน",
     fields: [
       ...room,
-      { type: "number", key: "covP", label: "รองพื้นครอบคลุม", unit: "ตร.ม./แกลลอน", default: 30, min: 10 },
-      { type: "number", key: "coatsP", label: "เที่ยวรองพื้น", unit: "เที่ยว", default: 1, min: 0 },
-      { type: "number", key: "covT", label: "ทับหน้าครอบคลุม", unit: "ตร.ม./แกลลอน", default: 32, min: 10 },
-      { type: "number", key: "coatsT", label: "เที่ยวทับหน้า", unit: "เที่ยว", default: 2, min: 1 },
+      { type: "number", key: "covP", label: "รองพื้นครอบคลุม", unit: "ตร.ม./แกลลอน", default: 30, min: 10, max: 60 },
+      { type: "number", key: "coatsP", label: "เที่ยวรองพื้น", unit: "เที่ยว", default: 1, min: 0, max: 3 },
+      { type: "number", key: "covT", label: "ทับหน้าครอบคลุม", unit: "ตร.ม./แกลลอน", default: 32, min: 10, max: 60 },
+      { type: "number", key: "coatsT", label: "เที่ยวทับหน้า", unit: "เที่ยว", default: 2, min: 1, max: 5 },
     ],
     calc: calcPaintQty,
   },
@@ -348,8 +380,8 @@ export const paintTools: ToolDef[] = [
     blurb: "จำนวนม้วน + เผื่อลาย",
     fields: [
       ...room,
-      { type: "number", key: "roll", label: "พื้นที่/ม้วน", unit: "ตร.ม.", default: 5.3, min: 2, step: 0.1 },
-      { type: "number", key: "waste", label: "เผื่อต่อลาย", unit: "%", default: 15, min: 5 },
+      { type: "number", key: "roll", label: "พื้นที่/ม้วน", unit: "ตร.ม.", default: 5.3, min: 2, max: 30, step: 0.1 },
+      { type: "number", key: "waste", label: "เผื่อต่อลาย", unit: "%", default: 15, min: 5, max: 40 },
     ],
     calc: calcWallpaper,
   },
@@ -361,12 +393,15 @@ export const paintJob: JobDef = {
   blurb: "ห้องครั้งเดียว ได้สี ฉาบบาง ของสิ้นเปลือง",
   fields: [
     ...room,
-    { type: "number", key: "covP", label: "รองพื้น ตร.ม./แกลลอน", default: 30, min: 10 },
-    { type: "number", key: "coatsP", label: "เที่ยวรองพื้น", default: 1, min: 0 },
-    { type: "number", key: "covT", label: "ทับหน้า ตร.ม./แกลลอน", default: 32, min: 10 },
-    { type: "number", key: "coatsT", label: "เที่ยวทับหน้า", default: 2, min: 1 },
+    { type: "number", key: "covP", label: "รองพื้น ตร.ม./แกลลอน", default: 30, min: 10, max: 60 },
+    { type: "number", key: "coatsP", label: "เที่ยวรองพื้น", default: 1, min: 0, max: 3 },
+    { type: "number", key: "covT", label: "ทับหน้า ตร.ม./แกลลอน", default: 32, min: 10, max: 60 },
+    { type: "number", key: "coatsT", label: "เที่ยวทับหน้า", default: 2, min: 1, max: 5 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(paintJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(paintJob.fields, input);
     const area = calcWallArea(v);
     const paint = calcPaintQty(v);
     const skim = calcSkim(v);

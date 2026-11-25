@@ -1,6 +1,8 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { fmt, invalidResult, num, resultX, str } from "../math";
+import { fmt, guardTool, invalidResult, num, resultX, str } from "../math";
 import { UNIT } from "../constants";
+
+const guard = (id: string, v: Values) => guardTool(generalTools, id, v);
 
 const LENGTH: Record<string, number> = {
   mm: 1,
@@ -19,6 +21,8 @@ export function convertLength(value: number, from: string, to: string): number {
 }
 
 export function calcLen(v: Values) {
+  const bad = guard("unit-length", v);
+  if (bad) return bad;
   const x = num(v, "x", 1);
   const from = str(v, "from", "m");
   const to = str(v, "to", "ft");
@@ -64,12 +68,25 @@ function labelLen(k: string) {
 }
 
 export function calcAreaVol(v: Values) {
+  const bad = guard("unit-area-vol", v);
+  if (bad) return bad;
   const x = num(v, "x", 1);
   const kind = str(v, "kind", "area");
   const from = kind === "vol" ? str(v, "fromVol", "m3") : str(v, "fromArea", "m2");
   const to = kind === "vol" ? str(v, "toVol", "L") : str(v, "toArea", "ft2");
-  const area: Record<string, number> = { m2: 1, cm2: 0.0001, ft2: 0.092903, wa: 4 };
-  const vol: Record<string, number> = { m3: 1, L: 0.001, gal: 0.003785, ft3: 0.0283168 };
+  const ft = UNIT.foot.value;
+  const area: Record<string, number> = { m2: 1, cm2: 0.0001, ft2: ft * ft, wa: UNIT.sqWa.value };
+  const vol: Record<string, number> = { m3: 1, L: 0.001, gal: UNIT.gallon.value / 1000, ft3: ft * ft * ft };
+  const unitName: Record<string, string> = {
+    m2: "ตร.ม.",
+    cm2: "ตร.ซม.",
+    ft2: "ตร.ฟุต",
+    wa: "ตร.วา",
+    m3: "ลบ.ม.",
+    L: "ลิตร",
+    gal: "แกลลอน",
+    ft3: "ลบ.ฟุต",
+  };
   const table = kind === "vol" ? vol : area;
   if (!(from in table) || !(to in table)) {
     return invalidResult("เลือกหน่วยให้ตรงชนิด — พื้นที่แปลงกับพื้นที่ ปริมาตรแปลงกับปริมาตร");
@@ -78,8 +95,8 @@ export function calcAreaVol(v: Values) {
   const y = si / (table[to] ?? 1);
   return resultX({
     title: "แปลงพื้นที่และปริมาตร",
-    headline: `${fmt(y, 4)}`,
-    rows: [{ label: "ผลลัพธ์", value: `${fmt(y, 4)}`, emphasize: true }],
+    headline: `${fmt(x, 4)} ${unitName[from]} = ${fmt(y, 4)} ${unitName[to]}`,
+    rows: [{ label: "ผลลัพธ์", value: `${fmt(y, 4)} ${unitName[to]}`, emphasize: true }],
     tip: kind === "vol" ? "1 คิว = 1 ลบ.ม. = 1,000 ลิตร" : "1 ตารางวา = 4 ตร.ม.",
     explain: {
       risk: "A",
@@ -87,7 +104,7 @@ export function calcAreaVol(v: Values) {
       summary: `แปลง${kind === "vol" ? "ปริมาตร" : "พื้นที่"}ผ่านหน่วย SI (${kind === "vol" ? "ลบ.ม." : "ตร.ม."}) เป็นตัวกลาง แล้วคูณ/หารด้วยตัวคูณของหน่วยปลายทาง`,
       steps: [
         { label: `แปลงเป็น${kind === "vol" ? "ลบ.ม." : "ตร.ม."} (ตัวกลาง)`, expr: "SI = ค่า × ตัวคูณหน่วยต้นทาง", subst: `${fmt(x, 4)} → ${fmt(si, 4)}` },
-        { label: "แปลงเป็นหน่วยปลายทาง", expr: "ผลลัพธ์ = SI ÷ ตัวคูณหน่วยปลายทาง", subst: `${fmt(si, 4)} → ${fmt(y, 4)}` },
+        { label: "แปลงเป็นหน่วยปลายทาง", expr: "ผลลัพธ์ = SI ÷ ตัวคูณหน่วยปลายทาง", subst: `${fmt(si, 6)} ${kind === "vol" ? "ลบ.ม." : "ตร.ม."} → ${fmt(y, 4)} ${unitName[to]}` },
       ],
       assumptions: ["1 ตารางวา = 4 ตร.ม. (มาตราไทย) · 1 แกลลอน = แกลลอนสหรัฐ (US gal) = 3.785 ลิตร"],
       caveats: ["หน่วยที่ดินไทย (วา/งาน/ไร่) มีลำดับซ้อนกัน ถ้าต้องการแปลงเป็นไร่-งาน-วา ให้ใช้เครื่องมือแปลงพื้นที่ดินแยกต่างหากเพื่อความชัดเจน"],
@@ -97,6 +114,8 @@ export function calcAreaVol(v: Values) {
 }
 
 export function calcWeightForce(v: Values) {
+  const bad = guard("unit-weight", v);
+  if (bad) return bad;
   const x = num(v, "x", 1);
   const from = str(v, "from", "kg");
   const mass: Record<string, number> = { kg: 1, g: 0.001, lb: 0.453592, t: 1000 };
@@ -127,6 +146,8 @@ export function calcWeightForce(v: Values) {
 }
 
 export function calcForce(v: Values) {
+  const bad = guard("force", v);
+  if (bad) return bad;
   const m = num(v, "m", 100);
   const g = num(v, "g", UNIT.gravity.value);
   const n = m * g;
@@ -155,6 +176,8 @@ export function calcForce(v: Values) {
 }
 
 export function calcGeometry(v: Values) {
+  const bad = guard("geometry", v);
+  if (bad) return bad;
   const shape = str(v, "shape", "rect");
   const a = num(v, "a", 4);
   const b = num(v, "b", 5);
@@ -208,6 +231,8 @@ export function calcGeometry(v: Values) {
 }
 
 export function calcTriangle(v: Values) {
+  const bad = guard("triangle", v);
+  if (bad) return bad;
   const mode = str(v, "mode", "hyp");
   const a = num(v, "a", 3);
   const b = num(v, "b", 4);
@@ -276,7 +301,7 @@ export const generalTools: ToolDef[] = [
     name: "แปลงหน่วยความยาว",
     blurb: "นิ้ว หุน ฟุต มม. ซม. ม.",
     fields: [
-      { type: "number", key: "x", label: "ค่า", default: 1, min: 0, step: 0.001 },
+      { type: "number", key: "x", label: "ค่า", default: 1, min: 0, max: 1000000000, step: 0.001 },
       { type: "select", key: "from", label: "จาก", default: "m", options: lenOpts },
       { type: "select", key: "to", label: "เป็น", default: "ft", options: lenOpts },
     ],
@@ -297,10 +322,11 @@ export const generalTools: ToolDef[] = [
           { value: "vol", label: "ปริมาตร" },
         ],
       },
-      { type: "number", key: "x", label: "ค่า", default: 1, min: 0, step: 0.001 },
+      { type: "number", key: "x", label: "ค่า", default: 1, min: 0, max: 1000000000, step: 0.001 },
       {
         type: "select",
         key: "fromArea",
+        when: { key: "kind", is: "area" },
         label: "จาก (พื้นที่)",
         default: "m2",
         options: [
@@ -313,6 +339,7 @@ export const generalTools: ToolDef[] = [
       {
         type: "select",
         key: "toArea",
+        when: { key: "kind", is: "area" },
         label: "เป็น (พื้นที่)",
         default: "ft2",
         options: [
@@ -325,6 +352,7 @@ export const generalTools: ToolDef[] = [
       {
         type: "select",
         key: "fromVol",
+        when: { key: "kind", is: "vol" },
         label: "จาก (ปริมาตร)",
         default: "m3",
         options: [
@@ -337,6 +365,7 @@ export const generalTools: ToolDef[] = [
       {
         type: "select",
         key: "toVol",
+        when: { key: "kind", is: "vol" },
         label: "เป็น (ปริมาตร)",
         default: "L",
         options: [
@@ -354,7 +383,7 @@ export const generalTools: ToolDef[] = [
     name: "แปลงน้ำหนักและแรง",
     blurb: "กก. ปอนด์ ตัน นิวตัน",
     fields: [
-      { type: "number", key: "x", label: "ค่า", default: 1, min: 0, step: 0.001 },
+      { type: "number", key: "x", label: "ค่า", default: 1, min: 0, max: 1000000000, step: 0.001 },
       {
         type: "select",
         key: "from",
@@ -375,8 +404,8 @@ export const generalTools: ToolDef[] = [
     name: "มวล → แรง",
     blurb: "F = m·g",
     fields: [
-      { type: "number", key: "m", label: "มวล", unit: "กก.", default: 100, min: 0, step: 0.1 },
-      { type: "number", key: "g", label: "ความเร่งโน้มถ่วง (g)", unit: "ม./วินาที²", default: 9.80665, min: 1, step: 0.00001 },
+      { type: "number", key: "m", label: "มวล", unit: "กก.", default: 100, min: 0, max: 1000000, step: 0.1 },
+      { type: "number", key: "g", label: "ความเร่งโน้มถ่วง (g)", unit: "ม./วินาที²", default: 9.80665, min: 1, max: 30, step: 0.00001 },
     ],
     calc: calcForce,
   },
@@ -399,9 +428,9 @@ export const generalTools: ToolDef[] = [
           { value: "pyr", label: "พีระมิดฐานสี่เหลี่ยม" },
         ],
       },
-      { type: "number", key: "a", label: "ก / กว้าง / รัศมี", unit: "ม.", default: 4, min: 0, step: 0.01 },
-      { type: "number", key: "b", label: "ข / ยาว / สูงสามเหลี่ยม", unit: "ม.", default: 5, min: 0, step: 0.01 },
-      { type: "number", key: "h", label: "สูง / ลึก", unit: "ม.", default: 2.5, min: 0, step: 0.01 },
+      { type: "number", key: "a", label: "ก / กว้าง / รัศมี", unit: "ม.", default: 4, min: 0, max: 10000, step: 0.01 },
+      { type: "number", key: "b", label: "ข / ยาว / สูงสามเหลี่ยม", unit: "ม.", default: 5, min: 0, max: 10000, step: 0.01 },
+      { type: "number", key: "h", label: "สูง / ลึก", unit: "ม.", default: 2.5, min: 0, max: 10000, step: 0.01 },
     ],
     calc: calcGeometry,
   },
@@ -420,8 +449,8 @@ export const generalTools: ToolDef[] = [
           { value: "leg", label: "หาด้านฉาก จากทแยงกับอีกด้าน" },
         ],
       },
-      { type: "number", key: "a", label: "ด้าน A (โหมดหาฉาก = ทแยง)", unit: "ม.", default: 3, min: 0, step: 0.01 },
-      { type: "number", key: "b", label: "ด้าน B", unit: "ม.", default: 4, min: 0.01, step: 0.01 },
+      { type: "number", key: "a", label: "ด้าน A (โหมดหาฉาก = ทแยง)", unit: "ม.", default: 3, min: 0, max: 10000, step: 0.01 },
+      { type: "number", key: "b", label: "ด้าน B", unit: "ม.", default: 4, min: 0.01, max: 10000, step: 0.01 },
     ],
     calc: calcTriangle,
   },

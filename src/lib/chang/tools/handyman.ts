@@ -1,10 +1,17 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, round, str } from "../math";
+import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
 import { ANCHOR, DISCLAIMER_AB, DISCLAIMER_C, LED, LED_DRIVER_SIZES, STAIR_LAW, WASTE_DEFAULT } from "../constants";
 
 const HINGE_EDGE: Record<string, number> = { full: 4.5, half: 9.5, inset: 16 };
 
+const guard = (id: string, v: Values) => guardTool(handymanTools, id, v);
+
+/** หน้าบานลิ้นชักเตี้ยกว่านี้ (มม.) ถือว่ากรอกผิด — ใส่รางและกล่องลิ้นชักไม่ได้ */
+const DRAWER_FRONT_MIN = 50;
+
 export function calcHinge(v: Values) {
+  const bad = guard("hinge", v);
+  if (bad) return bad;
   const overlay = str(v, "overlay", "full");
   const edge = HINGE_EDGE[overlay] ?? HINGE_EDGE.full;
   const cup = 22.5;
@@ -64,6 +71,8 @@ export function hingeCount(h: number): number {
 const SLIDE_SIZES = [250, 300, 350, 400, 450, 500, 550] as const;
 
 export function calcHingeQty(v: Values) {
+  const bad = guard("hingeqty", v);
+  if (bad) return bad;
   const doors = num(v, "doors", 2);
   const dh = num(v, "dh", 720);
   const drawers = num(v, "drawers", 3);
@@ -121,11 +130,24 @@ export function calcHingeQty(v: Values) {
 }
 
 export function calcDrawer(v: Values) {
+  const bad = guard("drawer", v);
+  if (bad) return bad;
   const opening = num(v, "opening", 720);
   const n = num(v, "n", 4);
   const gap = num(v, "gap", 3);
   const front = (opening - gap * (n - 1)) / n;
   const gaps = gap * (n - 1);
+  if (front < DRAWER_FRONT_MIN) {
+    return blockedResult({
+      headline: `แบ่ง ${fmt(n)} ลิ้นแล้วหน้าบานเหลือ ${fmt(front, 1)} มม. เตี้ยเกินทำลิ้นชัก — ลดจำนวนลิ้นหรือตรวจช่องเปิด`,
+      rows: [
+        { label: "ช่องเปิด", value: `${fmt(opening)} มม.` },
+        { label: "จำนวนลิ้นชัก", value: `${fmt(n)} ลิ้น` },
+        { label: "หน้าบานเตี้ยสุดที่คิดให้", value: `${DRAWER_FRONT_MIN} มม.` },
+      ],
+      tip: "หน้าบานลิ้นชักทั่วไปสูง 100 มม. ขึ้นไป ถึงจะใส่รางและกล่องลิ้นชักได้",
+    });
+  }
 
   return resultX({
     title: "แบ่งหน้าบานลิ้นชัก",
@@ -178,6 +200,8 @@ export function calcDrawer(v: Values) {
 }
 
 export function calcLaminate(v: Values) {
+  const bad = guard("laminate", v);
+  if (bad) return bad;
   const w = num(v, "w", 1.2);
   const h = num(v, "h", 2.4);
   const qty = num(v, "qty", 4);
@@ -237,6 +261,8 @@ export function calcLaminate(v: Values) {
 }
 
 export function calcLed(v: Values) {
+  const bad = guard("led", v);
+  if (bad) return bad;
   const meters = num(v, "m", 4);
   const wpm = num(v, "wpm", 12);
   const load = meters * wpm;
@@ -314,6 +340,8 @@ export function calcLed(v: Values) {
 }
 
 export function calcHandymanTile(v: Values) {
+  const bad = guard("tile", v);
+  if (bad) return bad;
   const area = num(v, "area", 2);
   const wastePct = num(v, "waste", WASTE_DEFAULT.value);
   const tile = 0.3 * 0.3;
@@ -361,81 +389,85 @@ export function calcHandymanTile(v: Values) {
   });
 }
 
+type AnchorWall = "conc" | "brick" | "gyp" | "wood";
+
+/** พิกัดต่อจุดของแต่ละผนัง: `easy` = ใช้พุก/สกรูธรรมดาได้ · `max` = เพดานที่เครื่องมือนี้ยอมตอบ (เกินนี้ไม่ให้ตัวเลข) */
+const ANCHOR_LIMITS: Record<AnchorWall, { name: string; easy: number; max: number }> = {
+  conc: { name: "คอนกรีต", easy: ANCHOR.concPlasticMax.value, max: ANCHOR.concSteelMax.value },
+  brick: { name: "อิฐ", easy: ANCHOR.brickMax.value, max: ANCHOR.brickMax.value },
+  gyp: { name: "ยิปซัม", easy: ANCHOR.gypMax.value, max: ANCHOR.gypMax.value },
+  wood: { name: "ไม้", easy: ANCHOR.woodScrewMax.value, max: ANCHOR.woodMax.value },
+};
+
 export function calcScrew(v: Values) {
-  const wall = str(v, "wall", "conc");
+  const bad = guard("screw", v);
+  if (bad) return bad;
+  const wall = str(v, "wall", "conc") as AnchorWall;
   const load = num(v, "load", 15);
   const points = Math.max(1, Math.round(num(v, "points", 2)));
   const perPoint = load / points;
-  const wallName = wall === "conc" ? "คอนกรีต" : wall === "brick" ? "อิฐ" : wall === "gyp" ? "ยิปซัม" : "ไม้";
-  let rec = "";
-  let blocked = false;
-  let risk: "B" | "C" = "B";
-  if (wall === "gyp") {
-    if (perPoint > ANCHOR.gypMax.value) {
-      rec = `ยิปซัมแผ่นเดียวรับไม่ไหว (${fmt(perPoint, 1)} กก./จุด) — หาโครงหรือยึดทะลุ`;
-      blocked = true;
-      risk = "C";
-    } else {
-      rec = `พุกปีกผีเสื้อ ${points} จุด (ไม่เกิน ${ANCHOR.gypMax.value} กก./จุด)`;
-      risk = "C";
-    }
-  } else if (wall === "brick") {
-    rec =
-      perPoint > ANCHOR.brickMax.value
-        ? "พุกเหล็กเคมี / ยึดเข้าเสา — อิฐรับจุดเดียวไม่พอ"
-        : "พุกไนลอน S8 ลึก 50 มม. อย่าพุกปูนฉาบ";
-    if (perPoint > ANCHOR.brickMax.value) {
-      blocked = true;
-      risk = "C";
-    }
-  } else if (wall === "wood") {
-    rec = perPoint > 30 ? "สกรูไม้หลายจุด + แผ่นรับหลังไม้" : 'สกรูไม้ 8×2" ไม่ต้องพุก';
-  } else {
-    rec = perPoint > ANCHOR.concPlasticMax.value ? "พุกเหล็ก M8 / M10" : "พุกพลาสติก S8 + สกรู 8";
-  }
-  const chartMax = Math.max(ANCHOR.concPlasticMax.value * 1.5, Math.ceil(perPoint * 1.3));
+  const lim = ANCHOR_LIMITS[wall] ?? ANCHOR_LIMITS.conc;
+  const inputRows = [
+    { label: "ผนัง", value: lim.name },
+    { label: "น้ำหนักรวม", value: `${fmt(load)} กก.` },
+    { label: "จำนวนจุดยึด", value: `${points} จุด` },
+    { label: "ต่อจุด", value: `${fmt(perPoint, 1)} กก.` },
+  ];
 
-  return {
-    ...resultX({
+  if (perPoint > lim.max) {
+    const why =
+      wall === "gyp"
+        ? "ยิปซัมแผ่นเดียวรับไม่ไหว — ยึดเข้าโครงหรือยึดทะลุถึงผนังจริง"
+        : wall === "brick"
+          ? "อิฐรับไม่ไหว — ยึดเข้าเสา/คานคอนกรีต หรือใช้พุกเคมีตามตารางผู้ผลิต"
+          : "ต้องให้วิศวกรคิด หรือใช้ตารางรับแรงของผู้ผลิตพุก";
+    return blockedResult({
+      headline: `${lim.name}จุดละ ${fmt(perPoint, 1)} กก. เกินที่ตอบได้ (${lim.max} กก./จุด) — ${why}`,
+      rows: [
+        ...inputRows,
+        { label: "เพดานที่เครื่องมือนี้ตอบ", value: `${lim.max} กก./จุด (${lim.name})` },
+        { label: "ทางแก้", value: `เพิ่มจุดยึดให้เหลือไม่เกิน ${lim.max} กก./จุด หรือ${wall === "gyp" || wall === "brick" ? "ย้ายไปยึดโครง/คอนกรีต" : "ใช้ตารางผู้ผลิต"}` },
+      ],
+      tip: "ของหนักตกแล้วคนเจ็บ — งานนี้ต้องดูตารางรับแรงของพุกรุ่นที่ใช้จริง หรือให้วิศวกรกำหนด",
+    });
+  }
+
+  const heavy = perPoint > lim.easy;
+  const rec =
+    wall === "gyp"
+      ? `พุกปีกผีเสื้อ ${points} จุด (ไม่เกิน ${lim.max} กก./จุด)`
+      : wall === "brick"
+        ? "พุกไนลอน S8 ลึก 50 มม. เจาะให้ถึงเนื้ออิฐ อย่ายึดแค่ปูนฉาบ"
+        : wall === "wood"
+          ? heavy
+            ? "สกรูไม้จุดละ 2 ตัวขึ้นไป + แผ่นรับหลังไม้"
+            : 'สกรูไม้ 8×2" ยึดเข้าเนื้อไม้จริง ไม่ต้องพุก'
+          : heavy
+            ? "พุกเหล็ก M8 / M10 — เช็กพิกัดรุ่นที่ใช้ในตารางผู้ผลิต"
+            : "พุกพลาสติก S8 + สกรู 8";
+  const chartMax = Math.max(lim.max * 1.2, lim.easy * 1.5);
+  const zones =
+    lim.easy < lim.max
+      ? [
+          { upTo: lim.easy, tone: "good" as const, label: wall === "wood" ? "สกรูไม้ตัวเดียว" : "พุกพลาสติก S8" },
+          { upTo: lim.max, tone: "warn" as const, label: wall === "wood" ? "หลายตัว + แผ่นรับ" : "พุกเหล็ก M8/M10" },
+          { upTo: chartMax, tone: "bad" as const, label: "ต้องใช้ตารางผู้ผลิต/วิศวกร" },
+        ]
+      : [
+          { upTo: lim.max, tone: "good" as const, label: `${lim.name} ≤ ${lim.max} กก.` },
+          { upTo: chartMax, tone: "bad" as const, label: wall === "gyp" ? "ต้องหาโครง" : "เกินพิกัดอิฐ" },
+        ];
+
+  return resultX({
     title: "เลือกพุก + สกรู",
     headline: rec,
-    chart: wall === "wood"
-      ? undefined
-      : {
-      kind: "threshold",
-      unit: "กก./จุด",
-      value: perPoint,
-      max: chartMax,
-      zones:
-        wall === "gyp"
-          ? [
-              { upTo: ANCHOR.gypMax.value, tone: "good", label: `ยิปซัมแผ่นเดียว ≤ ${ANCHOR.gypMax.value} กก.` },
-              { upTo: chartMax, tone: "bad", label: "ต้องหาโครง" },
-            ]
-          : wall === "conc"
-            ? [
-                { upTo: ANCHOR.concPlasticMax.value, tone: "good", label: "พุกพลาสติก S8" },
-                { upTo: chartMax, tone: "warn", label: "พุกเหล็ก M8/M10" },
-              ]
-            : [
-                { upTo: ANCHOR.brickMax.value, tone: "good", label: "พุกไนลอนในอิฐ" },
-                { upTo: chartMax, tone: "bad", label: "เกินพิกัดอิฐ" },
-              ],
-    },
-    rows: [
-      { label: "ผนัง", value: wallName },
-      { label: "น้ำหนักรวม", value: `${fmt(load)} กก.` },
-      { label: "จำนวนจุดยึด", value: `${points} จุด` },
-      { label: "ต่อจุด", value: `${fmt(perPoint, 1)} กก.` },
-      { label: "แนะนำ", value: rec, emphasize: true },
-    ],
-    tip: blocked
-      ? "อย่าแขวนของหนักบนยิปซัมแผ่นเดียว — ของตกแล้วคนเจ็บ"
-      : "ทีวีและตู้แขวนหาโครงก่อนเจาะ เผื่อพิกัดอย่างน้อย 2 เท่า",
+    chart: { kind: "threshold", unit: "กก./จุด", value: perPoint, max: chartMax, zones },
+    rows: [...inputRows, { label: "แนะนำ", value: rec, emphasize: true }],
+    tip: "ทีวีและตู้แขวนหาโครงก่อนเจาะ เผื่อพิกัดอย่างน้อย 2 เท่า และดูพิกัดบนกล่องพุกที่ซื้อจริง",
     explain: {
-      risk,
-      updatedAt: "2026-08-21",
-      summary: "น้ำหนักต่อจุด = น้ำหนักรวม ÷ จำนวนจุดยึด แล้วเทียบพิกัดของพุกตามวัสดุผนัง",
+      risk: "C",
+      updatedAt: "2026-11-25",
+      summary: "น้ำหนักต่อจุด = น้ำหนักรวม ÷ จำนวนจุดยึด แล้วเทียบพิกัดคร่าวของพุกตามวัสดุผนัง เกินเพดานจะไม่ให้คำแนะนำ",
       steps: [
         {
           label: "น้ำหนักต่อจุดยึด",
@@ -444,22 +476,35 @@ export function calcScrew(v: Values) {
         },
         {
           label: "เทียบพิกัดวัสดุผนัง",
-          expr: `ยิปซัม ≤ ${ANCHOR.gypMax.value} · อิฐ ≤ ${ANCHOR.brickMax.value} · พุกพลาสติกคอนกรีต ≤ ${ANCHOR.concPlasticMax.value} กก./จุด`,
+          expr: `ยิปซัม ≤ ${ANCHOR.gypMax.value} · อิฐ ≤ ${ANCHOR.brickMax.value} · คอนกรีต พุกพลาสติก ≤ ${ANCHOR.concPlasticMax.value} / พุกเหล็ก ≤ ${ANCHOR.concSteelMax.value} · ไม้ สกรูตัวเดียว ≤ ${ANCHOR.woodScrewMax.value} / หลายตัว ≤ ${ANCHOR.woodMax.value} กก./จุด`,
           subst: rec,
         },
       ],
+      constants: [
+        ANCHOR.gypMax,
+        ANCHOR.brickMax,
+        ANCHOR.concPlasticMax,
+        ANCHOR.concSteelMax,
+        ANCHOR.woodScrewMax,
+        ANCHOR.woodMax,
+      ],
+      assumptions: [
+        "น้ำหนักกระจายเท่ากันทุกจุดยึด และเป็นแรงเฉือนลงล่าง (ของแขวนชิดผนัง) ไม่ใช่แรงดึงออกจากผนัง",
+        "คอนกรีต/อิฐ/ไม้เนื้อดี ไม่ร้าว ไม่ผุ ระยะห่างจากขอบพอ",
+      ],
       caveats: [
-        "ทีวีจอใหญ่และตู้แขวนเป็นงานชั้น C ต้องมีจุดยึดเข้าโครงหรือคอนกรีต",
+        "ของยื่นจากผนัง (ชั้นลอย แขนทีวี) เกิดแรงดึงที่จุดบนมากกว่าน้ำหนักหารจำนวนจุด ต้องเผื่อเพิ่ม",
+        "พิกัดจริงขึ้นกับรุ่นพุก ความลึกฝัง และสภาพผนัง ให้ดูตารางรับแรงของผู้ผลิตก่อนแขวนของหนัก",
         DISCLAIMER_C,
       ],
-      refs: [{ label: "แนวปฏิบัติงานติดตั้งเฟอร์นิเจอร์แขวน (คู่มือพุกผู้ผลิต)" }],
+      refs: [{ label: "ตารางรับแรงพุกของผู้ผลิต (เช่น Fischer / Hilti) — ใช้รุ่นที่ซื้อจริง" }],
     },
-  }),
-    invalid: blocked,
-  };
+  });
 }
 
 export function calcStair(v: Values) {
+  const bad = guard("stair", v);
+  if (bad) return bad;
   const H = num(v, "H", 3);
   const rTarget = num(v, "r", 17);
   const n = Math.max(2, round((H * 100) / rTarget, 0));
@@ -558,10 +603,10 @@ export const handymanTools: ToolDef[] = [
     name: "จำนวนบานพับ + ราง",
     blurb: "ตามสูงบานและลึกตู้",
     fields: [
-      { type: "number", key: "doors", label: "จำนวนบาน", unit: "บาน", default: 2, min: 1 },
-      { type: "number", key: "dh", label: "สูงบาน", unit: "มม.", default: 720, min: 300 },
-      { type: "number", key: "drawers", label: "ลิ้นชัก", unit: "ลิ้น", default: 3, min: 0 },
-      { type: "number", key: "depth", label: "ลึกตู้", unit: "มม.", default: 450, min: 250 },
+      { type: "number", key: "doors", label: "จำนวนบาน", unit: "บาน", default: 2, min: 0, max: 50 },
+      { type: "number", key: "dh", label: "สูงบาน", unit: "มม.", default: 720, min: 300, max: 2700 },
+      { type: "number", key: "drawers", label: "ลิ้นชัก", unit: "ลิ้น", default: 3, min: 0, max: 50 },
+      { type: "number", key: "depth", label: "ลึกตู้", unit: "มม.", default: 450, min: 250, max: 1200 },
     ],
     calc: calcHingeQty,
   },
@@ -570,9 +615,9 @@ export const handymanTools: ToolDef[] = [
     name: "แบ่งหน้าบานลิ้นชัก",
     blurb: "สูงหน้าบานเท่า ๆ กัน",
     fields: [
-      { type: "number", key: "opening", label: "สูงช่องเปิด", unit: "มม.", default: 720, min: 200 },
-      { type: "number", key: "n", label: "จำนวนลิ้นชัก", unit: "ลิ้น", default: 4, min: 2 },
-      { type: "number", key: "gap", label: "ร่องระหว่างบาน", unit: "มม.", default: 3, min: 1 },
+      { type: "number", key: "opening", label: "สูงช่องเปิด", unit: "มม.", default: 720, min: 200, max: 3000 },
+      { type: "number", key: "n", label: "จำนวนลิ้นชัก", unit: "ลิ้น", default: 4, min: 2, max: 12 },
+      { type: "number", key: "gap", label: "ร่องระหว่างบาน", unit: "มม.", default: 3, min: 1, max: 10 },
     ],
     calc: calcDrawer,
   },
@@ -581,9 +626,9 @@ export const handymanTools: ToolDef[] = [
     name: "กาวลามิเนต + ขอบ",
     blurb: "พื้นที่แผ่นและขอบ PVC",
     fields: [
-      { type: "number", key: "w", label: "กว้างแผ่น", unit: "ม.", default: 1.2, min: 0.2, step: 0.01 },
-      { type: "number", key: "h", label: "ยาวแผ่น", unit: "ม.", default: 2.4, min: 0.2, step: 0.01 },
-      { type: "number", key: "qty", label: "จำนวนแผ่น", unit: "แผ่น", default: 4, min: 1 },
+      { type: "number", key: "w", label: "กว้างแผ่น", unit: "ม.", default: 1.2, min: 0.2, max: 5, step: 0.01 },
+      { type: "number", key: "h", label: "ยาวแผ่น", unit: "ม.", default: 2.4, min: 0.2, max: 5, step: 0.01 },
+      { type: "number", key: "qty", label: "จำนวนแผ่น", unit: "แผ่น", default: 4, min: 1, max: 1000 },
       { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: 10, min: 0, max: 30 },
     ],
     calc: calcLaminate,
@@ -593,8 +638,8 @@ export const handymanTools: ToolDef[] = [
     name: "หม้อแปลง LED",
     blurb: "ไฟเส้นในตู้",
     fields: [
-      { type: "number", key: "m", label: "ความยาวไฟเส้น", unit: "ม.", default: 4, min: 0.3, step: 0.1 },
-      { type: "number", key: "wpm", label: "วัตต์ต่อเมตร", unit: "W/ม.", default: 12, min: 4 },
+      { type: "number", key: "m", label: "ความยาวไฟเส้น", unit: "ม.", default: 4, min: 0.1, max: 100, step: 0.1 },
+      { type: "number", key: "wpm", label: "วัตต์ต่อเมตร", unit: "W/ม.", default: 12, min: 2, max: 30 },
     ],
     calc: calcLed,
   },
@@ -603,7 +648,7 @@ export const handymanTools: ToolDef[] = [
     name: "กระเบื้อง + ยาแนว",
     blurb: "งานบิ้วอินชิ้นเล็ก",
     fields: [
-      { type: "number", key: "area", label: "พื้นที่", unit: "ตร.ม.", default: 2, min: 0.2, step: 0.1 },
+      { type: "number", key: "area", label: "พื้นที่", unit: "ตร.ม.", default: 2, min: 0.2, max: 100, step: 0.1 },
       { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: 10, min: 0, max: 30 },
     ],
     calc: calcHandymanTile,
@@ -625,8 +670,8 @@ export const handymanTools: ToolDef[] = [
           { value: "wood", label: "ไม้" },
         ],
       },
-      { type: "number", key: "load", label: "น้ำหนักโดยประมาณ", unit: "กก.", default: 15, min: 1 },
-      { type: "number", key: "points", label: "จำนวนจุดยึด", unit: "จุด", default: 2, min: 1 },
+      { type: "number", key: "load", label: "น้ำหนักโดยประมาณ", unit: "กก.", default: 15, min: 1, max: 2000 },
+      { type: "number", key: "points", label: "จำนวนจุดยึด", unit: "จุด", default: 2, min: 1, max: 50 },
     ],
     calc: calcScrew,
   },
@@ -635,8 +680,8 @@ export const handymanTools: ToolDef[] = [
     name: "บันได ลูกตั้ง-ลูกนอน",
     blurb: "เดินสบาย 2R+T ≈ 63",
     fields: [
-      { type: "number", key: "H", label: "สูงพื้นถึงพื้น", unit: "ม.", default: 3, min: 1, step: 0.01 },
-      { type: "number", key: "r", label: "ลูกตั้งเป้า", unit: "ซม.", default: 17, min: 15, step: 0.5 },
+      { type: "number", key: "H", label: "สูงพื้นถึงพื้น", unit: "ม.", default: 3, min: 1, max: 6, step: 0.01 },
+      { type: "number", key: "r", label: "ลูกตั้งเป้า", unit: "ซม.", default: 17, min: 15, max: 22, step: 0.5 },
     ],
     calc: calcStair,
   },
@@ -646,12 +691,12 @@ export const handymanJob: JobDef = {
   name: "คิดทั้งงานตู้บิ้วอิน",
   blurb: "บานลิ้นชักไฟเส้น ได้ฮาร์ดแวร์คร่าว ๆ",
   fields: [
-    { type: "number", key: "doors", label: "บานประตู", unit: "บาน", default: 2, min: 0 },
-    { type: "number", key: "dh", label: "สูงบาน", unit: "มม.", default: 1800, min: 300 },
-    { type: "number", key: "drawers", label: "ลิ้นชัก", unit: "ลิ้น", default: 3, min: 0 },
-    { type: "number", key: "depth", label: "ลึกตู้", unit: "มม.", default: 500, min: 250 },
-    { type: "number", key: "m", label: "ไฟเส้น", unit: "ม.", default: 3, min: 0, step: 0.1 },
-    { type: "number", key: "wpm", label: "วัตต์/เมตร", default: 12, min: 4 },
+    { type: "number", key: "doors", label: "บานประตู", unit: "บาน", default: 2, min: 0, max: 50 },
+    { type: "number", key: "dh", label: "สูงบาน", unit: "มม.", default: 1800, min: 300, max: 2700 },
+    { type: "number", key: "drawers", label: "ลิ้นชัก", unit: "ลิ้น", default: 3, min: 0, max: 50 },
+    { type: "number", key: "depth", label: "ลึกตู้", unit: "มม.", default: 500, min: 250, max: 1200 },
+    { type: "number", key: "m", label: "ไฟเส้น", unit: "ม.", default: 3, min: 0, max: 100, step: 0.1 },
+    { type: "number", key: "wpm", label: "วัตต์/เมตร", default: 12, min: 2, max: 30 },
     {
       type: "select",
       key: "overlay",
@@ -664,10 +709,13 @@ export const handymanJob: JobDef = {
       ],
     },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(handymanJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(handymanJob.fields, input);
     const hinge = calcHinge(v);
     const qty = calcHingeQty(v);
-    const led = num(v, "m") > 0 ? calcLed(v) : null;
+    const led = num(v, "m", 3) > 0 ? calcLed(v) : null;
     return jobFromParts({
       title: "งานตู้บิ้วอิน",
       headline: "ฮาร์ดแวร์ตู้บิ้วอิน",

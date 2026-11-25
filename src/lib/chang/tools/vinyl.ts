@@ -1,12 +1,31 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, round, str } from "../math";
+import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
 import { DISCLAIMER_AB } from "../constants";
+
+/** ด่านตรวจของสายกระเบื้องยาง: ช่องกรอกอยู่ในช่วง และหักพื้นที่แล้วต้องเหลือให้ปู */
+function guard(id: string, v: Values) {
+  const bad = guardTool(vinylTools, id, v);
+  if (bad) return bad;
+  const gross = num(v, "w", 4) * num(v, "l", 5);
+  const deduct = num(v, "deduct", 0);
+  if (deduct < gross) return null;
+  return blockedResult({
+    headline: `หักพื้นที่ ${fmt(deduct, 1)} ตร.ม. มากกว่าพื้นที่ห้อง (${fmt(gross, 1)} ตร.ม.) — ไม่เหลือพื้นที่ให้ปู`,
+    rows: [
+      { label: "พื้นที่ห้อง", value: `${fmt(gross, 2)} ตร.ม.` },
+      { label: "หักพื้นที่", value: `${fmt(deduct, 2)} ตร.ม.` },
+    ],
+    tip: "ตรวจขนาดห้องกับพื้นที่ที่หักอีกครั้ง",
+  });
+}
 
 function netArea(v: Values) {
   return Math.max(0, num(v, "w", 4) * num(v, "l", 5) - num(v, "deduct", 0));
 }
 
 export function calcVinylQty(v: Values) {
+  const bad = guard("qty", v);
+  if (bad) return bad;
   const net = netArea(v);
   const boxM2 = num(v, "boxM2", 2.16);
   const waste = num(v, "waste", 8) / 100;
@@ -52,6 +71,8 @@ export function calcVinylQty(v: Values) {
 }
 
 export function calcSelfLevel(v: Values) {
+  const bad = guard("level", v);
+  if (bad) return bad;
   const net = netArea(v);
   const thick = num(v, "thick", 3);
   const kg = net * thick * 1.5;
@@ -95,6 +116,8 @@ export function calcSelfLevel(v: Values) {
 }
 
 export function calcVinylAdhesive(v: Values) {
+  const bad = guard("adhesive", v);
+  if (bad) return bad;
   const net = netArea(v);
   const kind = str(v, "kind", "click");
   if (kind === "click") {
@@ -120,7 +143,7 @@ export function calcVinylAdhesive(v: Values) {
         updatedAt: "2026-08-21",
         summary: "ระบบคลิกล็อกใช้โฟมรองพื้นปูคลุมทั้งห้อง (ไม่ทับซ้อน) จำนวนม้วน = พื้นที่สุทธิ ÷ พื้นที่ต่อม้วน ปัดขึ้น",
         steps: [{ label: "จำนวนม้วน", expr: "ปัดขึ้น(พื้นที่ ÷ 10)", subst: `${fmt(net, 2)} ÷ 10 = ${rolls} ม้วน` }],
-        assumptions: ["โฟมปูชนกันไม่ซ้อนทับ (butt joint) เผื่อเศษจากการตัดเข้ามุม/ผนังเล็กน้อยในตัวเลขนี้แล้ว"],
+        assumptions: ["โฟมปูชนกันไม่ซ้อนทับ (butt joint) จำนวนม้วนปัดขึ้นจากพื้นที่สุทธิ ยังไม่ได้เผื่อเศษตัด — ห้องหลายมุมให้เผื่อเพิ่ม 5–10%"],
         caveats: ["ต้องใช้เทปกาวปิดรอยต่อโฟมทุกแนวเพื่อกันความชื้นซึมและกันเสียงเอี๊ยดอ๊าดตอนเดิน", DISCLAIMER_AB],
         refs: [{ label: "แนวปฏิบัติงานปูพื้นระบบคลิกล็อก (Floating Floor Installation)" }],
       },
@@ -165,6 +188,8 @@ export function calcVinylAdhesive(v: Values) {
 }
 
 export function calcSkirting(v: Values) {
+  const bad = guardTool(vinylTools, "trim", v);
+  if (bad) return bad;
   const peri = Math.max(2 * (num(v, "w", 4) + num(v, "l", 5)) - num(v, "doors", 1) * 0.9, 0);
   const bars = ceil(peri / 2.4);
   const tmold = num(v, "tmold", 1);
@@ -202,6 +227,8 @@ export function calcSkirting(v: Values) {
 }
 
 export function calcGap(v: Values) {
+  const bad = guardTool(vinylTools, "gap", v);
+  if (bad) return bad;
   const w = num(v, "w", 4);
   const l = num(v, "l", 5);
   const span = Math.max(w, l);
@@ -240,9 +267,9 @@ export function calcGap(v: Values) {
 }
 
 const room = [
-  { type: "number" as const, key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 0.5, step: 0.1 },
-  { type: "number" as const, key: "l", label: "ยาว", unit: "ม.", default: 5, min: 0.5, step: 0.1 },
-  { type: "number" as const, key: "deduct", label: "หักพื้นที่", unit: "ตร.ม.", default: 0, min: 0, step: 0.1 },
+  { type: "number" as const, key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
+  { type: "number" as const, key: "l", label: "ยาว", unit: "ม.", default: 5, min: 0.5, max: 100, step: 0.1 },
+  { type: "number" as const, key: "deduct", label: "หักพื้นที่", unit: "ตร.ม.", default: 0, min: 0, max: 10000, step: 0.1 },
 ];
 
 export const vinylTools: ToolDef[] = [
@@ -252,8 +279,8 @@ export const vinylTools: ToolDef[] = [
     blurb: "กล่อง LVT / SPC / WPC",
     fields: [
       ...room,
-      { type: "number", key: "boxM2", label: "ตารางเมตร/กล่อง", unit: "ตร.ม.", default: 2.16, min: 0.5, step: 0.01 },
-      { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: 8, min: 5 },
+      { type: "number", key: "boxM2", label: "ตารางเมตร/กล่อง", unit: "ตร.ม.", default: 2.16, min: 0.5, max: 10, step: 0.01 },
+      { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: 8, min: 5, max: 30 },
     ],
     calc: calcVinylQty,
   },
@@ -261,7 +288,7 @@ export const vinylTools: ToolDef[] = [
     id: "level",
     name: "ปูนปรับระดับพื้น",
     blurb: "self-level ตามความหนา",
-    fields: [...room, { type: "number", key: "thick", label: "หนาที่ปรับ", unit: "มม.", default: 3, min: 1, step: 0.5 }],
+    fields: [...room, { type: "number", key: "thick", label: "หนาที่ปรับ", unit: "มม.", default: 3, min: 1, max: 30, step: 0.5 }],
     calc: calcSelfLevel,
   },
   {
@@ -288,10 +315,10 @@ export const vinylTools: ToolDef[] = [
     name: "บัว + ตัวจบ",
     blurb: "บัว T-mold reducer",
     fields: [
-      { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 0.5, step: 0.1 },
-      { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 5, min: 0.5, step: 0.1 },
-      { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0 },
-      { type: "number", key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0 },
+      { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
+      { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 5, min: 0.5, max: 100, step: 0.1 },
+      { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+      { type: "number", key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0, max: 50 },
     ],
     calc: calcSkirting,
   },
@@ -300,8 +327,8 @@ export const vinylTools: ToolDef[] = [
     name: "ระยะเผื่อขยายตัว",
     blurb: "ช่องขอบคลิกล็อก",
     fields: [
-      { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 0.5, step: 0.1 },
-      { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 5, min: 0.5, step: 0.1 },
+      { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
+      { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 5, min: 0.5, max: 100, step: 0.1 },
     ],
     calc: calcGap,
   },
@@ -312,9 +339,9 @@ export const vinylJob: JobDef = {
   blurb: "ห้องครั้งเดียว ได้กล่อง โฟม บัว ระยะเผื่อ",
   fields: [
     ...room,
-    { type: "number", key: "boxM2", label: "ตร.ม./กล่อง", unit: "ตร.ม.", default: 2.16, min: 0.5, step: 0.01 },
-    { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: 8, min: 5 },
-    { type: "number", key: "thick", label: "ปรับระดับ", unit: "มม.", default: 3, min: 0, step: 0.5 },
+    { type: "number", key: "boxM2", label: "ตร.ม./กล่อง", unit: "ตร.ม.", default: 2.16, min: 0.5, max: 10, step: 0.01 },
+    { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: 8, min: 5, max: 30 },
+    { type: "number", key: "thick", label: "ปรับระดับ", unit: "มม.", default: 3, min: 0, max: 30, step: 0.5 },
     {
       type: "select",
       key: "kind",
@@ -325,10 +352,13 @@ export const vinylJob: JobDef = {
         { value: "glue", label: "กาวลง" },
       ],
     },
-    { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0 },
-    { type: "number", key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0 },
+    { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+    { type: "number", key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0, max: 50 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(vinylJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(vinylJob.fields, input);
     const qty = calcVinylQty(v);
     const level = num(v, "thick", 3) > 0 ? calcSelfLevel(v) : null;
     const adh = calcVinylAdhesive(v);

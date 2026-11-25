@@ -110,9 +110,11 @@ describe("เลือกขนาดสายไฟ", () => {
     expect(numberIn(rowOf(r.rows, "กระแสโหลด IL"))).toBeCloseTo(19.7, 1);
   });
 
-  it("เตือนเมื่ออุณหภูมิหลุดช่วงตาราง ไม่หนีบค่าเงียบ ๆ", () => {
+  it("อุณหภูมิหลุดช่วงตารางต้องไม่ให้ขนาดสาย ไม่หนีบค่าเงียบ ๆ", () => {
     const r = calcCable({ ...base, temp: 70 });
-    expect(r.explain?.caveats?.some((t) => t.includes("เกินช่วงตาราง"))).toBe(true);
+    expect(r.invalid).toBe(true);
+    expect(r.headline).toMatch(/อุณหภูมิ/);
+    expect(r.rows).toHaveLength(0);
   });
 
   it("เป็นความเสี่ยงชั้น C และต้องมีข้อความสงวนสิทธิ์", () => {
@@ -277,9 +279,9 @@ describe("ซิลิโคนยาแนวรอยต่อ", () => {
     expect(numberIn(rowOf(r.rows, "หลอด 280 มล."))).toBe(2);
   });
 
-  it("ยาว 1 ม. ร่อง 1×1 มม. ต้องได้ 1 มล. ตามนิยามหน่วย", () => {
-    const r = calcSealant({ peri: 1, gap: 1, depth: 1 });
-    expect(numberIn(rowOf(r.rows, "เนื้อซิลิโคน"))).toBe(1);
+  it("ยาว 1 ม. ร่อง 5×5 มม. ต้องได้ 25 มล. ตามนิยามหน่วย (1 ม. × 1 ตร.มม. = 1 มล.)", () => {
+    const r = calcSealant({ peri: 1, gap: 5, depth: 5 });
+    expect(numberIn(rowOf(r.rows, "เนื้อซิลิโคน"))).toBe(25);
   });
 
   it("ร่องกว้างขึ้นสองเท่า ใช้ซิลิโคนเพิ่มสองเท่า", () => {

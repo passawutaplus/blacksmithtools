@@ -1,18 +1,31 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, jobFromParts, num, resultX, round, str } from "../math";
-import { DISCLAIMER_AB, WASTE_DEFAULT } from "../constants";
+import { ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
+import { CEILING, DISCLAIMER_AB, WASTE_DEFAULT } from "../constants";
+
+const guard = (id: string, v: Values) => guardTool(ceilingTools, id, v);
+
+/** สกรูต่อแผ่นยิปซัม 1.2×2.4 ม.: จำนวนแนวโครงใต้แผ่น × จำนวนสกรูต่อแนว (ตามระยะโครงและระยะสกรูในค่าคงที่) */
+export function screwsPerBoard(): number {
+  const lines = Math.round(CEILING.boardL.value / CEILING.furringSpacing.value) + 1;
+  const perLine = Math.ceil(CEILING.boardW.value / CEILING.screwSpacing.value - 1e-9) + 1;
+  return lines * perLine;
+}
 
 function area(v: Values) {
   return num(v, "w", 4) * num(v, "l", 5);
 }
 
 export function calcGypsum(v: Values) {
+  const bad = guard("gypsum", v);
+  if (bad) return bad;
   const a = area(v);
   const wastePct = num(v, "waste", WASTE_DEFAULT.value);
-  const need = (a / 2.88) * (1 + wastePct / 100);
+  const need = (a / CEILING.boardArea.value) * (1 + wastePct / 100);
   const boards = ceil(need);
   const hangers = ceil(a / (1.2 * 0.9));
-  const cline = ceil((a / 0.4) * 1.05);
+  const cline = ceil((a / CEILING.furringSpacing.value) * 1.05);
+  const mainRunner = ceil((a / CEILING.mainSpacing.value) * 1.05);
+  const wallAngle = ceil(2 * (num(v, "w", 4) + num(v, "l", 5)));
   const lastUsed = need - Math.floor(need) || 1;
 
   return resultX({
@@ -29,18 +42,23 @@ export function calcGypsum(v: Values) {
       { label: "พื้นที่", value: `${fmt(a, 2)} ตร.ม.` },
       { label: "แผ่น 1.2×2.4", value: `${boards} แผ่น`, emphasize: true },
       { label: "ชุดแขวน", value: `${hangers} ชุด` },
-      { label: "โครง C-Line ประมาณ", value: `${fmt(cline, 0)} ม.` },
+      { label: "โครง C-Line ล่าง (ซอย) ประมาณ", value: `${fmt(cline, 0)} ม.` },
+      { label: "โครง C-Line บน (โครงหลัก) ประมาณ", value: `${fmt(mainRunner, 0)} ม.` },
+      { label: "ฉากริมผนัง", value: `${fmt(wallAngle, 0)} ม.` },
     ],
-    tip: "ระยะแขวนไม่เกิน 1.2 ม. แผ่นฉาบเรียบเผื่อเสีย 10%",
+    tip: "ระยะแขวนไม่เกิน 1.2 ม. โครงล่างทุก 40 ซม. โครงบนทุก 1.2 ม.",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
-      summary: "จำนวนแผ่นยิปซัม = พื้นที่ฝ้า ÷ พื้นที่แผ่น (1.2×2.4=2.88 ตร.ม.) เผื่อเสียจากการตัดเข้ามุม/ท่อ 10% ส่วนโครง C-Line และชุดแขวนคิดจากระยะห่างมาตรฐาน 1.2×0.9 ม.",
+      updatedAt: "2026-11-25",
+      summary: "จำนวนแผ่นยิปซัม = พื้นที่ฝ้า ÷ พื้นที่แผ่น (1.2×2.4=2.88 ตร.ม.) เผื่อเสียจากการตัดเข้ามุม/ท่อ โครง C-Line ล่างคิดที่ระยะ 40 ซม. โครงบน 1.2 ม. และชุดแขวนคิดจากระยะ 1.2×0.9 ม.",
       steps: [
         { label: "จำนวนแผ่นยิปซัม", expr: "ปัดขึ้น(พื้นที่ ÷ 2.88 × (1+เผื่อเสีย))", subst: `${fmt(a, 2)} ÷ 2.88 × ${fmt(1 + wastePct / 100, 2)} = ${boards} แผ่น` },
         { label: "จำนวนชุดแขวน", expr: "พื้นที่ ÷ (1.2×0.9)", subst: `${fmt(a, 2)} ÷ 1.08 = ${hangers} ชุด` },
-        { label: "โครง C-Line ประมาณ", expr: "(พื้นที่ ÷ 0.4) × 1.05", subst: `${fmt(a, 2)} ÷ 0.4 × 1.05 ≈ ${fmt(cline, 0)} ม.` },
+        { label: "โครง C-Line ล่าง (ซอย)", expr: "(พื้นที่ ÷ 0.4) × 1.05", subst: `${fmt(a, 2)} ÷ 0.4 × 1.05 ≈ ${fmt(cline, 0)} ม.` },
+        { label: "โครง C-Line บน (โครงหลัก)", expr: "(พื้นที่ ÷ 1.2) × 1.05", subst: `${fmt(a, 2)} ÷ 1.2 × 1.05 ≈ ${fmt(mainRunner, 0)} ม.` },
+        { label: "ฉากริมผนัง", expr: "2 × (กว้าง + ยาว)", subst: `2 × (${fmt(num(v, "w", 4), 1)} + ${fmt(num(v, "l", 5), 1)}) ≈ ${fmt(wallAngle, 0)} ม.` },
       ],
+      constants: [CEILING.boardArea, CEILING.furringSpacing, CEILING.mainSpacing],
       assumptions: ["ระยะแขวนโครงเพดานมาตรฐาน 1.2×0.9 ม. ตามระบบฝ้าฉาบเรียบทั่วไป"],
       caveats: [
         "ห้องที่มีคานหรือท่องานระบบพาดผ่านต้องเพิ่มจุดแขวนเสริมเฉพาะจุด ไม่ใช่คิดจากระยะห่างมาตรฐานอย่างเดียว",
@@ -53,12 +71,24 @@ export function calcGypsum(v: Values) {
 }
 
 export function calcTbar(v: Values) {
+  const bad = guard("tbar", v);
+  if (bad) return bad;
   const a = area(v);
-  const tileSize = str(v, "tile", "60") === "120" ? 0.72 : 0.36;
+  const w = num(v, "w", 4);
+  const l = num(v, "l", 5);
+  const big = str(v, "tile", "60") === "120";
+  const tileSize = big ? 0.72 : 0.36;
   const need = (a / tileSize) * 1.05;
   const tiles = ceil(need);
-  const main = ceil((num(v, "w", 4) / 1.2) * num(v, "l", 5));
-  const cross = ceil((num(v, "l", 5) / 0.6) * num(v, "w", 4));
+  // กริดทีบาร์: Main tee ทุก 1.2 ม. · Cross tee 1.2 ม. ทุก 0.6 ม. · แผ่น 60×60 ต้องมี Cross tee 0.6 ม. ซอยกลางช่องอีกชุด
+  const mainRaw = (w / 1.2) * l;
+  const crossRaw = (l / 0.6) * w;
+  const shortRaw = big ? 0 : (w / 1.2) * l;
+  const main = ceil(mainRaw);
+  const cross = ceil(crossRaw);
+  const short = ceil(shortRaw);
+  const total = ceil(mainRaw + crossRaw + shortRaw);
+  const wallAngle = ceil(2 * (w + l));
   const lastUsed = need - Math.floor(need) || 1;
 
   return resultX({
@@ -66,39 +96,55 @@ export function calcTbar(v: Values) {
     headline: `แผ่นทีบาร์ ${tiles} แผ่น`,
     chart: {
       kind: "packs",
-      unitLabel: `แผ่น ${str(v, "tile", "60") === "120" ? "60×120" : "60×60"} ซม.`,
+      unitLabel: `แผ่น ${big ? "60×120" : "60×60"} ซม.`,
       count: tiles,
       lastUsed,
       note: `พื้นที่ ${fmt(a, 2)} ตร.ม. + เผื่อมุมห้อง 5%`,
     },
     rows: [
       { label: "แผ่นฝ้า", value: `${tiles} แผ่น`, emphasize: true },
-      { label: "Main tee ประมาณ", value: `${fmt(main, 1)} ม.` },
-      { label: "Cross tee ประมาณ", value: `${fmt(cross, 1)} ม.` },
+      { label: "Main tee ประมาณ", value: `${fmt(main)} ม.` },
+      { label: "Cross tee 1.2 ม. ประมาณ", value: `${fmt(cross)} ม.` },
+      ...(big ? [] : [{ label: "Cross tee 0.6 ม. ประมาณ", value: `${fmt(short)} ม.` }]),
+      { label: "โครงทีบาร์รวมประมาณ", value: `${fmt(total)} ม.` },
+      { label: "ฉากริมผนัง", value: `${fmt(wallAngle)} ม.` },
     ],
     tip: "เผื่อแผ่นมุมห้อง 5% ตรวจระดับก่อนใส่แผ่นสุดท้าย",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
-      summary: "จำนวนแผ่นฝ้าทีบาร์ = พื้นที่ห้อง ÷ พื้นที่แผ่น เผื่อมุมห้อง 5% ส่วน Main tee/Cross tee ประมาณจากตารางกริดโครงทีบาร์มาตรฐาน",
+      updatedAt: "2026-11-25",
+      summary:
+        "จำนวนแผ่นฝ้าทีบาร์ = พื้นที่ห้อง ÷ พื้นที่แผ่น เผื่อมุมห้อง 5% ส่วนโครงคิดจากกริดมาตรฐาน: Main tee ทุก 1.2 ม. Cross tee 1.2 ม. ทุก 0.6 ม. และแผ่น 60×60 เพิ่ม Cross tee 0.6 ม.",
       steps: [
         { label: "จำนวนแผ่นฝ้า", expr: "ปัดขึ้น(พื้นที่ ÷ ขนาดแผ่น × 1.05)", subst: `${fmt(a, 2)} ÷ ${tileSize} × 1.05 = ${tiles} แผ่น` },
-        { label: "Main tee ประมาณ", expr: "(กว้าง ÷ 1.2) × ยาว", subst: `(${fmt(num(v, "w", 4))} ÷ 1.2) × ${fmt(num(v, "l", 5))} ≈ ${fmt(main, 1)} ม.` },
-        { label: "Cross tee ประมาณ", expr: "(ยาว ÷ 0.6) × กว้าง", subst: `(${fmt(num(v, "l", 5))} ÷ 0.6) × ${fmt(num(v, "w", 4))} ≈ ${fmt(cross, 1)} ม.` },
+        { label: "Main tee ประมาณ", expr: "(กว้าง ÷ 1.2) × ยาว", subst: `(${fmt(w, 1)} ÷ 1.2) × ${fmt(l, 1)} ≈ ${fmt(main)} ม.` },
+        { label: "Cross tee 1.2 ม. ประมาณ", expr: "(ยาว ÷ 0.6) × กว้าง", subst: `(${fmt(l, 1)} ÷ 0.6) × ${fmt(w, 1)} ≈ ${fmt(cross)} ม.` },
+        ...(big
+          ? []
+          : [
+              {
+                label: "Cross tee 0.6 ม. (เฉพาะแผ่น 60×60)",
+                expr: "(กว้าง ÷ 1.2) × ยาว",
+                subst: `(${fmt(w, 1)} ÷ 1.2) × ${fmt(l, 1)} ≈ ${fmt(short)} ม.`,
+              },
+            ]),
+        { label: "ฉากริมผนัง", expr: "2 × (กว้าง + ยาว)", subst: `2 × (${fmt(w, 1)} + ${fmt(l, 1)}) ≈ ${fmt(wallAngle)} ม.` },
       ],
-      assumptions: ["โครงกริดทีบาร์มาตรฐาน Main tee ระยะ 1.2 ม. Cross tee ระยะ 0.6 ม."],
-      caveats: ["ห้องที่ไม่ได้สี่เหลี่ยมจตุรัส/มีเสาโผล่กลางห้องต้องตัดแผ่นเพิ่ม เผื่อมากกว่า 5% ตามความซับซ้อนจริง", DISCLAIMER_AB],
+      assumptions: ["โครงกริดทีบาร์มาตรฐาน Main tee ระยะ 1.2 ม. Cross tee 1.2 ม. ระยะ 0.6 ม. แผ่น 60×60 ซอย Cross tee 0.6 ม. กลางช่อง"],
+      caveats: ["ห้องที่ไม่ได้สี่เหลี่ยมจตุรัส/มีเสาโผล่กลางห้องต้องตัดแผ่นเพิ่ม เผื่อมากกว่า 5% ตามความซับซ้อนจริง", "ยังไม่รวมลวดแขวนและพุกยึดลวด", DISCLAIMER_AB],
       refs: [{ label: "แนวปฏิบัติงานติดตั้งฝ้าทีบาร์ (Exposed Grid T-bar Ceiling)" }],
     },
   });
 }
 
 export function calcRt60(v: Values) {
+  const bad = guard("acoustic", v);
+  if (bad) return bad;
   const a = area(v);
   const h = num(v, "h", 2.8);
   const vol = a * h;
   const alpha = num(v, "alpha", 0.15);
-  const A = a * 2 * alpha + 2 * (num(v, "w") + num(v, "l")) * h * 0.05;
+  const A = a * 2 * alpha + 2 * (num(v, "w", 4) + num(v, "l", 5)) * h * 0.05;
   const rt = (0.161 * vol) / Math.max(A, 0.1);
   const need = rt > 0.8;
   const panels = need ? ceil(((0.161 * vol) / 0.8 - A) / 0.8) : 0;
@@ -133,7 +179,7 @@ export function calcRt60(v: Values) {
         {
           label: "พื้นที่ดูดซับเสียงสมมูล",
           expr: "A = พื้น+ฝ้า×2×α + ผนังรอบ×สูง×0.05",
-          subst: `${fmt(a, 2)}×2×${fmt(alpha, 2)} + 2×(${fmt(num(v, "w"))}+${fmt(num(v, "l"))})×${fmt(h, 1)}×0.05 = ${fmt(A, 2)}`,
+          subst: `${fmt(a, 2)}×2×${fmt(alpha, 2)} + 2×(${fmt(num(v, "w", 4), 1)}+${fmt(num(v, "l", 5), 1)})×${fmt(h, 1)}×0.05 = ${fmt(A, 2)}`,
         },
         { label: "สมการ Sabine", expr: "RT60 = 0.161 × ปริมาตร ÷ A", subst: `0.161 × ${fmt(vol, 1)} ÷ ${fmt(A, 2)} = ${fmt(rt, 2)} วินาที` },
       ],
@@ -149,6 +195,8 @@ export function calcRt60(v: Values) {
 }
 
 export function calcInsulation(v: Values) {
+  const bad = guard("insulation", v);
+  if (bad) return bad;
   const a = area(v);
   const thick = num(v, "thick", 50);
   const kind = str(v, "kind", "glass");
@@ -173,7 +221,7 @@ export function calcInsulation(v: Values) {
       { label: "ค่า R", value: `${fmt(R, 1)}`, emphasize: true },
       { label: "ม้วน/แพ็กประมาณ", value: `${packs} แพ็ก (คิด 7.2 ตร.ม./แพ็ก)` },
     ],
-    tip: "ฝ้าชั้นบนบ้านไทย 50 มม. ใยแก้วพอเริ่ม ร้อนจัดจัด 75–100 มม.",
+    tip: "ฝ้าชั้นบนบ้านไทย 50 มม. ใยแก้วพอเริ่ม ร้อนจัดใช้ 75–100 มม.",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -202,9 +250,12 @@ export function calcInsulation(v: Values) {
 }
 
 export function calcHardware(v: Values) {
+  const bad = guard("hardware", v);
+  if (bad) return bad;
   const a = area(v);
-  const boards = ceil(a / 2.88);
-  const screws = boards * 18;
+  const boards = ceil(a / CEILING.boardArea.value);
+  const perBoard = screwsPerBoard();
+  const screws = boards * perBoard;
   const tape = ceil((boards * 2.4 * 2) / 90);
   const mud = round(a * 0.5, 1);
 
@@ -225,17 +276,23 @@ export function calcHardware(v: Values) {
       { label: "เทปผ้า", value: `${tape} ม้วน` },
       { label: "ปูนฉาบรอยต่อ", value: `${fmt(mud, 1)} กก.` },
     ],
-    tip: "สกรูทุก 20–30 ซม. ฉาบ 3 เที่ยวถ้าจะทาสีเรียบ",
+    tip: "สกรูทุก 25 ซม. ตามแนวโครงทุกเส้น ฉาบ 3 เที่ยวถ้าจะทาสีเรียบ",
     explain: {
       risk: "A",
-      updatedAt: "2026-08-21",
-      summary: "อุปกรณ์เก็บผิวฝ้ายิปซัมคิดตามจำนวนแผ่น: สกรูประมาณ 18 ตัว/แผ่น เทปผ้าตามความยาวรอยต่อรวม และปูนฉาบรอยต่อประมาณ 0.5 กก./ตร.ม.",
+      updatedAt: "2026-11-25",
+      summary: `อุปกรณ์เก็บผิวฝ้ายิปซัมคิดตามจำนวนแผ่น: สกรูประมาณ ${perBoard} ตัว/แผ่น (โครงทุก 40 ซม. สกรูทุก 25 ซม.) เทปผ้าตามความยาวรอยต่อรวม และปูนฉาบรอยต่อประมาณ 0.5 กก./ตร.ม.`,
       steps: [
-        { label: "จำนวนสกรู", expr: "จำนวนแผ่น × 18 ตัว/แผ่น", subst: `${boards} × 18 = ${fmt(screws)} ตัว` },
+        {
+          label: "จำนวนสกรู",
+          expr: "จำนวนแผ่น × (แนวโครงใต้แผ่น × สกรูต่อแนว)",
+          subst: `${boards} × ${perBoard} = ${fmt(screws)} ตัว`,
+          note: "แผ่น 2.4 ม. พาดโครง 7 แนว (ทุก 40 ซม.) แนวละ 6 ตัว (ทุก 25 ซม. บนความกว้าง 1.2 ม.)",
+        },
         { label: "เทปผ้ารอยต่อ", expr: "ปัดขึ้น(รอยต่อรวม ÷ 90 ม./ม้วน)", subst: `${boards}×2.4×2 ÷ 90 ≈ ${tape} ม้วน` },
         { label: "ปูนฉาบรอยต่อ", expr: "พื้นที่ × 0.5 กก./ตร.ม.", subst: `${fmt(a, 2)} × 0.5 = ${fmt(mud, 1)} กก.` },
       ],
-      assumptions: ["สกรูระยะห่างมาตรฐาน 20–30 ซม. ตามแนวโครง แผ่นมาตรฐาน 1.2×2.4 ม.", "ฉาบรอยต่อ 0.5 กก./ตร.ม. เป็นค่าเฉลี่ยสำหรับฉาบ 2–3 เที่ยว"],
+      constants: [CEILING.furringSpacing, CEILING.screwSpacing],
+      assumptions: ["สกรูทุก 25 ซม. ตามแนวโครงล่างที่ระยะ 40 ซม. แผ่นมาตรฐาน 1.2×2.4 ม. ไม่รวมเผื่อสกรูเสีย", "ฉาบรอยต่อ 0.5 กก./ตร.ม. เป็นค่าเฉลี่ยสำหรับฉาบ 2–3 เที่ยว"],
       caveats: ["ถ้าต้องการผิวเรียบสำหรับทาสีเนียน ควรฉาบ 3 เที่ยวและขัดละเอียด ปริมาณปูนฉาบอาจสูงกว่าค่าประมาณนี้", DISCLAIMER_AB],
       refs: [{ label: "แนวปฏิบัติงานเก็บผิวฝ้ายิปซัม (Gypsum Board Finishing — Screw, Tape & Joint Compound)" }],
     },
@@ -243,8 +300,8 @@ export function calcHardware(v: Values) {
 }
 
 const room = [
-  { type: "number" as const, key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 1, step: 0.1 },
-  { type: "number" as const, key: "l", label: "ยาว", unit: "ม.", default: 5, min: 1, step: 0.1 },
+  { type: "number" as const, key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 1, max: 100, step: 0.1 },
+  { type: "number" as const, key: "l", label: "ยาว", unit: "ม.", default: 5, min: 1, max: 100, step: 0.1 },
 ];
 
 export const ceilingTools: ToolDef[] = [
@@ -274,7 +331,7 @@ export const ceilingTools: ToolDef[] = [
     blurb: "เวลาก้อง + แผ่นซับ",
     fields: [
       ...room,
-      { type: "number", key: "h", label: "สูงห้อง", unit: "ม.", default: 2.8, min: 2, step: 0.1 },
+      { type: "number", key: "h", label: "สูงห้อง", unit: "ม.", default: 2.8, min: 2, max: 15, step: 0.1 },
       { type: "number", key: "alpha", label: "ค่าดูดซับเฉลี่ย", default: 0.15, min: 0.05, max: 0.8, step: 0.05 },
     ],
     calc: calcRt60,
@@ -285,7 +342,7 @@ export const ceilingTools: ToolDef[] = [
     blurb: "ใยแก้ว ร็อกวูล PE",
     fields: [
       ...room,
-      { type: "number", key: "thick", label: "หนา", unit: "มม.", default: 50, min: 10 },
+      { type: "number", key: "thick", label: "หนา", unit: "มม.", default: 50, min: 10, max: 300 },
       {
         type: "select",
         key: "kind",
@@ -318,12 +375,15 @@ export const ceilingJob: JobDef = {
         { value: "tbar", label: "ทีบาร์ 60×60" },
       ],
     },
-    { type: "number", key: "thick", label: "ฉนวน (0 ถ้าไม่ใส่)", unit: "มม.", default: 50, min: 0 },
+    { type: "number", key: "thick", label: "ฉนวน (0 ถ้าไม่ใส่)", unit: "มม.", default: 50, min: 0, max: 300 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(ceilingJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(ceilingJob.fields, input);
     const main = str(v, "sys") === "tbar" ? calcTbar({ ...v, tile: "60" }) : calcGypsum(v);
     const hw = calcHardware(v);
-    const ins = num(v, "thick") > 0 ? calcInsulation({ ...v, kind: "glass" }) : null;
+    const ins = num(v, "thick", 50) > 0 ? calcInsulation({ ...v, kind: "glass" }) : null;
     return jobFromParts({
       title: "งานฝ้าทั้งห้อง",
       headline: main.headline ?? "งานฝ้า",
