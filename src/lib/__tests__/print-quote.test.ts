@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { analyseMesh, parseMesh } from "../print-quote/mesh";
-import { estimateOrder, fileStatus } from "../print-quote/pricing";
+import { zipSync } from "fflate";
+import { estimateOrder, fileStatus, parcelFee } from "../print-quote/pricing";
 
 // 10 mm cube as 12 outward-facing triangles.
 const V = [
@@ -61,6 +62,20 @@ f 4 1 5 8`;
     expect(analyseMesh(m!.tri)!.volumeCm3).toBeCloseTo(1, 5);
   });
 
+  it("reads 3MF (zip + XML), honouring the unit", () => {
+    const verts = V.map(([x, y, z]) => `<vertex x="${x / 10}" y="${y / 10}" z="${z / 10}"/>`).join("");
+    const tris = F.map(([a, b, c]) => `<triangle v1="${a}" v2="${b}" v3="${c}"/>`).join("");
+    const xml = `<?xml version="1.0"?><model unit="centimeter" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources><object id="1" type="model"><mesh><vertices>${verts}</vertices><triangles>${tris}</triangles></mesh></object></resources><build><item objectid="1"/></build></model>`;
+    const zip = zipSync({ "3D/3dmodel.model": new TextEncoder().encode(xml) });
+    const m = parseMesh("cube.3mf", zip.buffer as ArrayBuffer);
+    expect(m?.format).toBe("3mf");
+    expect(analyseMesh(m!.tri)!.volumeCm3).toBeCloseTo(1, 4);
+  });
+
+  it("marks STEP as shop-checked, not an error", () => {
+    expect(fileStatus(null, "fdm", undefined, true)).toMatchObject({ level: "warn", autoPrice: false });
+  });
+
   it("flags holes and rejects junk", () => {
     const s = analyseMesh(parseMesh("open.stl", binaryStl(F.slice(2)))!.tri)!;
     expect(s.openEdges).toBeGreaterThan(0);
@@ -82,5 +97,11 @@ describe("print-quote pricing", () => {
     const e = estimateOrder([{ stats: s, qty: 3 }], "fdm", "normal");
     expect(e.pieces).toBe(3);
     expect(e.printTHB).toBeNull();
+  });
+
+  it("ships free from 1,000 THB", () => {
+    expect(parcelFee(null)).toBe(50);
+    expect(parcelFee(999)).toBe(50);
+    expect(parcelFee(1000)).toBe(0);
   });
 });

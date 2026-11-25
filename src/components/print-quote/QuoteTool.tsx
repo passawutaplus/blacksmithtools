@@ -15,7 +15,6 @@ import {
   Clock,
   Droplet,
   FileText,
-  Grid3x3,
   ImageDown,
   Info,
   Layers,
@@ -33,18 +32,20 @@ import {
   User,
   XCircle,
 } from "lucide-react";
-import { analyseMesh, fileExt, MAX_FILE_BYTES, parseMesh, type MeshStats } from "@/lib/print-quote/mesh";
+import { ACCEPTED_EXT, analyseMesh, fileExt, isCadFile, MAX_FILE_BYTES, parseMesh, type MeshStats } from "@/lib/print-quote/mesh";
 import {
   estimateOrder,
   estimatePiece,
   fileStatus,
   formatHours,
+  parcelFee,
   PRINT_CONFIG,
   type FileStatus,
   type Process,
   type Quality,
 } from "@/lib/print-quote/pricing";
 import { quoteRequestSchema, storageName, type QuoteRequest } from "@/lib/print-quote/request";
+import { ThaiAddressFields } from "@/components/ThaiAddressFields";
 import { renderThumb } from "./mesh-gl";
 import { ModelViewer } from "./ModelViewer";
 
@@ -60,6 +61,8 @@ type Item = {
   stats?: MeshStats;
   thumb?: string | null;
   readError?: string;
+  /** STEP/STP: no preview, the shop opens it. */
+  cad?: boolean;
   qty: number;
   open: boolean;
   want: [string, string, string];
@@ -171,8 +174,9 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
     name: "",
     phone: "",
     address: "",
-    district: "",
     province: "",
+    district: "",
+    subdistrict: "",
     zip: "",
     lineId: "",
     wantDate: "",
@@ -199,7 +203,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
   const cfg = PRINT_CONFIG[process];
   const rows = items.map((it) => ({
     it,
-    st: it.loading ? null : fileStatus(it.stats ?? null, process, it.readError),
+    st: it.loading ? null : fileStatus(it.stats ?? null, process, it.readError, it.cad),
   }));
   const priceable = rows.filter(
     (r) => r.st && r.it.stats && (r.st.level === "ok" || (r.st.level === "warn" && r.st.autoPrice)),
@@ -209,6 +213,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
     process,
     quality,
   );
+  const shipFee = shipping === "parcel" ? parcelFee(calculated ? order.printTHB : null) : null;
   const counts = { ok: 0, warn: 0, error: 0 };
   rows.forEach((r) => r.st && counts[r.st.level]++);
   const usable = rows.filter((r) => r.st && r.st.level !== "error");
@@ -236,8 +241,9 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
       setItems((l) => (l.length >= 30 ? l : [...l, base]));
       await new Promise((r) => setTimeout(r, 0));
       let patch: Partial<Item> = { loading: false };
-      if (![".stl", ".obj"].includes(fileExt(file.name))) patch.readError = "รับเฉพาะไฟล์ STL และ OBJ";
+      if (!(ACCEPTED_EXT as readonly string[]).includes(fileExt(file.name))) patch.readError = "รับเฉพาะไฟล์ STL, OBJ, 3MF และ STEP";
       else if (file.size > MAX_FILE_BYTES) patch.readError = "ไฟล์ใหญ่เกิน 50 MB";
+      else if (isCadFile(file.name)) patch.cad = true;
       else {
         try {
           const mesh = parseMesh(file.name, await file.arrayBuffer());
@@ -258,7 +264,8 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
       `ขอใบเสนอราคาพิมพ์ 3D${id ? ` #${id}` : ""}`,
       `${cfg.label} · layer ${cfg.layerMm[quality]} มม.`,
       lines,
-      order.printTHB != null ? `ราคาประเมิน ${baht(order.printTHB)} + ส่ง` : "",
+      order.printTHB != null ? `ราคาประเมิน ${baht(order.printTHB)}` : "",
+      shipping === "parcel" ? `จัดส่ง: พัสดุ ${shipFee === 0 ? "ส่งฟรี" : `฿${PRINT_CONFIG.shippingTHB}`}` : "จัดส่ง: ด่วน Grab/ไรเดอร์ เก็บปลายทาง",
     ]
       .filter(Boolean)
       .join("\n");
@@ -349,7 +356,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
     <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="grid gap-5">
         <Section no="01" title="ตั้งค่างานพิมพ์" right={process === "resin" ? <span className="text-forge">* ค่าตัวอย่าง รอร้านยืนยัน</span> : "ใช้กับทุกไฟล์"}>
-          <div className="grid gap-4 p-4 md:grid-cols-[1.25fr_1fr_0.8fr]">
+          <div className="grid gap-4 p-4 md:grid-cols-[1.25fr_1fr]">
             <div>
               <p className="mb-1.5 text-xs text-muted">ระบบพิมพ์</p>
               <Seg
@@ -373,23 +380,6 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                   { v: "fine", label: `ละเอียด ${cfg.layerMm.fine}` },
                 ]}
               />
-            </div>
-            <div>
-              {process === "fdm" ? (
-                <>
-                  <p className="mb-1.5 flex items-center gap-1.5 text-xs text-muted"><Grid3x3 className="h-3.5 w-3.5" aria-hidden />Infill</p>
-                  <div className="flex items-center rounded-[3px] border border-[#d9dcdf] bg-[#f3f4f5] px-2.5 py-2 text-[13px]">
-                    {PRINT_CONFIG.fdm.infill * 100}%<span className="ml-auto text-[11.5px] text-muted">มาตรฐานร้าน</span>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="mb-1.5 flex items-center gap-1.5 text-xs text-muted"><Droplet className="h-3.5 w-3.5" aria-hidden />เรซิ่น</p>
-                  <div className="flex items-center rounded-[3px] border border-[#d9dcdf] bg-[#f3f4f5] px-2.5 py-2 text-[13px]">
-                    สีเทา · เนื้อตัน<span className="ml-auto text-[11.5px] text-muted">มาตรฐานร้าน</span>
-                  </div>
-                </>
-              )}
             </div>
           </div>
           {process === "resin" && (
@@ -422,6 +412,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
               </span>
               <div>
                 <b className="font-medium text-navy">ลากไฟล์มาวาง ได้หลายไฟล์พร้อมกัน</b>
+                <span className="ml-1.5 text-[11.5px]">STL · OBJ · 3MF · STEP</span>
                 <br />
                 หรือ{" "}
                 <button type="button" onClick={() => inputRef.current?.click()} className="text-forge underline">
@@ -431,7 +422,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                   ref={inputRef}
                   type="file"
                   multiple
-                  accept=".stl,.obj"
+                  accept={ACCEPTED_EXT.join(",")}
                   hidden
                   onChange={(e) => {
                     if (e.target.files) addFiles(e.target.files);
@@ -519,7 +510,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                             )}
                           </div>
                           <div className="col-span-3 flex justify-end gap-1.5 md:col-span-1">
-                            {it.stats && st?.level !== "error" && (
+                            {(it.stats || it.cad) && st?.level !== "error" && (
                               <button
                                 type="button"
                                 aria-expanded={it.open}
@@ -542,12 +533,24 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                             </button>
                           </div>
                         </div>
-                        {it.open && it.tri && it.stats && (
+                        {it.open && ((it.tri && it.stats) || it.cad) && (
                           <div className="grid border-t border-dashed border-[#d9dcdf] bg-[#fafbfb] md:grid-cols-[1.15fr_1fr]">
                             <div className="md:border-r md:border-[#d9dcdf]">
-                              <ModelViewer tri={it.tri} stats={it.stats} />
+                              {it.tri && it.stats ? (
+                                <ModelViewer tri={it.tri} stats={it.stats} />
+                              ) : (
+                                <div className="grid h-[180px] place-items-center p-4 text-center text-[12.5px] text-muted">
+                                  <span>
+                                    <Box className="mx-auto mb-2 h-7 w-7" aria-hidden />
+                                    ไฟล์ STEP ดูตัวอย่างบนเว็บไม่ได้
+                                    <br />
+                                    ร้านจะเปิดในโปรแกรม CAD แล้วแจ้งขนาดและราคาให้
+                                  </span>
+                                </div>
+                              )}
                             </div>
                             <div className="grid content-start gap-3 p-3.5">
+                              {it.stats && (
                               <dl className="grid grid-cols-[1fr_auto] rounded-[3px] border border-[#d9dcdf] bg-white text-[12.5px] [&>*]:border-b [&>*]:border-[#d9dcdf] [&>*]:px-2.5 [&>*]:py-1.5 [&>*:nth-last-child(-n+2)]:border-b-0">
                                 <dt>ขนาดที่ตรวจพบ</dt>
                                 <dd className="text-right font-medium">{dims(it.stats)} มม.</dd>
@@ -558,6 +561,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                                   {it.stats.openEdges || it.stats.nonManifoldEdges ? "ร้านซ่อมให้" : "สมบูรณ์"}
                                 </dd>
                               </dl>
+                              )}
                               <div>
                                 <p className="mb-1.5 flex items-center gap-1.5 text-xs text-muted"><Maximize2 className="h-3.5 w-3.5" aria-hidden />ขนาดที่ต้องการ (ถ้าไม่ตรงไฟล์)</p>
                                 <div className="flex items-center gap-1.5 text-xs text-muted">
@@ -633,19 +637,17 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                 <input className={inputCls(true)} autoComplete="tel" inputMode="tel" maxLength={20} value={contact.phone} onChange={set("phone")} placeholder="08x-xxx-xxxx" />
               </Field>
               <div className="md:col-span-2">
-                <Field label="ที่อยู่" icon={MapPin} required>
-                  <input className={inputCls(true)} autoComplete="street-address" maxLength={400} value={contact.address} onChange={set("address")} placeholder="บ้านเลขที่ ถนน ตำบล/แขวง" />
-                </Field>
+                <ThaiAddressFields
+                  idPrefix="pq"
+                  value={{ province: contact.province, district: contact.district, subdistrict: contact.subdistrict, postalCode: contact.zip }}
+                  onChange={(a) =>
+                    setContact((c) => ({ ...c, province: a.province, district: a.district, subdistrict: a.subdistrict, zip: a.postalCode }))
+                  }
+                />
               </div>
-              <div className="grid gap-3.5 md:col-span-2 md:grid-cols-3">
-                <Field label="อำเภอ/เขต" required>
-                  <input className={inputCls(false)} maxLength={120} value={contact.district} onChange={set("district")} />
-                </Field>
-                <Field label="จังหวัด" required>
-                  <input className={inputCls(false)} autoComplete="address-level1" maxLength={120} value={contact.province} onChange={set("province")} />
-                </Field>
-                <Field label="รหัสไปรษณีย์" required>
-                  <input className={inputCls(false)} autoComplete="postal-code" inputMode="numeric" maxLength={5} value={contact.zip} onChange={set("zip")} />
+              <div className="md:col-span-2">
+                <Field label="ที่อยู่" icon={MapPin} required>
+                  <input className={inputCls(true)} autoComplete="street-address" maxLength={400} value={contact.address} onChange={set("address")} placeholder="บ้านเลขที่ หมู่ ซอย ถนน" />
                 </Field>
               </div>
               <Field label="LINE ID" icon={MessageCircle} optional>
@@ -659,7 +661,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
                 <div className="grid gap-3 md:grid-cols-2" role="radiogroup" aria-label="วิธีจัดส่ง">
                   {(
                     [
-                      { v: "parcel", Icon: Truck, t: `พัสดุปกติ · ฿${PRINT_CONFIG.shippingTHB}`, d: "ต่อออเดอร์ อาจปรับตามการตรวจออเดอร์" },
+                      { v: "parcel", Icon: Truck, t: `พัสดุปกติ · ฿${PRINT_CONFIG.shippingTHB}`, d: `ส่งฟรีเมื่อยอด ${PRINT_CONFIG.freeShipFromTHB.toLocaleString("th-TH")} บาทขึ้นไป` },
                       { v: "rider", Icon: Bike, t: "ด่วน · Grab / ไรเดอร์", d: "ร้านเรียกให้ ลูกค้าจ่ายค่าส่งปลายทางตามระยะทาง" },
                     ] as const
                   ).map(({ v, Icon, t, d }) => (
@@ -697,7 +699,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
         <div ref={sheetRef} className="rounded-[3px] bg-navy p-[18px] text-white">
           <p className="flex items-center gap-1.5 text-xs text-[#c5ced4]"><Calculator className="h-3.5 w-3.5" aria-hidden />ราคาประมาณการ · {cfg.label}</p>
           <p className="my-1 text-[34px] font-semibold leading-tight tracking-tight">
-            {calculated && order.printTHB != null ? baht(order.printTHB + (shipping === "parcel" ? PRINT_CONFIG.shippingTHB : 0)) : "฿ —"}
+            {calculated && order.printTHB != null ? baht(order.printTHB + (shipFee ?? 0)) : "฿ —"}
           </p>
           <div className="mt-2 border-t border-[#3a4c58] text-[13px] [&>div]:flex [&>div]:items-center [&>div]:justify-between [&>div]:border-b [&>div]:border-[#3a4c58] [&>div]:py-2">
             <div>
@@ -706,7 +708,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
             </div>
             <div>
               <span className="flex items-center gap-1.5 text-[#c5ced4]"><Truck className="h-4 w-4" aria-hidden />ค่าส่ง</span>
-              <b>{shipping === "parcel" ? `฿${PRINT_CONFIG.shippingTHB}` : "เก็บปลายทาง"}</b>
+              <b>{shipFee == null ? "เก็บปลายทาง" : shipFee === 0 ? "ส่งฟรี" : `฿${shipFee}`}</b>
             </div>
             <div>
               <span className="flex items-center gap-1.5 text-[#c5ced4]"><Clock className="h-4 w-4" aria-hidden />เวลาพิมพ์รวม</span>
@@ -722,7 +724,7 @@ export function QuoteTool({ lineId, lineUrl }: { lineId: string; lineUrl: string
           <p className="mb-1 flex items-center gap-1.5 text-[12.5px] font-medium text-navy"><Info className="h-4 w-4" aria-hidden />ราคานี้เป็นราคาประมาณการ</p>
           <ul className="list-disc pl-4">
             <li>ร้านอาจต้องตรวจไฟล์ก่อนพิมพ์ และอาจมีส่วนลดเพิ่มหลังตรวจ</li>
-            <li>ค่าส่งอาจเปลี่ยนตามการตรวจออเดอร์ก่อนพิมพ์จริง</li>
+            <li>ค่าส่ง ฿{PRINT_CONFIG.shippingTHB}/ออเดอร์ ส่งฟรีเมื่อยอดสั่ง {PRINT_CONFIG.freeShipFromTHB.toLocaleString("th-TH")} บาทขึ้นไป อาจเปลี่ยนตามการตรวจออเดอร์ก่อนพิมพ์จริง</li>
             <li>ไฟล์ที่ขึ้นเตือน ร้านจะประเมินให้แยก</li>
           </ul>
         </div>

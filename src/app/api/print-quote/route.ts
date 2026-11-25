@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { customAlphabet } from "nanoid";
 import { quoteRequestSchema, type QuoteRequest } from "@/lib/print-quote/request";
-import { PRINT_CONFIG } from "@/lib/print-quote/pricing";
+import { PRINT_CONFIG, parcelFee } from "@/lib/print-quote/pricing";
 import { clientIp, rateLimited } from "@/lib/rate-limit";
 import { hasBlobStore, writeRuntimeBytes } from "@/lib/runtime-store";
 import { pushLine } from "@/lib/notify";
@@ -35,9 +35,9 @@ function alertText(id: string, q: QuoteRequest) {
     `🧊 ขอใบเสนอราคาพิมพ์ 3D #${id}`,
     `${proc.label} · layer ${proc.layerMm[q.quality]} มม.`,
     files,
-    `ราคาประเมิน: ${price} + ส่ง ${q.shipping === "parcel" ? `฿${PRINT_CONFIG.shippingTHB}` : "ไรเดอร์ เก็บปลายทาง"}`,
+    `ราคาประเมิน: ${price} + ส่ง ${q.shipping === "parcel" ? (parcelFee(q.estimate.printTHB) ? `฿${PRINT_CONFIG.shippingTHB}` : "ฟรี (ยอด 1,000+)") : "ไรเดอร์ เก็บปลายทาง"}`,
     `👤 ${c.name} · ${c.phone}${c.lineId ? ` · LINE ${c.lineId}` : ""}`,
-    `📦 ${c.address} ${c.district} ${c.province} ${c.zip}`,
+    `📦 ${c.address} ${c.subdistrict} ${c.district} ${c.province} ${c.zip}`,
     c.wantDate ? `📅 ต้องการรับ ${c.wantDate}` : "",
     q.keepFiles ? "ไฟล์: ใช้เพื่องานนี้ ลบอัตโนมัติใน 30 วัน" : "ไฟล์: ลูกค้าไม่ให้เก็บไฟล์ ขอไฟล์ทางแชท",
   ]

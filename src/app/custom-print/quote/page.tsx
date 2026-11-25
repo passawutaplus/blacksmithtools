@@ -6,7 +6,7 @@ export const metadata = {
   title: "ประเมินราคาพิมพ์ 3D จากไฟล์",
   alternates: { canonical: "/custom-print/quote" },
   description:
-    "วางไฟล์ STL หรือ OBJ ดูโมเดล 3D เช็กไฟล์ ใส่จำนวน แล้วขอใบเสนอราคาพิมพ์ 3D (FDM PETG / Resin) ร้านตรวจไฟล์ก่อนยืนยันราคา",
+    "วางไฟล์ STL, OBJ, 3MF หรือ STEP ดูโมเดล 3D เช็กไฟล์ ใส่จำนวน แล้วขอใบเสนอราคาพิมพ์ 3D (FDM PETG / Resin) ร้านตรวจไฟล์ก่อนยืนยันราคา",
 };
 
 export default async function PrintQuotePage() {
@@ -25,7 +25,7 @@ export default async function PrintQuotePage() {
       <div className="container-bs pt-8">
         <h1 className="text-2xl font-bold text-navy md:text-3xl">ประเมินราคาพิมพ์ 3D</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted">
-          วางไฟล์ STL / OBJ เลือกวัสดุและความละเอียด ใส่จำนวน แล้วขอใบเสนอราคา ร้านจะตรวจไฟล์ก่อนยืนยันราคาจริง
+          วางไฟล์ STL / OBJ / 3MF / STEP เลือกวัสดุและความละเอียด ใส่จำนวน แล้วขอใบเสนอราคา ร้านจะตรวจไฟล์ก่อนยืนยันราคาจริง
         </p>
       </div>
       <div className="container-bs pt-6">

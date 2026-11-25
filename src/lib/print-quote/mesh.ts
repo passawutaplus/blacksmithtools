@@ -1,3 +1,4 @@
+import { unzipSync } from "fflate";
 /**
  * Reads STL (binary + ASCII) and OBJ meshes in the browser and measures them.
  * Pure functions, no DOM: shared by the quote tool and the unit tests.
@@ -20,11 +21,15 @@ export type MeshStats = {
   nonManifoldEdges: number;
 };
 
-export type ParsedMesh = { tri: Float32Array; format: "stl-binary" | "stl-ascii" | "obj" };
+export type ParsedMesh = { tri: Float32Array; format: "stl-binary" | "stl-ascii" | "obj" | "3mf" };
 
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const MAX_TRIANGLES = 3_000_000;
-export const ACCEPTED_EXT = [".stl", ".obj"] as const;
+export const MESH_EXT = [".stl", ".obj", ".3mf"] as const;
+/** CAD files: accepted for upload, but the shop opens them (no in-browser preview/price). */
+export const CAD_EXT = [".step", ".stp"] as const;
+export const ACCEPTED_EXT = [...MESH_EXT, ...CAD_EXT] as const;
+export const isCadFile = (name: string) => (CAD_EXT as readonly string[]).includes(fileExt(name));
 
 export function fileExt(name: string) {
   const m = /\.[^.]+$/.exec(name.toLowerCase());
@@ -84,6 +89,46 @@ function parseObj(text: string): Float32Array | null {
   return out.length >= 9 ? Float32Array.from(out) : null;
 }
 
+const UNIT_MM: Record<string, number> = { micron: 0.001, millimeter: 1, centimeter: 10, inch: 25.4, foot: 304.8, meter: 1000 };
+
+/** 3MF = zip of XML ".model" files. Meshes from every part are merged (transforms ignored). */
+function parse3mf(buf: ArrayBuffer): Float32Array | null {
+  let files: Record<string, Uint8Array>;
+  try {
+    files = unzipSync(new Uint8Array(buf), { filter: (f) => /\.model$/i.test(f.name) });
+  } catch {
+    return null;
+  }
+  const out: number[] = [];
+  const dec = new TextDecoder();
+  for (const data of Object.values(files)) {
+    const xml = dec.decode(data);
+    const unit = UNIT_MM[/<model[^>]*\bunit="([a-z]+)"/i.exec(xml)?.[1] ?? "millimeter"] ?? 1;
+    for (const m of xml.matchAll(/<mesh\b[^>]*>([\s\S]*?)<\/mesh>/g)) {
+      const v: number[] = [];
+      for (const t of m[1].matchAll(/<vertex\b([^>]*)\/?>/g)) {
+        const a = t[1];
+        v.push(
+          parseFloat(/\bx="([^"]+)"/.exec(a)?.[1] ?? "NaN") * unit,
+          parseFloat(/\by="([^"]+)"/.exec(a)?.[1] ?? "NaN") * unit,
+          parseFloat(/\bz="([^"]+)"/.exec(a)?.[1] ?? "NaN") * unit,
+        );
+      }
+      for (const t of m[1].matchAll(/<triangle\b([^>]*)\/?>/g)) {
+        const a = t[1];
+        for (const k of ["v1", "v2", "v3"]) {
+          const idx = parseInt(new RegExp(`\\b${k}="(\\d+)"`).exec(a)?.[1] ?? "-1", 10);
+          if (idx < 0 || idx * 3 + 2 >= v.length) return null;
+          out.push(v[idx * 3], v[idx * 3 + 1], v[idx * 3 + 2]);
+        }
+        if (out.length / 9 > MAX_TRIANGLES) return null;
+      }
+    }
+  }
+  if (!out.length || out.some((n) => !Number.isFinite(n))) return null;
+  return new Float32Array(out);
+}
+
 export function parseMesh(name: string, buf: ArrayBuffer): ParsedMesh | null {
   const ext = fileExt(name);
   if (ext === ".stl") {
@@ -91,6 +136,10 @@ export function parseMesh(name: string, buf: ArrayBuffer): ParsedMesh | null {
     if (bin) return { tri: bin, format: "stl-binary" };
     const ascii = parseAsciiStl(new TextDecoder().decode(buf));
     return ascii ? { tri: ascii, format: "stl-ascii" } : null;
+  }
+  if (ext === ".3mf") {
+    const tri = parse3mf(buf);
+    return tri ? { tri, format: "3mf" } : null;
   }
   if (ext === ".obj") {
     const obj = parseObj(new TextDecoder().decode(buf));

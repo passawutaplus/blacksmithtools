@@ -10,6 +10,8 @@ export type Quality = "normal" | "fine";
 
 export const PRINT_CONFIG = {
   shippingTHB: 50,
+  /** Parcel shipping is free when the print total reaches this (THB). */
+  freeShipFromTHB: 1000,
   /** Minimum charge per order (THB) — null until set. */
   minOrderTHB: null as number | null,
   fdm: {
@@ -58,7 +60,8 @@ export function maxMm(process: Process) {
   return PRINT_CONFIG[process].maxMm;
 }
 
-export function fileStatus(stats: MeshStats | null, process: Process, readError?: string): FileStatus {
+export function fileStatus(stats: MeshStats | null, process: Process, readError?: string, cad?: boolean): FileStatus {
+  if (cad && !readError) return { level: "warn", text: "ไฟล์ STEP ร้านเปิดตรวจและประเมินให้", autoPrice: false };
   if (readError || !stats) return { level: "error", text: readError || "อ่านไฟล์ไม่ได้ ไฟล์อาจเสีย" };
   const longest = Math.max(...stats.size);
   const limit = maxMm(process);
@@ -136,4 +139,9 @@ export function formatHours(h: number | null) {
   const hh = Math.floor(total / 60);
   const mm = total % 60;
   return hh ? `${hh} ชม.${mm ? ` ${mm} นาที` : ""}` : `${mm} นาที`;
+}
+
+/** Parcel fee for an order: free at/above `freeShipFromTHB`, otherwise the flat fee. Unknown total = flat fee. */
+export function parcelFee(printTHB: number | null) {
+  return printTHB != null && printTHB >= PRINT_CONFIG.freeShipFromTHB ? 0 : PRINT_CONFIG.shippingTHB;
 }

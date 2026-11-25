@@ -15,7 +15,7 @@ export async function GET() {
 /**
  * Issues short-lived client tokens so the browser uploads STL/OBJ straight to
  * PRIVATE Vercel Blob storage (files are too big for a normal API request).
- * Only paths under print-quotes/ with .stl/.obj are allowed, ≤ 50 MB,
+ * Only paths under print-quotes/ with .stl/.obj/.3mf/.step/.stp are allowed, ≤ 50 MB,
  * and every file auto-deletes after 30 days (PDPA).
  */
 export async function POST(req: Request) {

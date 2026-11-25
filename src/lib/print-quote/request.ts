@@ -1,14 +1,14 @@
 import { z } from "zod";
 
 /** Uploaded quote files live here in private Blob storage (random suffix added by Blob). */
-export const QUOTE_FILE_PATH = /^print-quotes\/[a-z0-9]{8,24}\/[A-Za-z0-9._-]{1,120}\.(stl|obj)$/i;
+export const QUOTE_FILE_PATH = /^print-quotes\/[a-z0-9]{8,24}\/[A-Za-z0-9._-]{1,120}\.(stl|obj|3mf|step|stp)$/i;
 /** Stored pathname after Blob adds "-<random>" before the extension. */
-export const QUOTE_STORED_PATH = /^print-quotes\/[a-z0-9]{8,24}\/[A-Za-z0-9._-]{1,160}\.(stl|obj)$/i;
+export const QUOTE_STORED_PATH = /^print-quotes\/[a-z0-9]{8,24}\/[A-Za-z0-9._-]{1,160}\.(stl|obj|3mf|step|stp)$/i;
 export const QUOTE_FILE_TTL_DAYS = 30;
 
 /** Safe ASCII file name for storage; the original name is kept separately for display. */
 export function storageName(name: string) {
-  const ext = /\.(stl|obj)$/i.exec(name)?.[0].toLowerCase() ?? ".stl";
+  const ext = /\.(stl|obj|3mf|step|stp)$/i.exec(name)?.[0].toLowerCase() ?? ".stl";
   const base = name
     .replace(/\.[^.]+$/, "")
     .normalize("NFKD")
@@ -43,9 +43,10 @@ export const quoteRequestSchema = z.object({
     name: z.string().trim().min(1, "กรอกชื่อ").max(120),
     phone: z.string().trim().regex(/^[0-9+\-\s()]{9,20}$/, "เบอร์โทรไม่ถูกต้อง"),
     address: z.string().trim().min(5, "กรอกที่อยู่").max(400),
-    district: z.string().trim().min(1, "กรอกอำเภอ/เขต").max(120),
-    province: z.string().trim().min(1, "กรอกจังหวัด").max(120),
-    zip: z.string().trim().regex(/^\d{5}$/, "รหัสไปรษณีย์ 5 หลัก"),
+    province: z.string().trim().min(1, "เลือกจังหวัด").max(120),
+    district: z.string().trim().min(1, "เลือกอำเภอ/เขต").max(120),
+    subdistrict: z.string().trim().min(1, "เลือกตำบล/แขวง").max(120),
+    zip: z.string().trim().regex(/^\d{5}$/, "เลือกตำบล/แขวงเพื่อใส่รหัสไปรษณีย์"),
     lineId: z.string().trim().max(60).optional(),
     wantDate: z
       .string()
