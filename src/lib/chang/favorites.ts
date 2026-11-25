@@ -1,34 +1,43 @@
-const FAV_KEY = "chang-assist-favorites";
-const RECENT_KEY = "chang-assist-recent";
+import { parsePathList, readStored, writeStored } from "./storage";
+
+export const FAV_KEY = "chang-assist-favorites";
+export const RECENT_KEY = "chang-assist-recent";
+
+export const FAV_LIMIT = 40;
+export const RECENT_LIMIT = 8;
+
+/** แปลงค่าดิบจาก storage เป็นรายการปักหมุด (ตัดไม่เกิน FAV_LIMIT) */
+export function parseFavorites(raw: string | null): string[] {
+  return parsePathList(raw, FAV_LIMIT);
+}
+
+/** แปลงค่าดิบจาก storage เป็นรายการใช้ล่าสุด (ตัดไม่เกิน RECENT_LIMIT) */
+export function parseRecent(raw: string | null): string[] {
+  return parsePathList(raw, RECENT_LIMIT);
+}
 
 export function loadFavorites(): string[] {
-  try {
-    const raw = localStorage.getItem(FAV_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+  return parseFavorites(readStored(FAV_KEY));
 }
 
 export function toggleFavorite(toolPath: string): string[] {
   const cur = loadFavorites();
-  const next = cur.includes(toolPath) ? cur.filter((x) => x !== toolPath) : [toolPath, ...cur];
-  localStorage.setItem(FAV_KEY, JSON.stringify(next.slice(0, 40)));
+  const next = (cur.includes(toolPath) ? cur.filter((x) => x !== toolPath) : [toolPath, ...cur]).slice(0, FAV_LIMIT);
+  writeStored(FAV_KEY, JSON.stringify(next));
   return next;
 }
 
 export function loadRecent(): string[] {
-  try {
-    const raw = localStorage.getItem(RECENT_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
+  return parseRecent(readStored(RECENT_KEY));
 }
 
 export function pushRecent(toolPath: string): void {
-  const next = [toolPath, ...loadRecent().filter((x) => x !== toolPath)].slice(0, 8);
-  localStorage.setItem(RECENT_KEY, JSON.stringify(next));
+  const cur = loadRecent();
+  if (cur[0] === toolPath) return;
+  const next = [toolPath, ...cur.filter((x) => x !== toolPath)].slice(0, RECENT_LIMIT);
+  writeStored(RECENT_KEY, JSON.stringify(next));
+}
+
+export function clearRecent(): void {
+  writeStored(RECENT_KEY, null);
 }
