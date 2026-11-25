@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Maximize2, RotateCw } from "lucide-react";
+import { Box, Maximize2, PenLine, RotateCw } from "lucide-react";
 import type { MeshStats } from "@/lib/print-quote/mesh";
-import { createGL, drawMesh, loadMesh, VIEWS, type GL } from "./mesh-gl";
+import { createGL, drawMesh, loadMesh, VIEWS, type GL, type RenderMode } from "./mesh-gl";
 
 type ViewName = keyof typeof VIEWS;
 
@@ -13,6 +13,10 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
   const view = useRef({ rx: VIEWS["3D"][0] as number, ry: VIEWS["3D"][1] as number, zoom: 1 });
   const [active, setActive] = useState<ViewName>("3D");
   const [noGL, setNoGL] = useState(false);
+  const [mode, setMode] = useState<RenderMode>("solid");
+  const modeRef = useRef<RenderMode>("solid");
+  const draw = (G: GL) =>
+    drawMesh(G, view.current.rx, view.current.ry, view.current.zoom, modeRef.current, { tri, stats });
 
   useEffect(() => {
     const cv = canvasRef.current;
@@ -26,10 +30,10 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
     }
     glRef.current = G;
     loadMesh(G, tri, stats);
-    drawMesh(G, view.current.rx, view.current.ry, view.current.zoom);
+    draw(G);
 
     let down = false, px = 0, py = 0;
-    const redraw = () => drawMesh(G, view.current.rx, view.current.ry, view.current.zoom);
+    const redraw = () => draw(G);
     const onDown = (e: PointerEvent) => {
       down = true;
       px = e.clientX;
@@ -62,13 +66,20 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
       G.gl.deleteBuffer(G.buf);
       glRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- draw reads refs only
   }, [tri, stats]);
 
   function setView(name: ViewName) {
     setActive(name);
     view.current.rx = VIEWS[name][0];
     view.current.ry = VIEWS[name][1];
-    if (glRef.current) drawMesh(glRef.current, view.current.rx, view.current.ry, view.current.zoom);
+    if (glRef.current) draw(glRef.current);
+  }
+
+  function switchMode(m: RenderMode) {
+    setMode(m);
+    modeRef.current = m;
+    if (glRef.current) draw(glRef.current);
   }
 
   return (
@@ -85,6 +96,27 @@ export function ModelViewer({ tri, stats }: { tri: Float32Array; stats: MeshStat
             }`}
           >
             {v}
+          </button>
+        ))}
+      </div>
+      <div className="absolute right-2.5 top-2.5 z-10 flex" role="group" aria-label="รูปแบบการแสดงผล">
+        {(
+          [
+            ["solid", "3D", Box],
+            ["line", "เส้น", PenLine],
+          ] as const
+        ).map(([m, label, Icon]) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => switchMode(m)}
+            aria-pressed={mode === m}
+            className={`-mr-px flex items-center gap-1 border border-navy px-2 py-0.5 text-[11px] font-medium ${
+              mode === m ? "bg-navy text-white" : "bg-white text-navy"
+            }`}
+          >
+            <Icon className="h-3 w-3" aria-hidden />
+            {label}
           </button>
         ))}
       </div>
