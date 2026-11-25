@@ -17,17 +17,17 @@ export default function AssistantTablesPage() {
     <div className="grid gap-6">
       <div>
         <h1 className="text-2xl font-bold text-navy">ตารางอ้างอิง</h1>
-        <p className="mt-1 text-sm text-muted">
+        <p className="mt-1 text-sm text-navy/75">
           เปิดดูอย่างเดียว ไม่มีการคำนวณ — ใช้เทียบของที่ร้านกับตารางในระบบ
         </p>
       </div>
 
       <section className="card overflow-x-auto p-4">
         <h2 className="text-lg font-bold text-navy">สายทองแดง THW ในท่อ</h2>
-        <p className="mt-1 text-xs text-muted">{CABLE_TABLE_SOURCE}</p>
+        <p className="mt-1 text-[0.8125rem] text-navy/75">{CABLE_TABLE_SOURCE}</p>
         <table className="mt-3 w-full min-w-[36rem] text-left text-sm">
           <thead>
-            <tr className="border-b border-steel text-xs text-muted">
+            <tr className="border-b border-steel text-[0.8125rem] text-navy/75">
               <th className="py-2 pr-3">ตร.มม.</th>
               <th className="py-2 pr-3">กลุ่ม 1 · 1 เฟส</th>
               <th className="py-2 pr-3">กลุ่ม 1 · 3 เฟส</th>
@@ -47,17 +47,17 @@ export default function AssistantTablesPage() {
             ))}
           </tbody>
         </table>
-        <p className="mt-3 text-xs leading-relaxed text-muted">
+        <p className="mt-3 text-[0.8125rem] leading-relaxed text-navy/75">
           เบรกเกอร์มาตรฐานที่ระบบรู้จัก: {BREAKER_SIZES.join(", ")} A
         </p>
-        <p className="mt-2 text-xs leading-relaxed text-navy">{DISCLAIMER_C}</p>
+        <p className="mt-2 text-[0.8125rem] leading-relaxed text-navy">{DISCLAIMER_C}</p>
       </section>
 
       <section className="card overflow-x-auto p-4">
         <h2 className="text-lg font-bold text-navy">ท่อ PVC น้ำใช้ — ID ใน (มอก. 17)</h2>
         <table className="mt-3 w-full min-w-[28rem] text-left text-sm">
           <thead>
-            <tr className="border-b border-steel text-xs text-muted">
+            <tr className="border-b border-steel text-[0.8125rem] text-navy/75">
               <th className="py-2 pr-3">ขนาดเรียก</th>
               <th className="py-2 pr-3">ID ชั้น 8.5</th>
               <th className="py-2">ID ชั้น 13.5</th>
@@ -83,7 +83,7 @@ export default function AssistantTablesPage() {
               <h3 className="text-sm font-bold text-navy">{kind}</h3>
               <table className="mt-1 w-full text-left text-sm">
                 <thead>
-                  <tr className="border-b border-steel text-xs text-muted">
+                  <tr className="border-b border-steel text-[0.8125rem] text-navy/75">
                     <th className="py-1 pr-3">psig</th>
                     <th className="py-1">°C</th>
                   </tr>

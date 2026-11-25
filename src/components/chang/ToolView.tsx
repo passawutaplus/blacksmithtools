@@ -26,6 +26,7 @@ export function ToolView({ tradeId, toolId }: { tradeId: string; toolId: string 
       blurb={found.tool.blurb}
       fields={found.tool.fields}
       calc={found.tool.calc}
+      persistKey={toolPath(found.trade.id, found.tool.id)}
       favPath={toolPath(found.trade.id, found.tool.id)}
     />
   );
@@ -52,6 +53,7 @@ export function JobView({ tradeId }: { tradeId: string }) {
       blurb={trade.job.blurb}
       fields={trade.job.fields}
       calc={trade.job.calc}
+      persistKey={`${trade.id}/job`}
     />
   );
 }
