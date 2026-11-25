@@ -758,3 +758,34 @@ describe("ประปา: ปั๊มเป็นวัตต์ ขั้น�
     expect(rowStarting(plumbingJob.calc({ len: 40, drainLen: 12 }), "ท่อน้ำทิ้ง 12 ม.")).toBe("24.0 ซม.");
   });
 });
+
+describe("ค้นหา: คำช่างที่เคยค้นไม่เจอ", () => {
+  const hit = (q: string) => searchCatalog(q).tools.map((t) => `${t.tradeId}/${t.id}`);
+
+  it.each([
+    ["สกิมโค้ท", "paint/skim"],
+    ["โป๊ว", "paint/skim"],
+    ["ยิปซั่ม", "ceiling/gypsum"],
+    ["ซีลาย", "ceiling/gypsum"],
+    ["C-Line", "ceiling/gypsum"],
+    ["โครงคร่าว", "ceiling/gypsum"],
+    ["พื้นไม้", "vinyl/qty"],
+    ["อีพ็อกซี่", "tile/grout"],
+    ["ไม้อัด", "handyman/laminate"],
+    ["กันซึม", "glass/sealant"],
+    ["หุน", "general/unit-length"],
+    ["หุน", "hvac/pipe"],
+    ["คิว", "general/unit-area-vol"],
+    ["คิว", "masonry/mix"],
+    ["บัวเชิงผนัง", "tile/trim"],
+  ])("ค้น “%s” ต้องเจอ %s", (q, id) => {
+    expect(hit(q)).toContain(id);
+  });
+
+  it("ค้นชื่อสายงานด้วยคำช่างได้: ยิปซั่ม → ช่างฝ้า · พื้นไม้ → กระเบื้องยาง · โป๊ว → งานสี", () => {
+    const trade = (q: string) => searchCatalog(q).trades.map((t) => t.id);
+    expect(trade("ยิปซั่ม")).toContain("ceiling");
+    expect(trade("พื้นไม้")).toContain("vinyl");
+    expect(trade("โป๊ว")).toContain("paint");
+  });
+});
