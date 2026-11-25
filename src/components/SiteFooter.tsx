@@ -70,7 +70,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
             href="/"
             className="inline-block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forge"
           >
-            <ShopLogo variant="header" className="h-12 w-auto" />
+            <ShopLogo variant="header" className="h-[4.5rem] w-auto" />
           </Link>
           {settings.tagline ? (
             <p className="mt-2 text-sm font-semibold text-forge">{settings.tagline}</p>

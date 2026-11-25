@@ -15,11 +15,12 @@ export function ShopLogo({
   if (variant === "header") {
     return (
       <Image
-        src={light ? "/brand/lockup-overlay.png" : "/brand/lockup-sticky.png"}
+        src={light ? "/brand/logo-on-dark.svg" : "/brand/logo-on-light.svg"}
         alt="BlackSmith"
-        width={635}
-        height={262}
-        className={className || "h-11 w-auto md:h-[3.25rem]"}
+        width={800}
+        height={359}
+        unoptimized
+        className={className || "h-14 w-auto md:h-[4.25rem]"}
         priority
       />
     );
@@ -29,7 +30,7 @@ export function ShopLogo({
     return (
       <span className={`inline-flex items-center ${className}`}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/lockup-sticky.png" alt="BlackSmith" className="a4-invoice-logo h-12 w-auto" />
+        <img src="/brand/logo-on-light.svg" alt="BlackSmith" className="a4-invoice-logo h-12 w-auto" />
       </span>
     );
   }
@@ -37,10 +38,11 @@ export function ShopLogo({
   if (variant === "footer") {
     return (
       <Image
-        src="/brand/lockup-light.png"
+        src="/brand/logo-on-light.svg"
         alt="BlackSmith"
-        width={635}
-        height={262}
+        width={800}
+        height={359}
+        unoptimized
         className={className || "h-20 w-auto"}
       />
     );
