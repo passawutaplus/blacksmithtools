@@ -12,11 +12,13 @@ import {
   Ruler,
   Box,
   ShieldCheck,
+  Truck,
   Wrench,
   Zap,
 } from "lucide-react";
 import type { Pillar, Trade } from "./types";
 import { ceilingJob, ceilingTools } from "./tools/ceiling";
+import { concreteJob, concreteTools } from "./tools/concrete";
 import { electricalJob, electricalTools } from "./tools/electrical";
 import { generalJob, generalTools } from "./tools/general";
 import { glassJob, glassTools } from "./tools/glass";
@@ -34,7 +36,7 @@ import { waterproofJob, waterproofTools } from "./tools/waterproof";
 export const PILLARS: Pillar[] = [
   { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา" },
   { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก" },
-  { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ หลังคา เหล็ก สี กันซึม" },
+  { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ คอนกรีต หลังคา เหล็ก สี กันซึม" },
   { id: "general", name: "เครื่องมือทั่วไป", blurb: "แปลงหน่วย รูปทรง" },
 ];
 
@@ -48,6 +50,7 @@ export const TRADE_ICONS: Record<string, LucideIcon> = {
   ceiling: PanelTop,
   glass: AppWindow,
   masonry: Box,
+  concrete: Truck,
   roof: Home,
   steel: Wrench,
   paint: Paintbrush,
@@ -158,6 +161,15 @@ export const TRADES: Trade[] = [
     job: masonryJob,
   },
   {
+    id: "concrete",
+    name: "ช่างคอนกรีต",
+    short: "คอนกรีต",
+    pillarId: "shell",
+    blurb: "เทพื้น รถโม่ ไวร์เมช เหล็กเส้น ปลอก",
+    tools: concreteTools,
+    job: concreteJob,
+  },
+  {
     id: "roof",
     name: "ช่างหลังคาและรางน้ำ",
     short: "หลังคา",
@@ -223,6 +235,11 @@ export const TOOLS_WITHOUT_COVER: string[] = [
   "plumbing/fittings",
   "hvac/kit",
   "roof/metal-kit",
+  "general/inch",
+  "general/spacing",
+  "steel/railing",
+  "concrete/slab",
+  "concrete/rebar",
 ];
 
 /**
@@ -294,6 +311,7 @@ const TRADE_ALIASES: Record<string, string[]> = {
   electrical: ["สายไฟ", "เบรกเกอร์", "แรงดันตก", "โซลาร์", "ไฟ"],
   plumbing: ["ประปา", "ท่อ", "ปั๊ม", "ถังน้ำ"],
   masonry: ["ก่อ", "อิฐ", "ฉาบ", "ทับหลัง", "เสาเอ็น", "ปูน"],
+  concrete: ["คอนกรีต", "เทพื้น", "เทปูน", "รถโม่", "ปูนโม่", "ผสมเสร็จ", "ไวร์เมช", "wire mesh", "เหล็กเส้น", "ปลอก", "คานคอดิน"],
   steel: ["เหล็ก", "เชื่อม", "h-beam", "ลวดเชื่อม"],
   roof: ["หลังคา", "เมทัลชีท", "กระเบื้องลอน"],
   tile: ["กระเบื้อง", "ยาแนว", "ปูนกาว"],
@@ -348,6 +366,14 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "plumbing/fittings": ["ข้อต่อ", "ข้องอ", "สามทาง", "จุดน้ำ", "บอลวาล์ว", "สต็อปวาล์ว", "ใบสั่งของประปา"],
   "hvac/kit": ["ใบสั่งของแอร์", "ชุดติดตั้ง", "ติดตั้งแอร์", "รางครอบ", "vct", "ฉนวน", "ขาแขวน", "ท่อน้ำทิ้งแอร์"],
   "roof/metal-kit": ["แป", "เมทัลชีท", "สั่งตัด", "ปั้นลม", "ครอบข้าง", "ครอบสัน"],
+
+  // เครื่องมือใหม่ 2026-11 (โครงสร้าง + ทั่วไป)
+  "general/inch": ["หุน", "นิ้ว", "เศษส่วน", "นิ้วครึ่ง", "ฟุต-นิ้ว", "inch", "มม. เป็นนิ้ว"],
+  "general/spacing": ["แบ่งระยะ", "แบ่งช่อง", "ระยะเท่า", "ลูกกรง", "ชั้นวาง", "โครงคร่าว", "ระยะห่าง"],
+  "steel/railing": ["รั้ว", "ราวกันตก", "ราวระเบียง", "ราวบันได", "ลูกกรง", "กันสาด", "ประตูรั้ว", "เหล็กกล่อง"],
+  "steel/weight": ["ราคาเหล็ก", "กก./เส้น", "แป๊บ", "ท่อดำ"],
+  "concrete/slab": ["เทพื้น", "ไวร์เมช", "wiremesh", "wire mesh", "รถโม่", "ปูนโม่", "คิว", "ลานจอดรถ"],
+  "concrete/rebar": ["เหล็กเส้น", "ปลอก", "เหล็กปลอก", "ลวดผูก", "ข้ออ้อย", "db12", "rb6", "คานคอดิน", "ทาบเหล็ก"],
 };
 
 export function toolCount(): number {

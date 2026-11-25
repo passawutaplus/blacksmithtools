@@ -19,22 +19,59 @@ import {
   DISCLAIMER_AB,
   DISCLAIMER_C,
   MATERIAL,
+  RAILING,
   REBAR_SIZES,
   STEEL_CHANNEL,
   STEEL_FORMULA,
   STEEL_H_BEAM,
   STEEL_SECTION_SOURCE,
+  STEEL_SHOP_ANGLE,
+  STEEL_SHOP_BOX,
+  STEEL_SHOP_LIPC,
+  STEEL_SHOP_PIPE_OD,
+  STEEL_SHOP_SIZES_SOURCE,
+  STEEL_STICK,
   STEEL_W_BEAM,
   UNIT,
   WELD,
 } from "../constants";
+import { countForMaxGap, equalSpacing } from "./general";
 
 const guard = (id: string, v: Values) => guardTool(steelTools, id, v);
 
 type Section = { kgm: number; note: string; expr: string; subst: string; fromTable: boolean; cornerNote?: string };
 
+/** ค่าในช่อง "ขนาดที่ร้านขาย" — "custom" (ค่าตั้งต้น) ใช้ขนาดที่กรอกเอง */
+const CUSTOM_SIZE = "custom";
+
+/** เลือกขนาดที่ร้านขายแล้ว เติมมิติลงช่องเดิม ให้สูตรหน้าตัดเดิมคิดต่อ (ไม่มีตารางน้ำหนักแยก) */
+function withShopSize(v: Values): Values {
+  const shape = str(v, "shape", "box");
+  if (shape === "box") {
+    const p = STEEL_SHOP_BOX[str(v, "boxsize", CUSTOM_SIZE)];
+    if (p) return { ...v, ba: p.a, bb: p.b, bt: p.t };
+  } else if (shape === "angle") {
+    const p = STEEL_SHOP_ANGLE[str(v, "anglesize", CUSTOM_SIZE)];
+    if (p) return { ...v, la: p.a, lb: p.b, lt: p.t };
+  } else if (shape === "lipc") {
+    const p = STEEL_SHOP_LIPC[str(v, "lipcsize", CUSTOM_SIZE)];
+    if (p) return { ...v, ch: p.h, cb: p.b, cl: p.c, ct: p.t };
+  } else if (shape === "pipe") {
+    const p = STEEL_SHOP_PIPE_OD[str(v, "pipesize", CUSTOM_SIZE)];
+    if (p) return { ...v, od: p.od };
+  }
+  return v;
+}
+
+/** ความยาวต่อเส้นที่ร้านขาย ของรูปพรรณที่ขายเป็นเส้นมาตรฐาน — รูปพรรณอื่นคืน 0 (ไม่แสดง กก./เส้น) */
+function stickLength(shape: string): number {
+  if (shape === "rebar") return STEEL_FORMULA.rebarStock.value;
+  return ["box", "angle", "lipc", "pipe"].includes(shape) ? STEEL_STICK.value : 0;
+}
+
 /** น้ำหนักต่อเมตรของหน้าตัดที่เลือก — คืน CalcResult เมื่อขนาดที่กรอกเป็นไปไม่ได้ */
-function steelSection(v: Values): Section | ReturnType<typeof blockedResult> {
+function steelSection(input: Values): Section | ReturnType<typeof blockedResult> {
+  const v = withShopSize(input);
   const shape = str(v, "shape", "box");
   const density = MATERIAL.steelDensity.value;
   const k = STEEL_FORMULA.kgPerMm2.value;
@@ -209,12 +246,15 @@ export function calcSteelWeight(v: Values) {
   const total = kgm * len * qty;
   const cost = total * price;
   const rebarBars = shape === "rebar" ? ceil((len * qty) / STEEL_FORMULA.rebarStock.value) : 0;
+  const stick = stickLength(shape);
   return resultX({
     title: "น้ำหนักเหล็ก",
     headline: price > 0 ? `${fmt(total, 1)} กก. · ประมาณ ${fmt(cost)} บาท` : `${fmt(total, 1)} กก.`,
     rows: [
       { label: "หน้าตัด", value: note },
       { label: "กก./ม.", value: `${fmt(kgm, 2)} กก./ม.` },
+      ...(stick > 0 ? [{ label: "กก./เส้น", value: `${fmt(kgm * stick, 2)} กก. (เส้นละ ${fmt(stick)} ม.)` }] : []),
+      ...(stick > 0 && price > 0 ? [{ label: "ราคาต่อเส้น", value: `${fmt(kgm * stick * price)} บาท (เส้นละ ${fmt(stick)} ม.)` }] : []),
       { label: "ยาว × จำนวน", value: `${fmt(len, 2)} ม. × ${fmt(qty)}` },
       { label: "น้ำหนักรวม", value: `${fmt(total, 1)} กก.`, emphasize: true },
       ...(shape === "rebar"
@@ -256,15 +296,18 @@ export function calcSteelWeight(v: Values) {
             ]
           : []),
       ],
-      constants: fromTable
-        ? []
-        : shape === "rebar" || shape === "round"
-          ? [MATERIAL.steelDensity, MATERIAL.rebarFactor, ...(shape === "rebar" ? [STEEL_FORMULA.rebarStock] : [])]
-          : shape === "box" || shape === "angle"
-            ? [STEEL_FORMULA.kgPerMm2]
-            : shape === "lipc"
-              ? [STEEL_FORMULA.kgPerMm2, STEEL_FORMULA.coldBendInnerR]
-              : [MATERIAL.steelDensity],
+      constants: [
+        ...(fromTable
+          ? []
+          : shape === "rebar" || shape === "round"
+            ? [MATERIAL.steelDensity, MATERIAL.rebarFactor, ...(shape === "rebar" ? [STEEL_FORMULA.rebarStock] : [])]
+            : shape === "box" || shape === "angle"
+              ? [STEEL_FORMULA.kgPerMm2]
+              : shape === "lipc"
+                ? [STEEL_FORMULA.kgPerMm2, STEEL_FORMULA.coldBendInnerR]
+                : [MATERIAL.steelDensity]),
+        ...(stick > 0 && shape !== "rebar" ? [STEEL_STICK] : []),
+      ],
       assumptions: [
         "เหล็กกล้าคาร์บอนความหนาแน่น 7,850 กก./ลบ.ม.",
         fromTable ? "ใช้น้ำหนักตามตารางหน้าตัดมาตรฐาน JIS G3192 / มอก. 1227 (รางน้ำคือรางรีดร้อน ไม่ใช่ตัวซีพับเย็น)" : "คิดจากปริมาตรหน้าตัดจริง",
@@ -279,6 +322,7 @@ export function calcSteelWeight(v: Values) {
       refs: [
         { label: STEEL_SECTION_SOURCE },
         { label: "มอก. 20 / 24 เหล็กเส้นเสริมคอนกรีต (น้ำหนักต่อเมตรตามเส้นผ่านศูนย์กลาง)" },
+        { label: STEEL_SHOP_SIZES_SOURCE },
       ],
     },
   });
@@ -672,6 +716,300 @@ export function calcThermal(v: Values) {
   });
 }
 
+/* ─────────────── รั้ว / ราวกันตก / โครงกันสาด เหล็กกล่อง ─────────────── */
+
+type RailKind = "railing" | "fence" | "frame" | "awning";
+
+const RAIL_KIND_NAME: Record<RailKind, string> = {
+  railing: "ราวกันตก",
+  fence: "รั้วลูกกรง",
+  frame: "โครงรั้ว/ประตู (ไม่มีลูกกรง)",
+  awning: "โครงกันสาด",
+};
+
+/** สีกันสนิม/สีน้ำมันขายเป็นแกลลอนกับกระป๋องเล็ก 1/4 แกลลอน — จัดให้ซื้อได้จริง ปัดขึ้น */
+export function paintCans(litres: number): string {
+  const gal = UNIT.gallon.value;
+  const qt = RAILING.quarterCanL.value;
+  if (litres <= 0) return "0 ลิตร";
+  let full = Math.floor(litres / gal + 1e-9);
+  let small = ceil((litres - full * gal) / qt);
+  if (small >= 4) {
+    full += 1;
+    small = 0;
+  }
+  const parts = [full > 0 ? `${fmt(full)} แกลลอน` : "", small > 0 ? `${fmt(small)} กระป๋องเล็ก (1/4 แกลลอน)` : ""].filter(Boolean);
+  return parts.join(" + ");
+}
+
+type RailMember = { role: string; sizeKey: string; pieces: number[]; joints: number };
+
+export function calcRailing(v: Values) {
+  const bad = guard("railing", v);
+  if (bad) return bad;
+  const kind = (["railing", "fence", "frame", "awning"].includes(str(v, "kind", "railing")) ? str(v, "kind", "railing") : "railing") as RailKind;
+  const hasBal = kind === "railing" || kind === "fence";
+  const L = num(v, "L", 4);
+  const H = num(v, "H", 1);
+  const span = num(v, "span", 2);
+  const rails = Math.round(num(v, "rails", 2));
+  const gapCm = num(v, "gap", 10);
+  const bottomCm = hasBal ? num(v, "bottom", 5) : 0;
+  const postExtra = kind === "fence" || kind === "frame" ? num(v, "postExtra", 0) : 0;
+  const coats = Math.round(num(v, "coats", 2));
+  const price = num(v, "price", 0);
+  /** ขนาดกล่องที่เลือก — ค่าที่ไม่มีในรายการถูกด่านตรวจตีกลับก่อนแล้ว จึงตกไปใช้ค่าตั้งต้นได้อย่างปลอดภัย */
+  const boxPick = (key: string, fallback: string) => {
+    const k = str(v, key, fallback);
+    return k in STEEL_SHOP_BOX ? k : fallback;
+  };
+  const postKey = boxPick("postSize", "50x50x2.3");
+  const railKey = boxPick("railSize", "25x50x1.5");
+  const balKey = boxPick("balSize", "25x25x1.2");
+  const post = STEEL_SHOP_BOX[postKey];
+  const rail = STEEL_SHOP_BOX[railKey];
+  const bal = STEEL_SHOP_BOX[balKey];
+  const stockMm = STEEL_STICK.value * 1000;
+  const kerf = RAILING.kerf.value;
+  const k = STEEL_FORMULA.kgPerMm2.value;
+  const kgmOf = (p: { a: number; b: number; t: number }) => (2 * (p.a + p.b) - 4 * p.t) * p.t * k;
+  const periOf = (p: { a: number; b: number }) => 2 * (p.a + p.b);
+
+  // เสา (หรือจันทันของกันสาด) วางที่ปลายทั้งสองข้าง ระยะไม่เกินที่กรอก
+  const Lmm = L * 1000;
+  const posts = ceil(L / span) + 1;
+  const postW = Math.min(post.a, post.b);
+  const clear = (Lmm - posts * postW) / (posts - 1);
+  if (clear <= 0) {
+    return blockedResult({
+      headline: `เสา ${fmt(posts)} ต้น กว้างต้นละ ${fmtTrim(postW)} มม. เต็มความยาว ${fmtTrim(L, 2)} ม. แล้ว — ไม่เหลือช่อง`,
+      tip: "เพิ่มระยะเสา หรือตรวจความยาวงานอีกครั้ง",
+    });
+  }
+  const postLen = (H + postExtra) * 1000;
+  const railDepth = Math.min(rail.a, rail.b);
+  const railPieces = rails * (posts - 1);
+
+  // ลูกกรงยึดระหว่างคานล่างกับคานบน ช่องว่างต่อช่วงเสาไม่เกินที่กรอก
+  let balPerBay = 0;
+  let balGap = 0;
+  let balLen = 0;
+  if (hasBal) {
+    balLen = H * 1000 - bottomCm * 10 - 2 * railDepth;
+    if (balLen <= 0) {
+      return blockedResult({
+        headline: `สูง ${fmtTrim(H, 2)} ม. ไม่พอใส่คานบน-ล่างกับลูกกรง`,
+        tip: "เพิ่มความสูง ลดระยะใต้คานล่าง หรือเลือกคานที่แคบลง",
+      });
+    }
+    balPerBay = countForMaxGap(clear, Math.min(bal.a, bal.b), gapCm * 10, "gap");
+    if (balPerBay * Math.min(bal.a, bal.b) >= clear) {
+      return blockedResult({
+        headline: `ช่องห่าง ${fmtTrim(gapCm)} ซม. แคบเกินสำหรับลูกกรงขนาดนี้`,
+        tip: "เพิ่มช่องห่าง หรือเลือกลูกกรงที่เล็กลง",
+      });
+    }
+    balGap = equalSpacing(clear, Math.min(bal.a, bal.b), balPerBay, "gap").gap;
+  }
+  const balCount = balPerBay * (posts - 1);
+
+  const members: RailMember[] = [
+    { role: kind === "awning" ? "จันทัน" : "เสา", sizeKey: postKey, pieces: new Array<number>(posts).fill(postLen), joints: 0 },
+    { role: kind === "awning" ? "แป/คานหน้า-หลัง" : "คานนอน", sizeKey: railKey, pieces: new Array<number>(railPieces).fill(clear), joints: railPieces * 2 },
+    ...(hasBal ? [{ role: "ลูกกรง", sizeKey: balKey, pieces: new Array<number>(balCount).fill(balLen), joints: balCount * rails }] : []),
+  ];
+  const tooLong = members.find((m) => m.pieces.some((p) => p > stockMm));
+  if (tooLong) {
+    return blockedResult({
+      headline: `${tooLong.role}ยาวเกินเส้น ${fmt(STEEL_STICK.value)} ม. — ต้องต่อเชื่อม เครื่องมือนี้ไม่คิดให้`,
+      tip: "ลดความสูง/ความยาวเผื่อฝัง หรือแบ่งชิ้นแล้วคิดในเครื่องมือวางแผนตัด",
+    });
+  }
+
+  // ขนาดเดียวกันใช้เส้นร่วมกันได้ จึงรวมชิ้นตามขนาดก่อนจัดลงเส้น
+  const bySize = new Map<string, number[]>();
+  for (const m of members) bySize.set(m.sizeKey, [...(bySize.get(m.sizeKey) ?? []), ...m.pieces]);
+  const buy = [...bySize.entries()].map(([key, pieces]) => {
+    const p = STEEL_SHOP_BOX[key];
+    const sticks = pieces.length ? packBfd(stockMm, kerf, pieces).bars.length : 0;
+    return { key, p, sticks, kg: sticks * STEEL_STICK.value * kgmOf(p), usedKg: (pieces.reduce((a, b) => a + b, 0) / 1000) * kgmOf(p) };
+  });
+  const sticksTotal = buy.reduce((a, b) => a + b.sticks, 0);
+  const kgBuy = buy.reduce((a, b) => a + b.kg, 0);
+  const kgUsed = buy.reduce((a, b) => a + b.usedKg, 0);
+  const cost = kgBuy * price;
+
+  // ลวดเชื่อม: เชื่อมรอบปลายชิ้นที่มาชน (คานชนเสา, ลูกกรงชนคาน) ขาเชื่อมไม่น้อยกว่าที่ลวด 2.6 มม. ทำได้
+  const weldOf = (m: RailMember, p: { a: number; b: number; t: number }, other: { t: number }) => {
+    const len = (m.joints * periOf(p)) / 1000;
+    const z = Math.max(Math.min(p.t, other.t), RAILING.weldLegMin.value) / 1000;
+    return { len, kg: 0.5 * z * z * len * MATERIAL.steelDensity.value * WELD.reinforcement.value };
+  };
+  const welds = [weldOf(members[1], rail, post), ...(hasBal ? [weldOf(members[2], bal, rail)] : [])];
+  const weldLen = welds.reduce((a, b) => a + b.len, 0);
+  const weldMetal = welds.reduce((a, b) => a + b.kg, 0);
+  const rodKg = weldMetal / WELD.depSmaw.value;
+  const joints = members.reduce((a, b) => a + b.joints, 0);
+
+  // สี: ผิวรอบนอกของทุกชิ้น
+  const sizeOf = (m: RailMember) => STEEL_SHOP_BOX[m.sizeKey];
+  const area = members.reduce((a, m) => a + (m.pieces.reduce((x, y) => x + y, 0) / 1000) * (periOf(sizeOf(m)) / 1000), 0);
+  const primerL = area / RAILING.primerM2PerL.value;
+  const topL = (area * coats) / RAILING.topM2PerL.value;
+
+  // คำเตือนราวกันตก (ชั้น B)
+  const warnings: string[] = [];
+  if (kind === "railing") {
+    if (gapCm > RAILING.maxGapCm.value) warnings.push(`ช่องลูกกรงตั้งไว้ ${fmtTrim(gapCm)} ซม. เกิน ${fmt(RAILING.maxGapCm.value)} ซม. — เด็กลอดได้ ลดเหลือไม่เกิน ${fmt(RAILING.maxGapCm.value)} ซม.`);
+    if (H < RAILING.minHeight.value) warnings.push(`สูง ${fmtTrim(H, 2)} ม. ต่ำกว่า ${fmtTrim(RAILING.minHeight.value, 2)} ม. — ราวกันตกต้องสูงไม่น้อยกว่านี้`);
+    if (bottomCm > RAILING.maxBottomGapCm.value) warnings.push(`ช่องใต้คานล่าง ${fmtTrim(bottomCm)} ซม. เกิน ${fmt(RAILING.maxBottomGapCm.value)} ซม. — เด็กลอดใต้ราวได้`);
+  }
+
+  const sizeText = (p: { a: number; b: number; t: number }) => `กล่อง ${fmtTrim(p.a)}×${fmtTrim(p.b)}×${fmtTrim(p.t)}`;
+  const title = RAIL_KIND_NAME[kind];
+  return resultX({
+    title,
+    headline: `ซื้อเหล็ก ${fmt(sticksTotal)} เส้น · ${fmt(kgBuy, 1)} กก.${price > 0 ? ` · ประมาณ ${fmt(cost)} บาท` : ""}`,
+    chart: {
+      kind: "stack",
+      parts: buy.map((b) => ({ label: sizeText(b.p), value: b.kg, display: `${fmt(b.sticks)} เส้น · ${fmt(b.kg, 1)} กก.` })),
+      totalLabel: "เหล็กที่ต้องซื้อ",
+      totalDisplay: `${fmt(sticksTotal)} เส้น · ${fmt(kgBuy, 1)} กก.`,
+    },
+    rows: [
+      { label: "งาน", value: `${title} ยาว ${fmtTrim(L, 2)} ม. ${kind === "awning" ? "ยื่น" : "สูง"} ${fmtTrim(H, 2)} ม.` },
+      ...warnings.map((w) => ({ label: "ข้อควรระวัง", value: w, emphasize: true })),
+      {
+        label: kind === "awning" ? "จันทัน" : "เสา",
+        value: `${fmt(posts)} ต้น × ${fmt(postLen)} มม. (${sizeText(post)}) · ช่องใน ${fmt(clear)} มม.`,
+      },
+      { label: members[1].role, value: `${fmt(rails)} แถว × ${fmt(posts - 1)} ช่วง = ${fmt(railPieces)} ท่อน × ${fmt(clear)} มม. (${sizeText(rail)})` },
+      ...(hasBal
+        ? [
+            {
+              label: "ลูกกรง",
+              value: `${fmt(balCount)} ท่อน × ${fmt(balLen)} มม. (${sizeText(bal)}) · ช่วงละ ${fmt(balPerBay)} ซี่ ช่องจริง ${fmtTrim(balGap / 10, 1)} ซม.`,
+            },
+          ]
+        : []),
+      ...buy.map((b) => ({ label: `ซื้อ ${sizeText(b.p)}`, value: `${fmt(b.sticks)} เส้น (เส้นละ ${fmt(STEEL_STICK.value)} ม.) · ${fmt(b.kg, 1)} กก.`, emphasize: true })),
+      { label: "น้ำหนักเหล็กที่ซื้อ", value: `${fmt(kgBuy, 1)} กก. (เนื้อที่ใช้จริง ${fmt(kgUsed, 1)} กก.)`, emphasize: true },
+      ...(price > 0 ? [{ label: "ราคาเหล็กประมาณ", value: `${fmt(cost)} บาท (${fmtTrim(price, 2)} บาท/กก.)`, emphasize: true }] : []),
+      {
+        label: "ลวดเชื่อม 2.6 มม.",
+        value: `${fmt(rodKg, 2)} กก. (≈ ${fmt(ceil(rodKg / RAILING.rodPackKg.value))} ห่อ ${fmt(RAILING.rodPackKg.value)} กก.) · ${fmt(joints)} จุด`,
+      },
+      { label: "สีกันสนิม 1 เที่ยว", value: `${fmt(primerL, 1)} ลิตร → ${paintCans(primerL)}` },
+      { label: `สีทับหน้า ${fmt(coats)} เที่ยว`, value: `${fmt(topL, 1)} ลิตร → ${paintCans(topL)}` },
+    ],
+    tip:
+      kind === "railing"
+        ? `ราวกันตกต้องยึดเสาแน่นกับพื้น/คาน ช่องลูกกรงและช่องใต้คานล่างไม่เกิน ${fmt(RAILING.maxGapCm.value)} ซม. เผื่อเหล็กสำรองไว้สำหรับตัดพลาด`
+        : kind === "awning"
+          ? "คิดแค่โครงเหล็ก หลังคาใช้เครื่องมือช่างหลังคา จุดยึดผนังและขนาดเหล็กกันสาดยื่นยาวให้วิศวกรดู"
+          : "เสารั้วฝังดิน/ตอม่อให้ใส่ความยาวเผื่อฝัง ประตูบานเลื่อน/บานพับคิดแยกในเครื่องมือวางแผนตัด",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary:
+        "วางเสาที่ปลายทั้งสองข้างระยะไม่เกินที่กรอก คานนอนตัดใส่ระหว่างเสา ลูกกรงแบ่งช่องเท่ากันในแต่ละช่วง แล้วจัดชิ้นลงเส้น 6 ม. แยกตามขนาด (Best Fit Decreasing)",
+      steps: [
+        {
+          label: kind === "awning" ? "จำนวนจันทัน" : "จำนวนเสา",
+          expr: "ต้น = ปัดขึ้น(ยาว ÷ ระยะเสา) + 1 · ช่องใน = (ยาว − ต้น × กว้างเสา) ÷ (ต้น − 1)",
+          subst: `ปัดขึ้น(${fmtTrim(L, 2)} ÷ ${fmtTrim(span, 2)}) + 1 = ${fmt(posts)} ต้น · (${fmt(Lmm)} − ${fmt(posts)} × ${fmtTrim(postW)}) ÷ ${fmt(posts - 1)} = ${fmt(clear, 1)} มม.`,
+        },
+        ...(hasBal
+          ? [
+              {
+                label: "ลูกกรงต่อช่วง",
+                expr: "ซี่ = ปัดขึ้น((ช่องใน − ช่องห่าง) ÷ (ช่องห่าง + กว้างลูกกรง)) · ยาว = สูง − ใต้คานล่าง − คานบน − คานล่าง",
+                subst: `ปัดขึ้น((${fmt(clear, 1)} − ${fmt(gapCm * 10)}) ÷ (${fmt(gapCm * 10)} + ${fmtTrim(Math.min(bal.a, bal.b))})) = ${fmt(balPerBay)} ซี่ · ${fmt(H * 1000)} − ${fmt(bottomCm * 10)} − 2 × ${fmtTrim(railDepth)} = ${fmt(balLen)} มม.`,
+              },
+            ]
+          : []),
+        {
+          label: "จัดชิ้นลงเส้น",
+          expr: `เส้นละ ${fmt(stockMm)} มม. เผื่อรอยตัด ${fmt(kerf)} มม. ขนาดเดียวกันใช้เส้นร่วมกัน`,
+          subst: buy.map((b) => `${sizeText(b.p)} → ${fmt(b.sticks)} เส้น`).join(" · "),
+        },
+        {
+          label: "น้ำหนัก",
+          expr: "กก. = เส้น × 6 ม. × [2 × (กว้าง + สูง) − 4 × หนา] × หนา × 0.00785",
+          subst: buy.map((b) => `${fmt(b.sticks)} × ${fmt(STEEL_STICK.value)} × ${fmt(kgmOf(b.p), 3)} = ${fmt(b.kg, 1)} กก.`).join(" · "),
+        },
+        {
+          label: "ลวดเชื่อม",
+          expr: `ลวด = ½ × ขา² × ยาวแนว × 7,850 × ${WELD.reinforcement.value} ÷ ${WELD.depSmaw.value} · เชื่อมรอบปลายชิ้นทุกจุด`,
+          subst: `แนวรวม ${fmt(weldLen, 1)} ม. → โลหะ ${fmt(weldMetal, 2)} กก. → ลวด ${fmt(rodKg, 2)} กก.`,
+        },
+        {
+          label: "สี",
+          expr: "ผิว = Σ ยาวชิ้น × เส้นรอบรูปกล่อง · ลิตร = ผิว × เที่ยว ÷ อัตราทา",
+          subst: `ผิว ${fmt(area, 2)} ตร.ม. · กันสนิม ${fmt(area, 2)} ÷ ${RAILING.primerM2PerL.value} = ${fmt(primerL, 2)} ลิตร · ทับหน้า ${fmt(area, 2)} × ${fmt(coats)} ÷ ${RAILING.topM2PerL.value} = ${fmt(topL, 2)} ลิตร`,
+        },
+      ],
+      constants: [
+        STEEL_STICK,
+        STEEL_FORMULA.kgPerMm2,
+        RAILING.kerf,
+        RAILING.weldLegMin,
+        WELD.reinforcement,
+        WELD.depSmaw,
+        RAILING.rodPackKg,
+        RAILING.primerM2PerL,
+        RAILING.topM2PerL,
+        RAILING.quarterCanL,
+        ...(kind === "railing" ? [RAILING.maxGapCm, RAILING.minHeight, RAILING.maxBottomGapCm] : []),
+      ],
+      assumptions: [
+        "เสาเป็นแนวตรงแนวเดียว ไม่มีมุมเลี้ยวหรือประตู · คานนอนตัดใส่ระหว่างเสา ไม่ใช่วางทับหน้าเสา",
+        `คานนอนวางด้านแบน (สูง ${fmtTrim(railDepth)} มม.) · ลูกกรงยึดระหว่างคานล่างกับคานบน`,
+        "ลวดเชื่อมคิดเชื่อมรอบปลายชิ้นทุกจุด ยังไม่รวมแผ่นเพลตโคนเสา ฝาปิดหัวเสา และการเชื่อมจุด",
+        "สีคิดผิวรอบนอก ยังไม่เผื่อพ่น/หก — พ่นสีเผื่อเพิ่มเองตามเครื่องพ่น",
+      ],
+      caveats: [
+        ...(kind === "railing"
+          ? ["ราวกันตกต้องรับแรงคนพิงได้ เสาต้องยึดกับพื้น/คานด้วยเพลตและพุกที่เหมาะสม ระยะเสาห่างหรือเหล็กบางเกินจะโยก — งานอาคารสาธารณะ/สูงต้องให้วิศวกรตรวจ"]
+          : []),
+        ...(kind === "awning" ? ["กันสาดยื่นยาว รับลม และจุดยึดผนังเป็นงานโครงสร้าง ขนาดเหล็กต้องให้วิศวกรกำหนด — ต้องให้วิศวกร"] : []),
+        "ขนาดเหล็กกล่องเป็นค่าที่เลือก — เหล็กเบาหนาจริงน้อยกว่าป้าย น้ำหนักจะน้อยกว่านี้",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: STEEL_SHOP_SIZES_SOURCE }, { label: "กฎกระทรวงควบคุมอาคาร (ราวกันตก) · แนวปฏิบัติ IBC/IRC ช่องลูกกรง 4 นิ้ว" }],
+    },
+  });
+}
+
+const BOX_OPTIONS = Object.entries(STEEL_SHOP_BOX).map(([value, p]) => ({ value, label: p.label }));
+
+const RAILING_FIELDS: ToolDef["fields"] = [
+  {
+    type: "select",
+    key: "kind",
+    label: "งาน",
+    default: "railing",
+    options: [
+      { value: "railing", label: "ราวกันตก (มีลูกกรง)" },
+      { value: "fence", label: "รั้วลูกกรง" },
+      { value: "frame", label: "โครงรั้ว/ประตู ไม่มีลูกกรง" },
+      { value: "awning", label: "โครงกันสาด (จันทัน + แป)" },
+    ],
+  },
+  { type: "number", key: "L", label: "ยาวทั้งแนว", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
+  { type: "number", key: "H", label: "สูง (กันสาด = ยื่นออก)", unit: "ม.", default: 1, min: 0.3, max: 3, step: 0.05 },
+  { type: "number", key: "span", label: "ระยะเสา/จันทันไม่เกิน", unit: "ม.", default: 2, min: 0.5, max: 5, step: 0.1 },
+  { type: "number", key: "rails", label: "คานนอน/แป (รวมบน-ล่าง)", unit: "แถว", default: 2, min: 2, max: 8 },
+  { type: "number", key: "gap", label: "ช่องลูกกรงไม่เกิน", unit: "ซม.", default: 10, min: 3, max: 30, step: 0.5, when: { key: "kind", is: ["railing", "fence"] } },
+  { type: "number", key: "bottom", label: "ช่องใต้คานล่างถึงพื้น", unit: "ซม.", default: 5, min: 0, max: 30, step: 0.5, when: { key: "kind", is: ["railing", "fence"] } },
+  { type: "number", key: "postExtra", label: "เสาเผื่อฝังดิน/ตอม่อ ต้นละ", unit: "ม.", default: 0, min: 0, max: 1.5, step: 0.05, when: { key: "kind", is: ["fence", "frame"] } },
+  { type: "select", key: "postSize", label: "เสา / จันทัน", default: "50x50x2.3", options: BOX_OPTIONS },
+  { type: "select", key: "railSize", label: "คานนอน / แป", default: "25x50x1.5", options: BOX_OPTIONS },
+  { type: "select", key: "balSize", label: "ลูกกรง", default: "25x25x1.2", options: BOX_OPTIONS, when: { key: "kind", is: ["railing", "fence"] } },
+  { type: "number", key: "coats", label: "สีทับหน้า", unit: "เที่ยว", default: 2, min: 1, max: 4 },
+  { type: "number", key: "price", label: "ราคาเหล็ก (ไม่ใส่ก็ได้)", unit: "บาท/กก.", default: 0, min: 0, max: 1000, step: 0.5 },
+];
+
 /** ช่องเลือกหน้าตัด ใช้ร่วมกันระหว่างเครื่องมือน้ำหนักเหล็กกับหน้าคิดทั้งงาน */
 const SHAPE_OPTIONS = [
   { value: "box", label: "เหล็กกล่อง (เหลี่ยม / แบน)" },
@@ -686,17 +1024,52 @@ const SHAPE_OPTIONS = [
   { value: "c", label: "รางน้ำรีดร้อน (Channel — ไม่ใช่ตัวซี)" },
 ];
 
+/** ช่องมิติที่โชว์เฉพาะเมื่อเลือก "กรอกขนาดเอง" ของรูปพรรณนั้น */
+const customOnly = (shape: string, sizeKey: string) => ({ key: "shape", is: shape, and: { key: sizeKey, is: CUSTOM_SIZE } });
+
 const SECTION_FIELDS: ToolDef["fields"] = [
-  { type: "number", key: "ba", label: "กล่อง ด้านกว้าง", unit: "มม.", default: 50, min: 10, max: 500, step: 0.1, when: { key: "shape", is: "box" } },
-  { type: "number", key: "bb", label: "กล่อง ด้านสูง", unit: "มม.", default: 50, min: 10, max: 500, step: 0.1, when: { key: "shape", is: "box" } },
-  { type: "number", key: "bt", label: "กล่อง หนา", unit: "มม.", default: 2.3, min: 0.6, max: 16, step: 0.1, when: { key: "shape", is: "box" } },
-  { type: "number", key: "la", label: "ฉาก ขา A", unit: "มม.", default: 50, min: 20, max: 250, step: 0.1, when: { key: "shape", is: "angle" } },
-  { type: "number", key: "lb", label: "ฉาก ขา B", unit: "มม.", default: 50, min: 20, max: 250, step: 0.1, when: { key: "shape", is: "angle" } },
-  { type: "number", key: "lt", label: "ฉาก หนา", unit: "มม.", default: 4, min: 1.5, max: 19, step: 0.1, when: { key: "shape", is: "angle" } },
-  { type: "number", key: "ch", label: "ตัวซี สูง (H)", unit: "มม.", default: 100, min: 50, max: 400, step: 0.1, when: { key: "shape", is: "lipc" } },
-  { type: "number", key: "cb", label: "ตัวซี ปีก (B)", unit: "มม.", default: 50, min: 30, max: 150, step: 0.1, when: { key: "shape", is: "lipc" } },
-  { type: "number", key: "cl", label: "ตัวซี ขอบพับ (C)", unit: "มม.", default: 20, min: 10, max: 50, step: 0.1, when: { key: "shape", is: "lipc" } },
-  { type: "number", key: "ct", label: "ตัวซี หนา", unit: "มม.", default: 2.3, min: 1.2, max: 4.5, step: 0.1, when: { key: "shape", is: "lipc" } },
+  {
+    type: "select",
+    key: "boxsize",
+    label: "ขนาดที่ร้านขาย (กล่อง)",
+    default: CUSTOM_SIZE,
+    when: { key: "shape", is: "box" },
+    options: [{ value: CUSTOM_SIZE, label: "กรอกขนาดเอง" }, ...Object.entries(STEEL_SHOP_BOX).map(([value, p]) => ({ value, label: p.label }))],
+  },
+  {
+    type: "select",
+    key: "anglesize",
+    label: "ขนาดที่ร้านขาย (ฉาก)",
+    default: CUSTOM_SIZE,
+    when: { key: "shape", is: "angle" },
+    options: [{ value: CUSTOM_SIZE, label: "กรอกขนาดเอง" }, ...Object.entries(STEEL_SHOP_ANGLE).map(([value, p]) => ({ value, label: p.label }))],
+  },
+  {
+    type: "select",
+    key: "lipcsize",
+    label: "ขนาดที่ร้านขาย (ตัวซี)",
+    default: CUSTOM_SIZE,
+    when: { key: "shape", is: "lipc" },
+    options: [{ value: CUSTOM_SIZE, label: "กรอกขนาดเอง" }, ...Object.entries(STEEL_SHOP_LIPC).map(([value, p]) => ({ value, label: p.label }))],
+  },
+  {
+    type: "select",
+    key: "pipesize",
+    label: "ขนาดเรียกท่อ",
+    default: CUSTOM_SIZE,
+    when: { key: "shape", is: "pipe" },
+    options: [{ value: CUSTOM_SIZE, label: "กรอกขนาดเอง" }, ...Object.entries(STEEL_SHOP_PIPE_OD).map(([value, p]) => ({ value, label: p.label }))],
+  },
+  { type: "number", key: "ba", label: "กล่อง ด้านกว้าง", unit: "มม.", default: 50, min: 10, max: 500, step: 0.1, when: customOnly("box", "boxsize") },
+  { type: "number", key: "bb", label: "กล่อง ด้านสูง", unit: "มม.", default: 50, min: 10, max: 500, step: 0.1, when: customOnly("box", "boxsize") },
+  { type: "number", key: "bt", label: "กล่อง หนา", unit: "มม.", default: 2.3, min: 0.6, max: 16, step: 0.1, when: customOnly("box", "boxsize") },
+  { type: "number", key: "la", label: "ฉาก ขา A", unit: "มม.", default: 50, min: 20, max: 250, step: 0.1, when: customOnly("angle", "anglesize") },
+  { type: "number", key: "lb", label: "ฉาก ขา B", unit: "มม.", default: 50, min: 20, max: 250, step: 0.1, when: customOnly("angle", "anglesize") },
+  { type: "number", key: "lt", label: "ฉาก หนา", unit: "มม.", default: 4, min: 1.5, max: 19, step: 0.1, when: customOnly("angle", "anglesize") },
+  { type: "number", key: "ch", label: "ตัวซี สูง (H)", unit: "มม.", default: 100, min: 50, max: 400, step: 0.1, when: customOnly("lipc", "lipcsize") },
+  { type: "number", key: "cb", label: "ตัวซี ปีก (B)", unit: "มม.", default: 50, min: 30, max: 150, step: 0.1, when: customOnly("lipc", "lipcsize") },
+  { type: "number", key: "cl", label: "ตัวซี ขอบพับ (C)", unit: "มม.", default: 20, min: 10, max: 50, step: 0.1, when: customOnly("lipc", "lipcsize") },
+  { type: "number", key: "ct", label: "ตัวซี หนา", unit: "มม.", default: 2.3, min: 1.2, max: 4.5, step: 0.1, when: customOnly("lipc", "lipcsize") },
   {
     type: "select",
     key: "rebar",
@@ -708,7 +1081,7 @@ const SECTION_FIELDS: ToolDef["fields"] = [
   { type: "number", key: "w", label: "กว้างแผ่น", unit: "มม.", default: 1200, min: 10, max: 3000, when: { key: "shape", is: "plate" } },
   { type: "number", key: "t", label: "หนาแผ่น/ท่อ", unit: "มม.", default: 6, min: 0.5, max: 100, step: 0.1, when: { key: "shape", is: ["plate", "pipe"] } },
   { type: "number", key: "d", label: "Ø เหล็กกลม", unit: "มม.", default: 12, min: 6, max: 300, when: { key: "shape", is: "round" } },
-  { type: "number", key: "od", label: "Ø นอกท่อ", unit: "มม.", default: 48.3, min: 10, max: 1000, step: 0.1, when: { key: "shape", is: "pipe" } },
+  { type: "number", key: "od", label: "Ø นอกท่อ", unit: "มม.", default: 48.3, min: 10, max: 1000, step: 0.1, when: customOnly("pipe", "pipesize") },
   {
     type: "select",
     key: "hsize",
@@ -740,7 +1113,7 @@ export const steelTools: ToolDef[] = [
   {
     id: "weight",
     name: "น้ำหนักเหล็ก (กล่อง ฉาก ตัวซี เหล็กเส้น)",
-    blurb: "กล่อง ฉาก ตัวซี เหล็กเส้น ท่อ แผ่น H — กก. และราคา",
+    blurb: "เลือกขนาดที่ร้านขาย หรือกรอกเอง — กก./เส้น กก.รวม และราคา",
     keywords: ["เหล็กกล่อง", "กล่อง", "เหล็กฉาก", "ฉาก", "ตัวซี", "เหล็กเส้น", "ข้ออ้อย", "แป๊บ", "ราคาเหล็ก"],
     fields: [
       { type: "select", key: "shape", label: "รูปพรรณ", default: "box", options: SHAPE_OPTIONS },
@@ -819,6 +1192,14 @@ export const steelTools: ToolDef[] = [
       { type: "number", key: "dT", label: "ต่างอุณหภูมิ", unit: "°C", default: 40, min: 1, max: 200 },
     ],
     calc: calcThermal,
+  },
+  {
+    id: "railing",
+    name: "รั้ว / ราวกันตก / กันสาด เหล็กกล่อง",
+    blurb: "ใบตัด เหล็กกี่เส้น กก. ลวดเชื่อม สี — เตือนช่องลูกกรงเกิน 10 ซม.",
+    keywords: ["รั้ว", "ราวกันตก", "ราวระเบียง", "ลูกกรง", "กันสาด", "ประตูรั้ว"],
+    fields: RAILING_FIELDS,
+    calc: calcRailing,
   },
 ];
 
