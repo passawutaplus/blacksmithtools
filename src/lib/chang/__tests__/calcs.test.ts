@@ -227,7 +227,7 @@ describe("ก่อฉาบ", () => {
     const r = calcMortar({ ...wall, kind: "aac75", joint: "auto" });
     expect(r.headline).toContain("ปูนกาว");
     // 12 ตร.ม. × 1.7 กก. = 20.4 กก. → 1 ถุง
-    expect(numberIn(rowOf(r.rows, "ถุง 50 กก."))).toBe(1);
+    expect(numberIn(rowOf(r.rows, "ปูนกาวก่อ (ถุง 50 กก.)"))).toBe(1);
   });
 
   it("อิฐมอญคิดปูนก่อจากสัดส่วนแนวปูนจริง", () => {
@@ -238,8 +238,8 @@ describe("ก่อฉาบ", () => {
 
   it("ฉาบ 15 มม. สองด้าน ได้ 720 กก. → 15 ถุง", () => {
     const r = calcPlaster({ ...wall, pkind: "normal", sides: 2 });
-    expect(numberIn(rowOf(r.rows, "ปูนฉาบ"))).toBeCloseTo(720, 0);
-    expect(numberIn(rowOf(r.rows, "ถุง 50 กก."))).toBe(15);
+    expect(numberIn(rowOf(r.rows, "ปูนฉาบ รวม"))).toBeCloseTo(720, 0);
+    expect(numberIn(rowOf(r.rows, "ปูนฉาบ (ถุง 50 กก.)"))).toBe(15);
   });
 
   it("ถุงปูนฉาบ 50 กก. ที่ 10 มม. ต้องได้ 2.2–2.8 ตร.ม. ตาม TDS", () => {

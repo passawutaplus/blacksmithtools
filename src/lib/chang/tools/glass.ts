@@ -10,6 +10,7 @@ import {
   PLATE_BETA_MAX,
   PLATE_BETA_SOURCE,
   SEALANT,
+  UNIT,
 } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(glassTools, id, v);
@@ -59,7 +60,10 @@ export function calcAluCut(v: Values) {
       { label: "รวมทั้งงาน", value: `${fmt(total / 1000, 2)} ม.`, emphasize: true },
       { label: `เส้น ${fmt(barLen / 1000, 1)} ม.`, value: `${bars} เส้น` },
     ],
-    tip: "ระยะตัดเป็นแนว 45° หน้างาน เผื่อเส้นพลาด 1 เส้น",
+    tip:
+      miter === "45"
+        ? "ระยะที่ได้คือปลายยาวของรอยตัด 45° เผื่อเส้นพลาด 1 เส้น"
+        : "ตัดชน 90°: ด้านกว้างยาวเต็ม ด้านสูงหักหน้าตัดเฟรมบน-ล่างแล้ว เผื่อเส้นพลาด 1 เส้น",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -91,6 +95,13 @@ export function calcAluCut(v: Values) {
   });
 }
 
+/** ความหนากระจกแผ่นเดียวที่ขายทั่วไป (มม.) — ให้เลือกจากรายการ กันกรอกความหนาที่ไม่มีขาย */
+const GLASS_STOCK_T = ["5", "6", "8", "10", "12"] as const;
+
+function hardwareFor(kgPerSash: number): string {
+  return kgPerSash < 25 ? "บานพับ 2 ตัว / ลูกล้อเบา" : kgPerSash < 45 ? "บานพับ 3 ตัว หรือลูกล้อ 2" : "ลูกล้อเฮฟวี่ + รางเสริม";
+}
+
 export function calcGlassWeight(v: Values) {
   const bad = guard("weight", v);
   if (bad) return bad;
@@ -98,18 +109,23 @@ export function calcGlassWeight(v: Values) {
   const h = num(v, "h", 1500) / 1000;
   const t = num(v, "t", 8);
   const n = num(v, "n", 1);
+  const sash = Math.max(1, num(v, "sash", 1));
   const density = MATERIAL.glassDensity.value / 1000;
-  const kg = density * t * w * h * n;
-  const hw = kg < 25 ? "บานพับ 2 ตัว / ลูกล้อเบา" : kg < 45 ? "บานพับ 3 ตัว หรือลูกล้อ 2" : "ลูกล้อเฮฟวี่ + รางเสริม";
-  const chartMax = Math.max(60, Math.ceil(kg * 1.3));
+  const area = w * h * n;
+  const sqft = area / (UNIT.foot.value * UNIT.foot.value);
+  const kg = density * t * area;
+  // ฮาร์ดแวร์รับน้ำหนักทีละบาน — ช่องเดียวแบ่ง 2 บาน แต่ละบานหนักครึ่งเดียว
+  const perSash = (density * t * w * h) / sash;
+  const hw = hardwareFor(perSash);
+  const chartMax = Math.max(60, Math.ceil(perSash * 1.3));
 
   return resultX({
     title: "น้ำหนักกระจก",
-    headline: `${fmt(kg, 1)} กก.`,
+    headline: sash > 1 || n > 1 ? `บานละ ${fmt(perSash, 1)} กก. · รวม ${fmt(kg, 1)} กก.` : `${fmt(kg, 1)} กก.`,
     chart: {
       kind: "threshold",
       unit: "กก.",
-      value: round(kg, 1),
+      value: round(perSash, 1),
       max: chartMax,
       zones: [
         { upTo: 25, tone: "good", label: "บานพับ 2 / ลูกล้อเบา" },
@@ -119,14 +135,16 @@ export function calcGlassWeight(v: Values) {
     },
     rows: [
       { label: "กระจก", value: `${fmt(w, 2)}×${fmt(h, 2)} ม. หนา ${fmt(t)} มม. × ${fmt(n)}` },
+      { label: "พื้นที่กระจก", value: `${fmt(area, 2)} ตร.ม. = ${fmt(sqft, 1)} ตร.ฟุต` },
       { label: "น้ำหนัก", value: `${fmt(kg, 1)} กก.`, emphasize: true },
-      { label: "ฮาร์ดแวร์", value: hw },
+      { label: "น้ำหนักต่อบาน", value: sash > 1 ? `${fmt(perSash, 1)} กก. (ช่องละ ${fmt(sash)} บาน)` : `${fmt(perSash, 1)} กก.`, emphasize: sash > 1 },
+      { label: "ฮาร์ดแวร์", value: `${hw} (คิดจากน้ำหนักต่อบาน)` },
     ],
-    tip: "กระจก 2.5 กก./ตร.ม./มม. บานเลื่อนใหญ่เช็กน้ำหนักลูกล้อก่อนสั่ง",
+    tip: "กระจก 2.5 กก./ตร.ม./มม. ร้านกระจกคิดราคาเป็นตารางฟุต บานเลื่อนเช็กพิกัดลูกล้อจากน้ำหนักต่อบาน",
     explain: {
       risk: "B",
-      updatedAt: "2026-08-21",
-      summary: "น้ำหนักกระจก = ความหนาแน่น × ความหนา × พื้นที่ × จำนวนแผ่น แล้วเทียบพิกัดฮาร์ดแวร์ที่ต้องใช้",
+      updatedAt: "2026-11-25",
+      summary: "น้ำหนักกระจก = ความหนาแน่น × ความหนา × พื้นที่ × จำนวนแผ่น แล้วหารจำนวนบานต่อช่องก่อนเทียบพิกัดฮาร์ดแวร์",
       steps: [
         {
           label: "น้ำหนักรวม",
@@ -134,13 +152,29 @@ export function calcGlassWeight(v: Values) {
           subst: `${density} × ${fmt(t)} × ${fmt(w, 2)} × ${fmt(h, 2)} × ${fmt(n)} = ${fmt(kg, 1)} กก.`,
         },
         {
+          label: "น้ำหนักต่อบาน",
+          expr: "ต่อบาน = น้ำหนักหนึ่งช่อง ÷ จำนวนบานต่อช่อง",
+          subst: `${fmt(density * t * w * h, 1)} ÷ ${fmt(sash)} = ${fmt(perSash, 1)} กก.`,
+        },
+        {
+          label: "พื้นที่เป็นตารางฟุต",
+          expr: "ตร.ฟุต = ตร.ม. ÷ 0.3048²",
+          subst: `${fmt(area, 2)} ÷ 0.0929 = ${fmt(sqft, 1)} ตร.ฟุต`,
+        },
+        {
           label: "เทียบพิกัดฮาร์ดแวร์",
           expr: "< 25 กก. บานพับเบา · 25–45 กก. บานพับ 3/ลูกล้อ 2 · > 45 กก. ลูกล้อเฮฟวี่",
-          subst: `${fmt(kg, 1)} กก. → ${hw}`,
+          subst: `${fmt(perSash, 1)} กก./บาน → ${hw}`,
         },
       ],
-      constants: [{ value: density, unit: "กก./ตร.ม./มม.", label: "ความหนาแน่นกระจกต่อความหนา", source: "EN 572 / TDS ผู้ผลิต (ความหนาแน่นกระจก 2,500 กก./ลบ.ม.)" }],
-      assumptions: ["กระจกโฟลตทั่วไป ไม่ใช่กระจกลามิเนตหรือกระจกฉนวน (IGU) ซึ่งหนักกว่านี้"],
+      constants: [
+        { value: density, unit: "กก./ตร.ม./มม.", label: "ความหนาแน่นกระจกต่อความหนา", source: "EN 572 / TDS ผู้ผลิต (ความหนาแน่นกระจก 2,500 กก./ลบ.ม.)" },
+        UNIT.foot,
+      ],
+      assumptions: [
+        "กระจกโฟลตทั่วไป ไม่ใช่กระจกลามิเนตหรือกระจกฉนวน (IGU) ซึ่งหนักกว่านี้",
+        "แบ่งบานเท่ากันทุกบาน และยังไม่หักระยะเฟรม/ระยะซ้อนบาน — ขนาดกระจกจริงเล็กกว่าช่องเล็กน้อย",
+      ],
       caveats: [
         "บานใหญ่หรือหนาเป็นพิเศษ (ลามิเนต/IGU) น้ำหนักต่างจากนี้มาก ต้องเช็กสเปกจริงจากผู้ผลิต",
         "พิกัดฮาร์ดแวร์เป็นแนวปฏิบัติทั่วไป ให้เทียบกับสเปกที่ผู้ผลิตบานพับ/ลูกล้อระบุไว้จริงเสมอ",
@@ -412,6 +446,29 @@ export function calcGlassHw(v: Values) {
   });
 }
 
+const thicknessField = {
+  type: "select" as const,
+  key: "t",
+  label: "หนากระจก",
+  default: "8",
+  options: GLASS_STOCK_T.map((t) => ({ value: t, label: `${t} มม.` })),
+};
+
+function sashField(def: string) {
+  return {
+    type: "select" as const,
+    key: "sash",
+    label: "จำนวนบานต่อช่อง",
+    default: def,
+    options: [
+      { value: "1", label: "1 บาน (ติดตาย / บานเดี่ยว)" },
+      { value: "2", label: "2 บาน (บานเลื่อนคู่)" },
+      { value: "3", label: "3 บาน" },
+      { value: "4", label: "4 บาน" },
+    ],
+  };
+}
+
 export const glassTools: ToolDef[] = [
   {
     id: "cut",
@@ -442,8 +499,9 @@ export const glassTools: ToolDef[] = [
     fields: [
       { type: "number", key: "w", label: "กว้าง", unit: "มม.", default: 1200, min: 100, max: 6000 },
       { type: "number", key: "h", label: "สูง", unit: "มม.", default: 1500, min: 100, max: 6000 },
-      { type: "number", key: "t", label: "หนา", unit: "มม.", default: 8, min: 3, max: 25 },
-      { type: "number", key: "n", label: "จำนวนแผ่น", unit: "แผ่น", default: 1, min: 1, max: 500 },
+      thicknessField,
+      { type: "number", key: "n", label: "จำนวนช่อง/แผ่น", unit: "ชุด", default: 1, min: 1, max: 500 },
+      sashField("1"),
     ],
     calc: calcGlassWeight,
   },
@@ -499,7 +557,8 @@ export const glassJob: JobDef = {
     { type: "number", key: "h", label: "สูงช่อง", unit: "มม.", default: 1500, min: 200, max: 5800 },
     { type: "number", key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 1, min: 1, max: 200 },
     { type: "number", key: "profile", label: "หน้าตัดเฟรม", unit: "มม.", default: 45, min: 20, max: 100 },
-    { type: "number", key: "t", label: "หนากระจก", unit: "มม.", default: 8, min: 4, max: 25 },
+    thicknessField,
+    sashField("2"),
   ],
   calc: (input) => {
     const bad = guardInputs(glassJob.fields, input);
@@ -511,10 +570,10 @@ export const glassJob: JobDef = {
     const seal = calcSealant({ peri, gap: 6, depth: 6 });
     return jobFromParts({
       title: "งานกระจก-อลูมิเนียม",
-      headline: "ชุดหน้าต่าง/ประตู",
+      headline: `ชุดหน้าต่าง/ประตู · กระจก${wt.headline ? ` ${wt.headline}` : ""}`,
       rows: [
         ...cut.rows.filter((r) => r.emphasize || r.label.includes("เส้น")),
-        ...wt.rows.filter((r) => r.emphasize || r.label === "ฮาร์ดแวร์"),
+        ...wt.rows.filter((r) => r.emphasize || r.label === "ฮาร์ดแวร์" || r.label === "พื้นที่กระจก" || r.label === "น้ำหนักต่อบาน"),
         ...seal.rows.filter((r) => r.emphasize),
       ],
       tip: "ยังไม่รวมมุ้งและมือจับ ส่งโรงงานให้ยืนยันระยะเจาะอีกครั้ง",

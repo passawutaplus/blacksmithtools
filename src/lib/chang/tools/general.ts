@@ -1,5 +1,5 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { fmt, guardTool, invalidResult, num, resultX, str } from "../math";
+import { fmt, fmtInchFraction, fmtTrim, guardInputs, guardTool, inchFraction, invalidResult, num, resultX, str } from "../math";
 import { UNIT } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(generalTools, id, v);
@@ -20,6 +20,38 @@ export function convertLength(value: number, from: string, to: string): number {
   return mm / (LENGTH[to] ?? 1);
 }
 
+/** ละเอียดสุดของเศษส่วนนิ้วที่ตลับเมตรช่างอ่านได้ */
+const INCH_DEN = 16;
+
+/**
+ * ความยาวแบบที่ช่างพูด: "7 ฟุต 10 1/2 นิ้ว" (ปัดเข้าเศษส่วนนิ้วใกล้สุด 1/16)
+ * สั้นกว่า 1 ฟุตตอบเป็นนิ้วเศษส่วนอย่างเดียว เช่น "3/4 นิ้ว"
+ */
+export function feetInchText(mm: number): string {
+  const f = inchFraction(mm / UNIT.inch.value, INCH_DEN);
+  const feet = Math.floor(f.whole / 12);
+  const restIn = f.whole - feet * 12 + f.num / f.den;
+  if (feet === 0) return `${fmtInchFraction(restIn, INCH_DEN)} นิ้ว`;
+  return restIn === 0 ? `${fmt(feet)} ฟุต` : `${fmt(feet)} ฟุต ${fmtInchFraction(restIn, INCH_DEN)} นิ้ว`;
+}
+
+/** นิ้วเศษส่วนใกล้สุด + หุน + ระยะที่คลาดจากค่าจริง เช่น 19 มม. → "3/4 นิ้ว (6 หุน) · ต่างจากค่าจริง 0.05 มม." */
+export function inchHunText(mm: number): string {
+  const f = inchFraction(mm / UNIT.inch.value, INCH_DEN);
+  const inches = f.whole + f.num / f.den;
+  const diff = Math.abs(inches * UNIT.inch.value - mm);
+  return `${fmtInchFraction(inches, INCH_DEN)} นิ้ว (${fmtTrim(inches * 8, 1)} หุน) · ต่างจากค่าจริง ${fmt(diff, 2)} มม.`;
+}
+
+/** แถวหน่วยช่างของความยาวหนึ่งค่า (มม.) — ยาวเกิน 1 ฟุตตอบเป็นฟุต-นิ้ว สั้นกว่านั้นตอบเป็นนิ้วเศษส่วน + หุน */
+function tradeLengthRows(mm: number) {
+  const inches = mm / UNIT.inch.value;
+  if (inches * INCH_DEN < 0.5) return [];
+  return inches >= 12
+    ? [{ label: "ฟุต-นิ้ว (ใกล้สุด 1/16 นิ้ว)", value: feetInchText(mm) }]
+    : [{ label: "นิ้วเศษส่วนใกล้สุด", value: inchHunText(mm) }];
+}
+
 export function calcLen(v: Values) {
   const bad = guard("unit-length", v);
   if (bad) return bad;
@@ -27,17 +59,17 @@ export function calcLen(v: Values) {
   const from = str(v, "from", "m");
   const to = str(v, "to", "ft");
   const y = convertLength(x, from, to);
-  const hun = convertLength(x, from, "hun");
+  const mm = convertLength(x, from, "mm");
   return resultX({
     title: "แปลงหน่วยความยาว",
     headline: `${fmt(x, 4)} ${labelLen(from)} = ${fmt(y, 4)} ${labelLen(to)}`,
     rows: [
       { label: "ผลลัพธ์", value: `${fmt(y, 4)} ${labelLen(to)}`, emphasize: true },
-      { label: "เป็นหุน", value: `${fmt(hun, 2)} หุน` },
-      { label: "เป็นมม.", value: `${fmt(convertLength(x, from, "mm"), 2)} มม.` },
+      ...tradeLengthRows(mm),
+      { label: "เป็นมม.", value: `${fmt(mm, 2)} มม.` },
       { label: "เป็นนิ้ว", value: `${fmt(convertLength(x, from, "in"), 3)} นิ้ว` },
     ],
-    tip: "1 นิ้ว = 8 หุน = 25.4 มม. ช่างไม้ไทยยังใช้หุนบ่อย",
+    tip: "1 นิ้ว = 8 หุน = 25.4 มม. ยาวเกิน 1 ฟุตจะบอกเป็นฟุต-นิ้วแบบที่อ่านจากตลับเมตร",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -120,8 +152,13 @@ export function calcWeightForce(v: Values) {
   const from = str(v, "from", "kg");
   const mass: Record<string, number> = { kg: 1, g: 0.001, lb: 0.453592, t: 1000 };
   const kg = x * (mass[from] ?? 1);
+  const fromName: Record<string, string> = { kg: "กก.", g: "กรัม", lb: "ปอนด์", t: "ตัน" };
   return resultX({
     title: "แปลงน้ำหนักและแรง",
+    headline:
+      from === "kg"
+        ? `${fmt(kg, 3)} กก. = ${fmt(kg / 0.453592, 3)} ปอนด์`
+        : `${fmt(x, 3)} ${fromName[from] ?? from} = ${fmt(kg, 3)} กก.`,
     rows: [
       { label: "กิโลกรัม", value: `${fmt(kg, 3)} กก.`, emphasize: true },
       { label: "ปอนด์", value: `${fmt(kg / 0.453592, 3)} lb` },
@@ -213,6 +250,7 @@ export function calcGeometry(v: Values) {
   };
   return resultX({
     title: "คณิตศาสตร์รูปทรง",
+    headline: `พื้นที่ ${fmt(area, 2)} ตร.ม. · ปริมาตร ${fmt(vol, 2)} ลบ.ม. (คิว)`,
     rows: [
       { label: "พื้นที่", value: `${fmt(area, 3)} ตร.ม.`, emphasize: true },
       { label: "ปริมาตร", value: `${fmt(vol, 3)} ลบ.ม.`, emphasize: true },
@@ -456,9 +494,57 @@ export const generalTools: ToolDef[] = [
   },
 ];
 
+/** แปลงหน่วยด่วน: ใส่ค่าเดียว ได้ทุกหน่วยที่ใช้บนหน้างานพร้อมกัน (ต่างจากเครื่องมือแปลงความยาวที่เลือกหน่วยปลายทางทีละตัว) */
+export function calcQuickLength(v: Values) {
+  const bad = guardInputs(generalJob.fields, v);
+  if (bad) return bad;
+  const x = num(v, "x", 2.4);
+  const from = str(v, "from", "m");
+  const mm = convertLength(x, from, "mm");
+  const m = mm / 1000;
+  const trade = tradeLengthRows(mm);
+  return resultX({
+    title: "แปลงหน่วยด่วน",
+    headline: trade.length
+      ? `${fmtTrim(x, 4)} ${labelLen(from)} = ${trade[0].value.split(" · ")[0]}`
+      : `${fmtTrim(x, 4)} ${labelLen(from)} = ${fmt(mm, 2)} มม.`,
+    rows: [
+      ...trade.map((r) => ({ ...r, emphasize: true })),
+      { label: "มิลลิเมตร", value: `${fmt(mm, 1)} มม.` },
+      { label: "เซนติเมตร", value: `${fmt(mm / 10, 2)} ซม.` },
+      { label: "เมตร", value: `${fmt(m, 3)} ม.` },
+      { label: "นิ้ว (ทศนิยม)", value: `${fmt(mm / UNIT.inch.value, 3)} นิ้ว` },
+      { label: "ฟุต (ทศนิยม)", value: `${fmt(m / UNIT.foot.value, 3)} ฟุต` },
+      { label: "ศอก", value: `${fmt(m / UNIT.sok.value, 2)} ศอก` },
+      { label: "วา", value: `${fmt(m / UNIT.wa.value, 2)} วา` },
+    ],
+    tip: "ใส่ค่าเดียวได้ครบทุกหน่วย ฟุต-นิ้วปัดเข้าเศษส่วน 1/16 นิ้วใกล้สุดแบบที่อ่านจากตลับเมตร",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-25",
+      summary: "แปลงค่าที่กรอกเป็นมิลลิเมตรก่อน แล้วหารด้วยตัวคูณของแต่ละหน่วย",
+      steps: [
+        { label: "แปลงเป็นมม.", expr: "มม. = ค่า × ตัวคูณของหน่วยต้นทาง", subst: `${fmtTrim(x, 4)} ${labelLen(from)} = ${fmt(mm, 2)} มม.` },
+        {
+          label: "ฟุต-นิ้วแบบเศษส่วน",
+          expr: "นิ้ว = มม. ÷ 25.4 แล้วปัดเข้า 1/16 นิ้วใกล้สุด · 12 นิ้ว = 1 ฟุต · 1 นิ้ว = 8 หุน",
+          subst: `${fmt(mm, 2)} ÷ 25.4 = ${fmt(mm / UNIT.inch.value, 3)} นิ้ว`,
+        },
+      ],
+      constants: [UNIT.inch, UNIT.foot, UNIT.sok, UNIT.wa],
+      assumptions: ["เศษส่วนนิ้วปัดเข้า 1/16 นิ้วใกล้สุด คลาดจากค่าจริงได้ไม่เกิน 0.8 มม."],
+      caveats: ["งานที่ต้องเป๊ะกว่า 1 มม. ให้ยึดค่ามิลลิเมตร ไม่ใช่ค่าฟุต-นิ้วที่ปัดแล้ว"],
+      refs: [{ label: "นิยามหน่วยสากล (ISO 80000) และหน่วยวัดไทย" }],
+    },
+  });
+}
+
 export const generalJob: JobDef = {
   name: "แปลงหน่วยด่วน",
-  blurb: "ความยาวที่ใช้บ่อยบนหน้างาน",
-  fields: generalTools[0].fields,
-  calc: calcLen,
+  blurb: "ใส่ค่าเดียว ได้ มม. ซม. ม. นิ้ว ฟุต-นิ้ว หุน ศอก วา พร้อมกัน",
+  fields: [
+    { type: "number", key: "x", label: "ค่า", default: 2.4, min: 0, max: 1000000000, step: 0.001 },
+    { type: "select", key: "from", label: "หน่วยที่วัดมา", default: "m", options: lenOpts },
+  ],
+  calc: calcQuickLength,
 };

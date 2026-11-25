@@ -1,6 +1,6 @@
 import type { JobDef, ToolDef, Values } from "../types";
 import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
-import { BRICKS, DISCLAIMER_AB, DISCLAIMER_C, LINTEL, MASONRY, MIX } from "../constants";
+import { BRICKS, DISCLAIMER_AB, DISCLAIMER_C, LINTEL, MASONRY, MASONRY_BAGS, MIX, STEEL_FORMULA } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(masonryTools, id, v) ?? wallGuard(v);
 
@@ -27,6 +27,11 @@ function jointOf(v: Values, brick: { joint: number }) {
   if (pick === "auto") return brick.joint;
   const mm = Number(pick);
   return Number.isFinite(mm) && mm > 0 ? mm : brick.joint;
+}
+
+/** ขนาดถุงที่ผู้ใช้เลือก (กก.) — ไม่ส่งมาใช้ 50 กก. */
+function bagOf(v: Values) {
+  return (MASONRY_BAGS[str(v, "bag", "50")] ?? MASONRY.bag).value;
 }
 
 function wallM2(v: Values) {
@@ -129,11 +134,14 @@ export function calcMortar(v: Values) {
   const net = wallM2(v);
   const b = brickOf(v);
   const joint = jointOf(v, b);
+  const bag = bagOf(v);
+  const wastePct = num(v, "mwaste", 0);
+  const wasteText = wastePct > 0 ? ` (รวมเผื่อ ${fmt(wastePct)}%)` : "";
 
   if (b.thinBed) {
-    const kg = net * MASONRY.thinBedPerM2.value;
-    const bags = ceil(kg / MASONRY.bag.value);
-    const coverage = MASONRY.bag.value / MASONRY.thinBedPerM2.value;
+    const kg = net * MASONRY.thinBedPerM2.value * (1 + wastePct / 100);
+    const bags = ceil(kg / bag);
+    const coverage = bag / MASONRY.thinBedPerM2.value;
     return resultX({
       title: "ปูนก่อ",
       headline: `ปูนกาวก่อมวลเบา ${bags} ถุง`,
@@ -141,17 +149,17 @@ export function calcMortar(v: Values) {
         bags > 0
           ? {
               kind: "packs",
-              unitLabel: `ถุง ${MASONRY.bag.value} กก.`,
+              unitLabel: `ถุง ${bag} กก.`,
               count: bags,
-              lastUsed: (kg - (bags - 1) * MASONRY.bag.value) / MASONRY.bag.value,
+              lastUsed: (kg - (bags - 1) * bag) / bag,
               note: `ถุงละก่อได้ประมาณ ${fmt(coverage, 1)} ตร.ม.`,
             }
           : undefined,
       rows: [
         { label: "พื้นที่สุทธิ", value: `${fmt(net, 2)} ตร.ม.` },
         { label: "อัตราใช้", value: `${MASONRY.thinBedPerM2.value} กก./ตร.ม.` },
-        { label: "ปูนกาวก่อ", value: `${fmt(kg, 1)} กก.` },
-        { label: `ถุง ${MASONRY.bag.value} กก.`, value: `${bags} ถุง`, emphasize: true },
+        { label: "ปูนกาวก่อ", value: `${fmt(kg, 1)} กก.${wasteText}` },
+        { label: `ปูนกาวก่อ (ถุง ${bag} กก.)`, value: `${bags} ถุง`, emphasize: true },
         { label: "ถุงละได้ประมาณ", value: `${fmt(coverage, 1)} ตร.ม.` },
       ],
       tip: "มวลเบาต้องใช้ปูนกาวของระบบเดียวกัน ห้ามใช้ปูนก่อมอญแทน กำลังยึดไม่ถึง",
@@ -167,17 +175,17 @@ export function calcMortar(v: Values) {
           },
           {
             label: "น้ำหนักปูนกาว",
-            expr: "kg = A × อัตราใช้",
-            subst: `kg = ${fmt(net, 2)} × ${MASONRY.thinBedPerM2.value} = ${fmt(kg, 1)} กก.`,
+            expr: "kg = A × อัตราใช้ × (1 + เผื่อ)",
+            subst: `kg = ${fmt(net, 2)} × ${MASONRY.thinBedPerM2.value} × ${fmt(1 + wastePct / 100, 2)} = ${fmt(kg, 1)} กก.`,
             note: `รอยต่อบาง ${fmt(joint)} มม. ตามระบบมวลเบา`,
           },
           {
             label: "แปลงเป็นถุง",
-            expr: `ถุง = kg ÷ ${MASONRY.bag.value} ปัดขึ้น`,
-            subst: `${fmt(kg, 1)} ÷ ${MASONRY.bag.value} = ${bags} ถุง`,
+            expr: `ถุง = kg ÷ ${bag} ปัดขึ้น`,
+            subst: `${fmt(kg, 1)} ÷ ${bag} = ${bags} ถุง`,
           },
         ],
-        constants: [MASONRY.thinBedPerM2, MASONRY.bag],
+        constants: [MASONRY.thinBedPerM2, MASONRY_BAGS[String(bag)] ?? MASONRY.bag],
         assumptions: ["ก่อด้วยเกรียงหวีของระบบมวลเบา รอยต่อ 2–3 มม.", "ผนังชั้นเดียว ก่อเรียบไม่ต้องปรับระดับหนา"],
         caveats: [
           "อัตราใช้ต่างกันตามยี่ห้อ ถุง 50 กก. ก่อได้ 25–40 ตร.ม. ให้ยึด TDS ของถุงที่ซื้อ",
@@ -190,34 +198,39 @@ export function calcMortar(v: Values) {
   }
 
   const fraction = 1 - (b.faceL * b.faceH) / ((b.faceL + joint) * (b.faceH + joint));
-  const m3 = net * (b.wallT / 1000) * fraction;
+  const m3 = net * (b.wallT / 1000) * fraction * (1 + wastePct / 100);
   const cementKg = m3 * MASONRY.cementPerM3Mortar.value;
-  const cementBags = ceil(cementKg / MASONRY.bag.value);
+  const cementBags = ceil(cementKg / bag);
   const sand = round(m3 * MASONRY.sandPerM3Mortar.value, 2);
-  const readyBags = ceil(net / MASONRY.readyMortarCoverage.value);
+  // อัตราปูนก่อสำเร็จในทะเบียนเป็น "ต่อถุง 50 กก." จึงเทียบสัดส่วนตามขนาดถุงที่เลือก
+  const readyCoverage = (MASONRY.readyMortarCoverage.value * bag) / MASONRY.bag.value;
+  const readyBags = ceil((net * (1 + wastePct / 100)) / readyCoverage);
 
   return resultX({
     title: "ปูนก่อ",
-    headline: `ปูนซีเมนต์ ${cementBags} ถุง + ทราย ${fmt(sand, 2)} ลบ.ม.`,
+    headline: `ปูนซีเมนต์ ${cementBags} ถุง + ทราย ${fmt(sand, 2)} คิว`,
     chart:
       cementBags > 0
         ? {
             kind: "packs",
-            unitLabel: `ถุงปูน ${MASONRY.bag.value} กก.`,
+            unitLabel: `ถุงปูน ${bag} กก.`,
             count: cementBags,
-            lastUsed: (cementKg - (cementBags - 1) * MASONRY.bag.value) / MASONRY.bag.value,
-            note: `ผสมกับทราย ${fmt(sand, 2)} ลบ.ม. · หรือใช้ปูนก่อสำเร็จ ${readyBags} ถุงแทน`,
+            lastUsed: (cementKg - (cementBags - 1) * bag) / bag,
+            note: `ผสมกับทราย ${fmt(sand, 2)} คิว · หรือใช้ปูนก่อสำเร็จ ${readyBags} ถุงแทน`,
           }
         : undefined,
     rows: [
       { label: "พื้นที่สุทธิ", value: `${fmt(net, 2)} ตร.ม.` },
       { label: "สัดส่วนปูนในผนัง", value: `${fmt(fraction * 100, 1)}% ของหน้าผนัง` },
-      { label: "ปริมาตรมอร์ตาร์", value: `${fmt(m3, 3)} ลบ.ม.` },
-      { label: `ปูนซีเมนต์ ${MASONRY.bag.value} กก.`, value: `${cementBags} ถุง`, emphasize: true },
-      { label: "ทราย", value: `${fmt(sand, 2)} ลบ.ม.`, emphasize: true },
-      { label: "ถ้าใช้ปูนก่อสำเร็จแทน", value: `${readyBags} ถุง` },
+      { label: "ปริมาตรมอร์ตาร์", value: `${fmt(m3, 3)} ลบ.ม.${wasteText}` },
+      { label: `ปูนซีเมนต์งานก่อ (ถุง ${bag} กก.)`, value: `${cementBags} ถุง`, emphasize: true },
+      { label: "ทรายงานก่อ", value: `${fmt(sand, 2)} ลบ.ม. (คิว)`, emphasize: true },
+      { label: `ถ้าใช้ปูนก่อสำเร็จแทน (ถุง ${bag} กก.)`, value: `${readyBags} ถุง` },
     ],
-    tip: "ผสมเองใช้ 1:3 ถ้าอยากเร็วใช้ปูนก่อสำเร็จ ถุงละก่อได้ประมาณ 1.4 ตร.ม.",
+    tip:
+      wastePct > 0
+        ? "ผสมเองใช้ 1:3 ถ้าอยากเร็วใช้ปูนก่อสำเร็จ ถุง 50 กก. ก่อได้ประมาณ 1.4 ตร.ม."
+        : "ตัวเลขนี้เป็นปูนในแนวก่อล้วน ๆ ยังไม่เผื่อปูนตกหล่น ใส่ % เผื่อได้ในช่อง “เผื่อปูนตกหล่น”",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -231,8 +244,8 @@ export function calcMortar(v: Values) {
         },
         {
           label: "ปริมาตรมอร์ตาร์",
-          expr: "V = A × ความหนาผนัง × f",
-          subst: `V = ${fmt(net, 2)} × ${fmt(b.wallT / 1000, 3)} × ${fmt(fraction, 3)} = ${fmt(m3, 3)} ลบ.ม.`,
+          expr: "V = A × ความหนาผนัง × f × (1 + เผื่อ)",
+          subst: `V = ${fmt(net, 2)} × ${fmt(b.wallT / 1000, 3)} × ${fmt(fraction, 3)} × ${fmt(1 + wastePct / 100, 2)} = ${fmt(m3, 3)} ลบ.ม.`,
         },
         {
           label: "แยกเป็นปูนกับทราย (1:3)",
@@ -241,14 +254,16 @@ export function calcMortar(v: Values) {
         },
         {
           label: "ทางเลือกปูนก่อสำเร็จ",
-          expr: `ถุง = A ÷ ${MASONRY.readyMortarCoverage.value} ตร.ม./ถุง`,
-          subst: `${fmt(net, 2)} ÷ ${MASONRY.readyMortarCoverage.value} = ${readyBags} ถุง`,
+          expr: `ถุง = A × (1 + เผื่อ) ÷ ${fmt(readyCoverage, 2)} ตร.ม./ถุง ${bag} กก.`,
+          subst: `${fmt(net * (1 + wastePct / 100), 2)} ÷ ${fmt(readyCoverage, 2)} = ${readyBags} ถุง`,
         },
       ],
-      constants: [MASONRY.cementPerM3Mortar, MASONRY.sandPerM3Mortar, MASONRY.readyMortarCoverage, MASONRY.bag],
+      constants: [MASONRY.cementPerM3Mortar, MASONRY.sandPerM3Mortar, MASONRY.readyMortarCoverage, MASONRY_BAGS[String(bag)] ?? MASONRY.bag],
       assumptions: ["ก่อผนังชั้นเดียว แนวปูนเต็มทั้งแนวนอนและแนวตั้ง", "มอร์ตาร์ผสม 1:3 ตามงานก่อทั่วไป"],
       caveats: [
-        "ปูนที่ตกหล่นหน้างานทำให้ใช้จริงมากกว่าที่คำนวณ 5–10%",
+        wastePct > 0
+          ? `รวมเผื่อปูนตกหล่น ${fmt(wastePct)}% ตามที่กรอกแล้ว`
+          : "ยังไม่เผื่อปูนตกหล่น — หน้างานจริงใช้มากกว่าปริมาตรแนวปูนตามทฤษฎี ใส่ % เผื่อเองได้",
         "อัตราส่วนปูนซีเมนต์ต่อลูกบาศก์เมตรเป็นค่าประมาณราคางานก่อสร้าง ไม่ใช่มาตรฐานบังคับ",
         DISCLAIMER_AB,
       ],
@@ -269,34 +284,41 @@ export function calcPlaster(v: Values) {
       : kind === "skim"
         ? MASONRY.plasterThickSkim
         : MASONRY.plasterThickNormal;
-  const thick = thickRef.value;
+  const custom = num(v, "thick", 0);
+  const thick = custom > 0 ? custom : thickRef.value;
+  const thickNote = custom > 0 ? "กำหนดเอง" : thickRef.label;
+  const bag = bagOf(v);
+  const name = kind === "skim" ? "สกิมโค้ท" : kind === "thin" ? "ปูนฉาบบาง" : "ปูนฉาบ";
   const area = net * sides;
   const kg = area * thick * MASONRY.plasterPerM2PerMm.value;
-  const bags = ceil(kg / MASONRY.bag.value);
-  const coverage = MASONRY.bag.value / (thick * MASONRY.plasterPerM2PerMm.value);
+  const bags = ceil(kg / bag);
+  const coverage = bag / (thick * MASONRY.plasterPerM2PerMm.value);
 
   return resultX({
     title: "ปูนฉาบ",
-    headline: `ปูนฉาบ ${bags} ถุง`,
+    headline: `${name} ${bags} ถุง (ถุง ${bag} กก.)`,
     chart:
       bags > 0
         ? {
             kind: "packs",
-            unitLabel: `ถุง ${MASONRY.bag.value} กก.`,
+            unitLabel: `ถุง ${bag} กก.`,
             count: bags,
-            lastUsed: (kg - (bags - 1) * MASONRY.bag.value) / MASONRY.bag.value,
+            lastUsed: (kg - (bags - 1) * bag) / bag,
             note: `ถุงละฉาบได้ประมาณ ${fmt(coverage, 2)} ตร.ม. ที่ความหนา ${fmt(thick)} มม.`,
           }
         : undefined,
     rows: [
       { label: "พื้นที่ผนัง", value: `${fmt(net, 2)} ตร.ม. × ${sides} ด้าน` },
       { label: "พื้นที่ฉาบรวม", value: `${fmt(area, 2)} ตร.ม.` },
-      { label: "ความหนาฉาบ", value: `${fmt(thick)} มม. (${thickRef.label})` },
-      { label: "ปูนฉาบ", value: `${fmt(kg, 1)} กก.` },
-      { label: `ถุง ${MASONRY.bag.value} กก.`, value: `${bags} ถุง`, emphasize: true },
+      { label: "ความหนาฉาบ", value: `${fmt(thick)} มม. (${thickNote})` },
+      { label: `${name} รวม`, value: `${fmt(kg, 1)} กก.` },
+      { label: `${name} (ถุง ${bag} กก.)`, value: `${bags} ถุง`, emphasize: true },
       { label: "ถุงละได้ประมาณ", value: `${fmt(coverage, 2)} ตร.ม.` },
     ],
-    tip: "ฉาบ 15 มม. คืองานบ้านทั่วไป มวลเบาใช้ระบบฉาบบางของยี่ห้อเดียวกัน",
+    tip:
+      kind === "thin" && custom <= 0
+        ? "ฉาบบาง 5 มม. คือผนังมวลเบาที่ก่อได้ระนาบ ถ้าหน้างานฉาบหนากว่านี้ ใส่ความหนาจริงในช่อง “หนาฉาบจริง”"
+        : "ฉาบ 15 มม. คืองานบ้านทั่วไป มวลเบาใช้ระบบฉาบบางของยี่ห้อเดียวกัน เลือกขนาดถุงให้ตรงกับที่ซื้อ",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -315,11 +337,11 @@ export function calcPlaster(v: Values) {
         },
         {
           label: "แปลงเป็นถุง",
-          expr: `ถุง = kg ÷ ${MASONRY.bag.value} ปัดขึ้น`,
-          subst: `${fmt(kg, 1)} ÷ ${MASONRY.bag.value} = ${bags} ถุง`,
+          expr: `ถุง = kg ÷ ${bag} ปัดขึ้น`,
+          subst: `${fmt(kg, 1)} ÷ ${bag} = ${bags} ถุง`,
         },
       ],
-      constants: [thickRef, MASONRY.plasterPerM2PerMm, MASONRY.bag],
+      constants: [thickRef, MASONRY.plasterPerM2PerMm, MASONRY_BAGS[String(bag)] ?? MASONRY.bag],
       assumptions: ["ผนังได้ระนาบพอควร ไม่ต้องฉาบปรับหนาเป็นพิเศษ", "ยังไม่รวมปูนฉาบเก็บมุมและจับเซี้ยม"],
       caveats: [
         "ผนังไม่ตรงหรือต้องปรับระดับมาก กินปูนมากกว่านี้หลายเท่า",
@@ -349,6 +371,7 @@ export function calcLintel(v: Values) {
   const longBars = LINTEL.bars.value * len;
   const stirrups = nStirrup * LINTEL.stirrupLen.value;
   const rb6 = n * (longBars + stirrups);
+  const rb6Bars = ceil(rb6 / STEEL_FORMULA.rebarStock.value);
 
   return resultX({
     title: "ทับหลังช่องเปิด",
@@ -365,9 +388,13 @@ export function calcLintel(v: Values) {
     rows: [
       { label: "ความยาว/ชุด", value: `${fmt(len, 2)} ม. (ฝังเข้าผนัง ${fmt(bearing * 100)} ซม./ข้าง)` },
       { label: "คอนกรีต 10×10", value: `${fmt(conc, 3)} ลบ.ม.` },
-      { label: "เหล็ก RB6 ประมาณ", value: `${fmt(rb6, 1)} ม.`, emphasize: true },
+      {
+        label: "เหล็ก RB6 ประมาณ",
+        value: `${fmt(rb6, 1)} ม. = ${fmt(rb6Bars)} เส้น (เส้นละ ${fmt(STEEL_FORMULA.rebarStock.value)} ม.)`,
+        emphasize: true,
+      },
     ],
-    tip: "ช่องเปิดทุกบานควรมีทับหลัง อย่าให้อิฐรับเอง",
+    tip: "ช่องเปิดทุกบานควรมีทับหลัง อย่าให้อิฐรับเอง เหล็กเส้นคิดเป็นเส้น 10 ม. ยังไม่เผื่อระยะทาบ",
     explain: {
       risk: "C",
       updatedAt: "2026-11-25",
@@ -409,10 +436,11 @@ export function calcMix(v: Values) {
   const sum = parts[0] + parts[1] + parts[2];
   // ปูน ทราย หิน ตวงแบบหลวมรวมกันต้องมากกว่าปริมาตรคอนกรีตที่เทได้ เพราะเนื้อเล็กเข้าไปอุดช่องว่างเนื้อใหญ่
   const dryFactor = MIX.dryVolume.value;
+  const bag = bagOf(v);
   const dryM3 = m3 * dryFactor;
   const cementM3 = (dryM3 * parts[0]) / sum;
   const cementKg = cementM3 * MASONRY.cementBulkDensity.value;
-  const bagsExact = cementKg / MASONRY.bag.value;
+  const bagsExact = cementKg / bag;
   const bags = ceil(bagsExact);
   const sand = round((dryM3 * parts[1]) / sum, 2);
   const rock = round((dryM3 * parts[2]) / sum, 2);
@@ -420,21 +448,22 @@ export function calcMix(v: Values) {
 
   return resultX({
     title: "สัดส่วนผสม",
-    headline: `${bags} ถุงปูน / งาน ${fmt(m3, 2)} ลบ.ม.`,
+    headline: `ปูน ${bags} ถุง · ทราย ${fmt(sand, 2)} คิว · หิน ${fmt(rock, 2)} คิว`,
     chart: {
       kind: "stack",
       parts: [
         { label: "ปูนซีเมนต์", value: parts[0], display: `${bags} ถุง`, tone: "accent" },
-        { label: "ทราย", value: parts[1], display: `${fmt(sand, 2)} ลบ.ม.`, tone: "warn" },
-        { label: "หิน", value: parts[2], display: `${fmt(rock, 2)} ลบ.ม.`, tone: "mute" },
+        { label: "ทราย", value: parts[1], display: `${fmt(sand, 2)} คิว`, tone: "warn" },
+        { label: "หิน", value: parts[2], display: `${fmt(rock, 2)} คิว`, tone: "mute" },
       ],
       totalLabel: "สัดส่วนโดยปริมาตร",
       totalDisplay: parts.join(" : "),
     },
     rows: [
-      { label: "ปูนซีเมนต์", value: `${bags} ถุง (คิดได้ ${fmt(bagsExact, 1)} ถุง)`, emphasize: true },
-      { label: "ทราย", value: `${fmt(sand, 2)} ลบ.ม.` },
-      { label: "หิน", value: `${fmt(rock, 2)} ลบ.ม.` },
+      { label: "งานคอนกรีต", value: `${fmt(m3, 2)} ลบ.ม. (คิว)` },
+      { label: `ปูนซีเมนต์ (ถุง ${bag} กก.)`, value: `${bags} ถุง (คิดได้ ${fmt(bagsExact, 1)} ถุง)`, emphasize: true },
+      { label: "ทราย", value: `${fmt(sand, 2)} ลบ.ม. (คิว)` },
+      { label: "หิน", value: `${fmt(rock, 2)} ลบ.ม. (คิว)` },
       { label: "น้ำประมาณ", value: `${fmt(water)} ลิตร` },
     ],
     tip: "1:2:4 งานบ้านทั่วไป อย่าใส่น้ำจนไหล กำลังอัดจะตกลงเยอะกว่าที่คิด",
@@ -456,8 +485,8 @@ export function calcMix(v: Values) {
         },
         {
           label: "แปลงเป็นถุง",
-          expr: `ถุง = V_ปูน × ${MASONRY.cementBulkDensity.value} ÷ ${MASONRY.bag.value} ปัดขึ้น`,
-          subst: `${fmt(cementKg, 1)} กก. ÷ ${MASONRY.bag.value} = ${fmt(bagsExact, 2)} → ${bags} ถุง`,
+          expr: `ถุง = V_ปูน × ${MASONRY.cementBulkDensity.value} ÷ ${bag} ปัดขึ้น`,
+          subst: `${fmt(cementKg, 1)} กก. ÷ ${bag} = ${fmt(bagsExact, 2)} → ${bags} ถุง`,
         },
         {
           label: "ทรายและหิน",
@@ -471,7 +500,7 @@ export function calcMix(v: Values) {
           note: "เติมน้ำทีละน้อย ให้ได้ความข้นที่เทได้พอดี",
         },
       ],
-      constants: [MIX.dryVolume, MASONRY.cementBulkDensity, MASONRY.waterPerBag, MASONRY.bag],
+      constants: [MIX.dryVolume, MASONRY.cementBulkDensity, MASONRY.waterPerBag, MASONRY_BAGS[String(bag)] ?? MASONRY.bag],
       assumptions: [
         "ผสมตามสัดส่วนปริมาตรแบบหน้างาน ไม่ใช่การออกแบบส่วนผสมตามกำลังอัดที่ต้องการ",
         "วัสดุแห้งพอสมควร ทรายไม่อุ้มน้ำเกินปกติ",
@@ -505,6 +534,38 @@ const brickKind = {
   options: Object.entries(BRICKS).map(([value, b]) => ({ value, label: b.name })),
 };
 
+const bagField = {
+  type: "select" as const,
+  key: "bag",
+  label: "ขนาดถุงที่ซื้อ",
+  default: "50",
+  options: [
+    { value: "50", label: "ถุง 50 กก." },
+    { value: "40", label: "ถุง 40 กก." },
+    { value: "20", label: "ถุง 20 กก. (สกิม/ปูนกาวบางยี่ห้อ)" },
+  ],
+};
+
+const mortarWasteField = {
+  type: "number" as const,
+  key: "mwaste",
+  label: "เผื่อปูนตกหล่น",
+  unit: "%",
+  default: 0,
+  min: 0,
+  max: 30,
+};
+
+const thickField = {
+  type: "number" as const,
+  key: "thick",
+  label: "หนาฉาบจริง (0 = ตามชนิด)",
+  unit: "มม.",
+  default: 0,
+  min: 0,
+  max: 40,
+};
+
 const jointField = {
   type: "select" as const,
   key: "joint",
@@ -531,7 +592,7 @@ export const masonryTools: ToolDef[] = [
     id: "mortar",
     name: "ปูนก่อ",
     blurb: "ปูน ทราย หรือปูนกาวมวลเบา",
-    fields: [...wall, brickKind, jointField],
+    fields: [...wall, brickKind, jointField, bagField, mortarWasteField],
     calc: calcMortar,
   },
   {
@@ -552,6 +613,8 @@ export const masonryTools: ToolDef[] = [
         ],
       },
       { type: "number", key: "sides", label: "ฉาบกี่ด้าน", unit: "ด้าน", default: 1, min: 1, max: 2 },
+      thickField,
+      bagField,
     ],
     calc: calcPlaster,
   },
@@ -582,6 +645,16 @@ export const masonryTools: ToolDef[] = [
           { value: "136", label: "1:3:6 งานไม่รับแรง" },
         ],
       },
+      {
+        type: "select",
+        key: "bag",
+        label: "ขนาดถุงปูนซีเมนต์",
+        default: "50",
+        options: [
+          { value: "50", label: "ถุง 50 กก." },
+          { value: "40", label: "ถุง 40 กก." },
+        ],
+      },
     ],
     calc: calcMix,
   },
@@ -595,6 +668,9 @@ export const masonryJob: JobDef = {
     brickKind,
     jointField,
     { type: "number", key: "sides", label: "ฉาบกี่ด้าน", unit: "ด้าน", default: 2, min: 1, max: 2 },
+    { ...thickField, label: "หนาฉาบจริง (0 = ตามชนิดอิฐ)" },
+    bagField,
+    mortarWasteField,
     { type: "number", key: "n", label: "ช่องเปิด (ทับหลัง)", unit: "ช่อง", default: 1, min: 0, max: 100 },
     { type: "number", key: "width", label: "กว้างช่องเฉลี่ย", unit: "ม.", default: 1, min: 0.4, max: 6, step: 0.1 },
   ],

@@ -212,7 +212,7 @@ describe("ส่วนผสมคอนกรีต 1:2:4", () => {
     // ปริมาตรแห้ง 1 × 1.54 = 1.54 ลบ.ม. → ปูน 1.54 × 1/7 = 0.22 ลบ.ม. × 1,440 = 316.8 กก. = 6.34 ถุง
     // ทราย 1.54 × 2/7 = 0.44 · หิน 1.54 × 4/7 = 0.88 ลบ.ม.
     const r = calcMix({ m3: 1, ratio: "124" });
-    expect(rowOf(r, "ปูนซีเมนต์")).toBe("7 ถุง (คิดได้ 6.3 ถุง)");
+    expect(rowOf(r, "ปูนซีเมนต์ (ถุง 50 กก.)")).toBe("7 ถุง (คิดได้ 6.3 ถุง)");
     expect(numberIn(rowOf(r, "ทราย"))).toBeCloseTo(0.44, 2);
     expect(numberIn(rowOf(r, "หิน"))).toBeCloseTo(0.88, 2);
     expect(K.MIX.dryVolume.value).toBe(1.54);
@@ -220,7 +220,7 @@ describe("ส่วนผสมคอนกรีต 1:2:4", () => {
 
   it("3 ลบ.ม. ใช้ปูน 20 ถุง (เดิมตอบ 13 ถุง ขาดไปหนึ่งในสาม)", () => {
     // 3 × 1.54 ÷ 7 × 1,440 = 950.4 กก. = 19.0 ถุง → ปัดขึ้น 20
-    expect(rowOf(calcMix({ m3: 3, ratio: "124" }), "ปูนซีเมนต์")).toMatch(/^20 ถุง/);
+    expect(rowOf(calcMix({ m3: 3, ratio: "124" }), "ปูนซีเมนต์ (ถุง 50 กก.)")).toMatch(/^20 ถุง/);
   });
 });
 
@@ -372,15 +372,15 @@ describe("หลังคา", () => {
   it("เมทัลชีทนับเป็นแถว: 8×12 ม. ชัน 30% จั่ว แผ่นคลุม 0.7 ม. ได้ 36 แผ่น (เผื่อ 10% = 40) ไม่ใช่ 27", () => {
     // แนวลาดต่อด้าน = 4 × √(1 + 0.3²) = 4.18 ม. ≤ แผ่น 6 ม. → 1 แผ่น/แถว
     // แถว = ปัดขึ้น(12 ÷ 0.7) = 18 → 2 ด้าน × 18 × 1 = 36 แผ่น → × 1.1 = 39.6 → 40
-    const r = calcRoofMaterial({});
+    const r = calcRoofMaterial({ kind: "metal" });
     expect(rowOf(r, "นับตามแถว")).toBe("36 แผ่น");
     expect(rowStarting(r, "จำนวนแผ่น")).toBe("40 แผ่น");
-    expect(rowStarting(calcRoofMaterial({ waste: 0 }), "จำนวนแผ่น")).toBe("36 แผ่น");
+    expect(rowStarting(calcRoofMaterial({ kind: "metal", waste: 0 }), "จำนวนแผ่น")).toBe("36 แผ่น");
   });
 
   it("แนวลาดยาวกว่าแผ่นต้องต่อซ้อนปลาย: เพิง 8 ม. แผ่น 4 ม. ได้ 3 แผ่น/แถว = 54 แผ่น", () => {
     // แนวลาด 8 × 1.044 = 8.35 ม. → ปัดขึ้น((8.35 − 0.2) ÷ (4 − 0.2)) = 3 · แถว 18 → 54
-    const r = calcRoofMaterial({ shape: "lean", w: 8, l: 12, sheetLen: 4, waste: 0 });
+    const r = calcRoofMaterial({ kind: "metal", shape: "lean", w: 8, l: 12, sheetLen: 4, waste: 0 });
     expect(rowOf(r, "นับตามแถว")).toBe("54 แผ่น");
   });
 

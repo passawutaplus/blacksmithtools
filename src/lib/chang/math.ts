@@ -57,6 +57,51 @@ export function fmt(x: number, digits = 0): string {
   });
 }
 
+/**
+ * พิมพ์ตัวเลขแบบ "เท่าที่มี" — ทศนิยมไม่เกิน `digits` ตำแหน่ง และไม่เติมศูนย์ท้าย
+ * ใช้กับขนาดหน้าตัดที่ต้องส่งร้านตรงสเปก เช่น 48.3 × 2.3 มม. (ไม่ใช่ 48 × 2) และ 50 × 50 (ไม่ใช่ 50.0)
+ */
+export function fmtTrim(x: number, digits = 1): string {
+  if (!Number.isFinite(x)) {
+    nonFiniteSeen = true;
+    return "—";
+  }
+  return round(x, digits).toLocaleString("th-TH", { maximumFractionDigits: digits, minimumFractionDigits: 0 });
+}
+
+/**
+ * จำนวนเส้น/ท่อน/แผ่นที่ต้องซื้อจากความยาวรวม — ของที่ขายเป็นเส้นยาวตายตัว (โครงฝ้า 4 ม. เหล็กเส้น 10 ม.)
+ * คืนข้อความพร้อมหน่วย เช่น "14 เส้น (เส้นละ 4 ม.)"
+ */
+export function stockPieces(totalM: number, stockM: number, unit = "เส้น"): { count: number; text: string } {
+  const count = totalM <= 0 ? 0 : ceil(totalM / stockM);
+  return { count, text: `${fmt(count)} ${unit} (${unit}ละ ${fmtTrim(stockM, 2)} ม.)` };
+}
+
+/** เศษส่วนนิ้วใกล้สุด (ละเอียดถึง 1/16) จากจำนวนนิ้วทศนิยม — คืน { whole, num, den } ที่ลดรูปแล้ว */
+export function inchFraction(inches: number, den = 16): { whole: number; num: number; den: number } {
+  const total = Math.round(inches * den);
+  let whole = Math.floor(total / den);
+  let n = total - whole * den;
+  let d = den;
+  while (n > 0 && n % 2 === 0) {
+    n /= 2;
+    d /= 2;
+  }
+  if (n === d) {
+    whole += 1;
+    n = 0;
+  }
+  return { whole, num: n, den: d };
+}
+
+/** พิมพ์นิ้วแบบเศษส่วนช่าง เช่น 10.5 → "10 1/2" · 0.75 → "3/4" · 2 → "2" */
+export function fmtInchFraction(inches: number, den = 16): string {
+  const f = inchFraction(inches, den);
+  if (f.num === 0) return `${f.whole}`;
+  return f.whole > 0 ? `${f.whole} ${f.num}/${f.den}` : `${f.num}/${f.den}`;
+}
+
 export function fieldVisible(field: Field, values: Values): boolean {
   if (!field.when) return true;
   const current = String(values[field.when.key] ?? "");
@@ -298,9 +343,13 @@ export function parseList(raw: string): number[] {
   return parseLengthList(raw).values;
 }
 
+/** จำนวนชิ้นสูงสุดต่อรายการแบบ "ยาว×จำนวน" — กันพิมพ์สลับ (20x1500) แล้วได้ชิ้นเป็นพัน */
+export const LENGTH_LIST_MAX_QTY = 500;
+
 /**
  * อ่านรายการความยาวที่ช่างพิมพ์เอง เช่น "1200, 800 2500" หรือ "1,200 800"
  * - คั่นด้วยจุลภาค เว้นวรรค ขึ้นบรรทัด หรือ ;
+ * - "1500x20" / "1500*20" / "1500×20" = ยาว 1500 จำนวน 20 ชิ้น (จำนวนต้องเป็นจำนวนเต็ม 1–500)
  * - "1,200" (จุลภาคติดกับเลข 3 หลักไม่เว้นวรรค) อ่านเป็นหลักพัน = 1200 เมื่อค่ารวมไม่เกิน `maxValue`
  *   (ปกติคือความยาวเส้นวัตถุดิบ) ถ้าเกินให้ถือว่าเป็นตัวคั่นธรรมดา เช่น "900,800" = 900 กับ 800
  * - ชิ้นที่อ่านเป็นตัวเลขบวกไม่ได้ จะคืนใน `dropped` ให้เอาไปบอกผู้ใช้ ห้ามทิ้งเงียบ
@@ -308,10 +357,23 @@ export function parseList(raw: string): number[] {
 export function parseLengthList(raw: string, maxValue = Infinity): { values: number[]; dropped: string[] } {
   const values: number[] = [];
   const dropped: string[] = [];
+  /** แยก "1500x20" เป็น [ตัวความยาว, จำนวน] — ไม่มีตัวคูณคืนจำนวน 1 · ตัวคูณเพี้ยนคืน null */
+  const split = (token: string): { body: string; qty: number } | null => {
+    const m = token.match(/^([^x×*]+)[x×*]([^x×*]+)$/i);
+    if (!m) return { body: token, qty: 1 };
+    const qty = Number(m[2]);
+    if (!Number.isInteger(qty) || qty < 1 || qty > LENGTH_LIST_MAX_QTY) return null;
+    return { body: m[1], qty };
+  };
+  const pushMany = (n: number, qty: number) => {
+    for (let k = 0; k < qty; k++) values.push(n);
+  };
   const push = (token: string) => {
-    const n = Number(token);
-    if (token !== "" && Number.isFinite(n) && n > 0) values.push(n);
-    else if (token !== "") dropped.push(token);
+    if (token === "") return;
+    const parsed = split(token);
+    const n = parsed ? Number(parsed.body) : NaN;
+    if (parsed && parsed.body !== "" && Number.isFinite(n) && n > 0) pushMany(n, parsed.qty);
+    else dropped.push(token);
   };
   for (const chunk of raw.split(/[\s;]+/)) {
     const groups = chunk.split(",").filter((g) => g !== "");
@@ -319,11 +381,12 @@ export function parseLengthList(raw: string, maxValue = Infinity): { values: num
     while (i < groups.length) {
       const head = groups[i];
       const next = groups[i + 1];
-      if (next !== undefined && /^\d{1,3}$/.test(head) && /^\d{3}(\.\d+)?$/.test(next)) {
-        const merged = Number(head) * 1000 + Number(next);
+      const nextParsed = next === undefined ? null : split(next);
+      if (nextParsed && /^\d{1,3}$/.test(head) && /^\d{3}(\.\d+)?$/.test(nextParsed.body)) {
+        const merged = Number(head) * 1000 + Number(nextParsed.body);
         // "12,000" แยกแล้วได้ "000" ซึ่งไม่ใช่ความยาวแน่ ๆ จึงถือเป็นหลักพันแม้จะเกิน maxValue (แล้วให้สูตรเตือนว่ายาวเกิน)
-        if (Number(head) > 0 && (merged <= maxValue || next.startsWith("0"))) {
-          values.push(merged);
+        if (Number(head) > 0 && (merged <= maxValue || nextParsed.body.startsWith("0"))) {
+          pushMany(merged, nextParsed.qty);
           i += 2;
           continue;
         }
