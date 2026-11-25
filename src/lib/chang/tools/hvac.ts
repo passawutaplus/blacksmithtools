@@ -4,6 +4,7 @@ import {
   bool,
   ceil,
   fmt,
+  fmtTrim,
   guardInputs,
   guardTool,
   jobFromParts,
@@ -303,6 +304,14 @@ const PIPE_BRACKETS = [
   { upTo: Infinity, liq: '3/8"', suc: '3/4"' },
 ] as const;
 
+/** ช่างแอร์เรียกท่อทองแดงเป็น "หุน" (1 หุน = 1/8 นิ้ว): 1/4" = 2 หุน · 3/8" = 3 หุน · 1/2" = 4 หุน · 5/8" = 5 หุน · 3/4" = 6 หุน */
+export function copperHun(inchLabel: string): string {
+  const m = inchLabel.match(/^(\d+)\/(\d+)"$/);
+  if (!m) return inchLabel;
+  const hun = (Number(m[1]) / Number(m[2])) * 8;
+  return `${fmt(hun)} หุน (${inchLabel})`;
+}
+
 export function calcPipe(v: Values) {
   const bad = guard("pipe", v);
   if (bad) return bad;
@@ -320,14 +329,14 @@ export function calcPipe(v: Values) {
 
   return resultX({
     title: "ขนาดท่อทองแดง",
-    headline: `ท่อทองแดง ${liq} / ${suc}`,
+    headline: `ท่อทองแดง ${copperHun(liq).split(" (")[0]} + ${copperHun(suc).split(" (")[0]} (${liq} + ${suc}) ยาว ${fmtTrim(run, 1)} ม.`,
     chart: {
       kind: "steps",
       unit: "BTU",
       need: btu,
       needLabel: "ขนาดแอร์",
       items: [12000, 18000, 24000, 30000].map((upTo, i) => ({
-        label: `${PIPE_BRACKETS[i].liq}/${PIPE_BRACKETS[i].suc}`,
+        label: `${copperHun(PIPE_BRACKETS[i].liq).split(" หุน")[0]}+${copperHun(PIPE_BRACKETS[i].suc).split(" (")[0]}`,
         value: upTo,
         state: i === chosenIdx ? "chosen" : i < chosenIdx ? "under" : "over",
       })),
@@ -335,10 +344,11 @@ export function calcPipe(v: Values) {
     rows: [
       { label: "ขนาดแอร์", value: `${fmt(btu)} BTU` },
       { label: "ระยะเดินท่อ", value: `${fmt(run, 1)} ม.` },
-      { label: "ท่อน้ำยาเหลว", value: liq, emphasize: true },
-      { label: "ท่อดูด", value: suc, emphasize: true },
+      { label: "ท่อน้ำยาเหลว (ท่อเล็ก)", value: copperHun(liq), emphasize: true },
+      { label: "ท่อดูด (ท่อใหญ่)", value: copperHun(suc), emphasize: true },
+      { label: "ความยาวที่ต้องซื้อ", value: `ท่อคู่ ${fmtTrim(run, 1)} ม. ต่อเครื่อง (เส้นเล็ก ${fmtTrim(run, 1)} ม. + เส้นใหญ่ ${fmtTrim(run, 1)} ม.) พร้อมฉนวนหุ้มทั้งสองเส้น` },
     ],
-    tip: extra,
+    tip: `${extra} · ความหนาท่อและช่วงขนาดให้ดูคู่มือรุ่น (R32/R410A แรงดันสูง ใช้ท่อหนาตามที่ผู้ผลิตกำหนด)`,
     explain: {
       risk: "B",
       updatedAt: "2026-08-21",
@@ -347,7 +357,8 @@ export function calcPipe(v: Values) {
         {
           label: "เปิดตารางตามขนาดแอร์",
           expr: "≤12,000 BTU → 1/4\"/3/8\" · ≤18,000 → 1/4\"/1/2\" · ≤24,000 → 3/8\"/5/8\" · เกิน → 3/8\"/3/4\"",
-          subst: `${fmt(btu)} BTU → ${liq} / ${suc}`,
+          subst: `${fmt(btu)} BTU → ${liq} / ${suc} = ${copperHun(liq).split(" (")[0]} / ${copperHun(suc).split(" (")[0]}`,
+          note: "1 หุน = 1/8 นิ้ว",
         },
         {
           label: "เช็กระยะเดินท่อ",
@@ -932,9 +943,25 @@ export const hvacTools: ToolDef[] = [
 
 export const hvacJob: JobDef = {
   name: "คิดทั้งงานแอร์",
-  blurb: "กรอกห้องครั้งเดียว ได้ขนาดแอร์ สายไฟ และค่าไฟคร่าว ๆ",
+  blurb: "กรอกห้องครั้งเดียว ได้ขนาดแอร์ ท่อทองแดง น้ำยา สายไฟ ค่าไฟ",
   fields: [
     ...hvacTools[0].fields,
+    {
+      type: "select",
+      key: "bought",
+      label: "ขนาดแอร์ที่ซื้อแล้ว",
+      default: "auto",
+      options: [{ value: "auto", label: "ยังไม่ซื้อ — ให้คิดจากห้อง" }, ...AC_SIZES.map((x) => ({ value: String(x), label: `${fmt(x)} BTU` }))],
+    },
+    { type: "number", key: "run", label: "ระยะท่อน้ำยา", unit: "ม.", default: 4, min: 1, max: 50, step: 0.5 },
+    {
+      type: "select",
+      key: "kind",
+      label: "น้ำยา",
+      default: "R32",
+      options: ["R32", "R410A", "R22"].map((x) => ({ value: x, label: x })),
+    },
+    { type: "number", key: "std", label: "ระยะท่อที่ไม่ต้องเติมน้ำยา (ดูคู่มือรุ่น)", unit: "ม.", default: 5, min: 0, max: 30 },
     { type: "number", key: "eer", label: "ค่าประสิทธิภาพแอร์ (EER ถ้าไม่รู้ใส่ 12)", default: 12, min: 6, max: 30, step: 0.1 },
     { type: "number", key: "hours", label: "ชั่วโมงเปิด/วัน", unit: "ชม.", default: 8, min: 1, max: 24 },
     { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: 4.2, min: 0.5, max: 20, step: 0.1 },
@@ -945,28 +972,66 @@ export const hvacJob: JobDef = {
     const v = withDefaults(hvacJob.fields, input);
     const btuRes = calcBtu(v);
     const sizeRow = btuRes.rows.find((r) => r.label === "ขนาดแอร์แนะนำ");
-    if (btuRes.invalid || !sizeRow) {
-      // ห้องใหญ่เกินแอร์ตัวเดียว: ไม่มีขนาดเครื่องให้คิดสายไฟ/ค่าไฟต่อ — ตอบเฉพาะภาระความเย็น
+    const boughtKey = str(v, "bought", "auto");
+    const bought = boughtKey === "auto" ? 0 : Number(boughtKey);
+    if (bought === 0 && (btuRes.invalid || !sizeRow)) {
+      // ห้องใหญ่เกินแอร์ตัวเดียว: ไม่มีขนาดเครื่องให้คิดสายไฟ/ค่าไฟต่อ — ตอบเฉพาะภาระ
       return jobFromParts({
         title: "งานแอร์ทั้งห้อง",
         headline: btuRes.headline ?? "ห้องใหญ่เกินแอร์ตัวเดียว",
         rows: [
           ...btuRes.rows,
-          { label: "สายไฟ / ค่าไฟ", value: "คิดต่อเครื่องหลังเลือกจำนวนและขนาดเครื่องแล้ว" },
+          { label: "ท่อ / สายไฟ / ค่าไฟ", value: "คิดต่อเครื่องหลังเลือกจำนวนและขนาดเครื่องแล้ว (เลือกในช่อง “ขนาดแอร์ที่ซื้อแล้ว”)" },
         ],
         tip: "ห้องใหญ่ระดับนี้ให้ช่างแอร์สำรวจหน้างาน แบ่งเครื่องตามโซน แล้วค่อยคิดเบรกเกอร์และค่าไฟทีละเครื่อง",
         parts: [btuRes],
       });
     }
-    const size = Number(sizeRow.value.replace(/[^\d.]/g, ""));
+    const recSize = sizeRow && !btuRes.invalid ? Number(sizeRow.value.replace(/[^\d.]/g, "")) : 0;
+    const size = bought > 0 ? bought : recSize;
+    const run = num(v, "run", 4);
     const breakerRes = calcBreaker({ btu: size });
+    const pipeRes = calcPipe({ btu: size, run });
+    const chargeRes = calcCharge({ kind: v.kind, std: v.std, run });
     const energy = calcEnergy({ btu: size, eer: v.eer, hours: v.hours, rate: v.rate });
     const breakerOk = !breakerRes.invalid;
+    const breakerRow = breakerRes.rows.find((r) => r.label === "เบรกเกอร์")?.value;
+    const wireRow = breakerRes.rows.find((r) => r.label === "สายไฟ (ทองแดง)")?.value;
+    // แถวขนาดแอร์: ถ้าลูกค้าซื้อมาแล้วให้ยึดเครื่องนั้น แล้วบอกว่าเทียบกับที่ห้องต้องการเป็นอย่างไร
+    const sizeRows =
+      bought > 0
+        ? [
+            ...btuRes.rows.filter((r) => r.label !== "ขนาดแอร์แนะนำ").map((r) => ({ ...r, emphasize: false })),
+            ...(recSize > 0 ? [{ label: "ขนาดที่ห้องต้องการ", value: `${fmt(recSize)} BTU` }] : []),
+            {
+              label: "ขนาดแอร์ที่ใช้คิด (ซื้อแล้ว)",
+              value:
+                recSize === 0
+                  ? `${fmt(size)} BTU ต่อเครื่อง — ห้องนี้ต้องใช้หลายเครื่อง`
+                  : size < recSize
+                    ? `${fmt(size)} BTU — เล็กกว่าที่ห้องต้องการ เย็นช้าและคอมเพรสเซอร์ทำงานหนัก`
+                    : `${fmt(size)} BTU`,
+              emphasize: true,
+            },
+          ]
+        : btuRes.rows;
+    const pipeText = pipeRes.headline?.replace("ท่อทองแดง ", "") ?? "-";
     return jobFromParts({
       title: "งานแอร์ทั้งห้อง",
-      headline: btuRes.headline ?? `แนะนำแอร์ ${fmt(size)} BTU`,
+      headline:
+        bought > 0
+          ? `แอร์ ${fmt(size)} BTU (ซื้อแล้ว)${breakerOk ? ` · เบรกเกอร์ ${breakerRow} · สาย ${wireRow}` : ""}`
+          : (btuRes.headline ?? `แนะนำแอร์ ${fmt(size)} BTU`),
       rows: [
-        ...btuRes.rows,
+        ...sizeRows,
+        { label: "ท่อทองแดง", value: pipeText, emphasize: true },
+        {
+          label: `น้ำยา ${str(v, "kind", "R32")} เติมเพิ่ม`,
+          value:
+            run > num(v, "std", 5)
+              ? (chargeRes.rows.find((r) => r.label === "เติมเพิ่ม")?.value ?? "-")
+              : `ไม่ต้องเติม (ท่อ ${fmtTrim(run, 1)} ม. ไม่เกิน ${fmtTrim(num(v, "std", 5), 1)} ม.)`,
+        },
         ...(breakerOk
           ? [
               ...breakerRes.rows.filter((r) => r.emphasize || r.label === "กระแสประมาณ"),
@@ -975,9 +1040,9 @@ export const hvacJob: JobDef = {
           : [{ label: "เบรกเกอร์ / สายไฟ", value: `เกินตารางคร่าว (ถึง ${fmt(AC_BREAKER_MAX_BTU)} BTU) — ใช้ค่าบนป้ายเครื่อง` }]),
         { label: "ค่าไฟ/เดือน", value: energy.rows.find((r) => r.emphasize)?.value ?? "-" },
       ],
-      tip: "สายไฟในหน้านี้เป็นตารางคร่าวตามขนาดแอร์ งานจริงเทียบป้ายเครื่องและให้ช่างไฟ/วิศวกรยืนยัน ยังไม่รวมค่าติดตั้งและขาแขวน",
-      parts: [btuRes, ...(breakerOk ? [breakerRes] : []), energy],
-      chart: btuRes.chart,
+      tip: "ยังไม่รวมฉนวนท่อ สายคอนโทรล ท่อน้ำทิ้ง รางครอบท่อ และขาแขวน · สายไฟเป็นตารางคร่าวตามขนาดแอร์ งานจริงเทียบป้ายเครื่องและให้ช่างไฟ/วิศวกรยืนยัน ยังไม่รวมค่าติดตั้ง",
+      parts: [...(btuRes.invalid ? [] : [btuRes]), pipeRes, chargeRes, ...(breakerOk ? [breakerRes] : []), energy],
+      chart: bought > 0 ? undefined : btuRes.chart,
     });
   },
 };

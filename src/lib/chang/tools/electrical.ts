@@ -1,5 +1,5 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, stepTable, str, withDefaults } from "../math";
+import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, stepTable, str, withDefaults } from "../math";
 import {
   BREAKER_SIZES,
   CABLE_METHODS,
@@ -212,6 +212,12 @@ export function calcCable(v: Values) {
   };
 }
 
+/** แรงดันตก (V) ของสายทองแดง: ตัวคูณ 2 (1 เฟส ไป-กลับ) หรือ √3 (3 เฟส) × L × I × ρ ÷ A */
+export function vdropVolts(il: number, len: number, mm2: number, phase: string): number {
+  const k = phase === "3" ? ELEC.sqrt3.value : 2;
+  return (k * len * il * ELEC.rhoCopper70.value) / Math.max(mm2, 0.5);
+}
+
 export function calcVdrop(v: Values) {
   const bad = guard("vdrop", v);
   if (bad) return bad;
@@ -222,7 +228,7 @@ export function calcVdrop(v: Values) {
   const phase = str(v, "phase", "1");
   const k = phase === "3" ? ELEC.sqrt3.value : 2;
   const rho = ELEC.rhoCopper70.value;
-  const vd = (k * len * il * rho) / Math.max(mm2, 0.5);
+  const vd = vdropVolts(il, len, mm2, phase);
   const pct = (vd / Math.max(volts, 1)) * 100;
   const branchLimit = ELEC.vdBranchLimit.value;
   const totalLimit = ELEC.vdTotalLimit.value;
@@ -332,7 +338,10 @@ export function calcSolar(v: Values) {
   const needW = needKw * 1000;
   const n = ceil(needKw / (panel / 1000));
   const installKw = (n * panel) / 1000;
-  const area = n * SOLAR.panelArea.value;
+  // พื้นที่แผงคิดตามกำลังแผง (แผงวัตต์สูงใหญ่ขึ้น) ไม่ใช่ 2.3 ตร.ม. ตายตัวทุกขนาด
+  const panelM2 = panel / SOLAR.panelWm2.value;
+  const area = n * panelM2;
+  const bigForSinglePhase = installKw > SOLAR.singlePhaseCheckKw.value;
   const price = installKw * pricePerKwp;
   const monthSave = Math.min(kwh, installKw * sun * 30 * derate) * rate;
   // เซฟเป็น 0 (ค่าไฟ 0 บาท) = ไม่มีวันคืนทุน ห้ามตอบ "0 เดือน"
@@ -365,7 +374,16 @@ export function calcSolar(v: Values) {
     rows: [
       { label: "กำลังที่ต้องใช้", value: `${fmt(needKw, 2)} kWp` },
       { label: "จำนวนแผง", value: `${fmt(n)} แผง × ${fmt(panel)} W = ${fmt(installKw, 2)} kWp`, emphasize: true },
-      { label: "พื้นที่หลังคา", value: `${fmt(area, 1)} ตร.ม.` },
+      { label: "พื้นที่หลังคา", value: `${fmt(area, 1)} ตร.ม. (แผงละ ≈ ${fmt(panelM2, 2)} ตร.ม.)` },
+      ...(bigForSinglePhase
+        ? [
+            {
+              label: "ตรวจเงื่อนไขการไฟฟ้า",
+              value: `ระบบ ${fmt(installKw, 2)} kWp ใหญ่สำหรับบ้านไฟ 1 เฟส — ถามการไฟฟ้า/ผู้ติดตั้งก่อนว่ามิเตอร์ที่มีขนานได้ขนาดเท่าไร อาจต้องลดขนาดหรือเปลี่ยนเป็น 3 เฟส`,
+              emphasize: true,
+            },
+          ]
+        : []),
       { label: "ราคาชุดโดยประมาณ", value: `${fmt(price)} บาท (${fmt(pricePerKwp)} บาท/kWp)` },
       { label: "เซฟค่าไฟ/เดือน", value: `${fmt(ceil(monthSave))} บาท` },
       { label: "คืนทุนคร่าว", value: paybackText, emphasize: true },
@@ -403,7 +421,7 @@ export function calcSolar(v: Values) {
               : `${fmt(price)} ÷ ${fmt(ceil(monthSave))} = ${fmt(ceil(paybackMonths))} เดือน ≈ ${fmt(paybackMonths / 12, 1)} ปี`,
         },
       ],
-      constants: [SOLAR.derate, SOLAR.panelArea, SOLAR.pricePerKwp],
+      constants: [SOLAR.derate, SOLAR.panelWm2, SOLAR.pricePerKwp],
       assumptions: [
         "ระบบ on-grid ผลิตไฟใช้เองทั้งหมดในเวลากลางวัน ไม่ได้คิดการขายไฟคืนหรือมิเตอร์สุทธิ",
         `ราคาติดตั้ง ${fmt(pricePerKwp)} บาท/kWp (ค่าตั้งต้น ${fmt(SOLAR.pricePerKwp.value)} = กลางช่วงตลาด ${SOLAR.pricePerKwp.range} บาท/kWp ปี 2568–2569)`,
@@ -413,6 +431,8 @@ export function calcSolar(v: Values) {
         "บ้านที่กลางวันใช้ไฟน้อยจะใช้ไฟโซลาร์เองได้แค่บางส่วน ระยะคืนทุนจริงยาวกว่าตัวเลขนี้",
         "ชั่วโมงแดดเทียบเท่า (peak sun hours) แต่ละพื้นที่และฤดูต่างกัน ค่าไฟจริงที่ประหยัดได้อาจสูง/ต่ำกว่านี้",
         "ยังไม่รวมค่าใช้จ่ายขออนุญาตเชื่อมต่อกับการไฟฟ้า (PEA/MEA) และเงื่อนไขมิเตอร์ที่เปลี่ยนได้ตามนโยบาย",
+        "ขนาดระบบสูงสุดที่ขนานกับมิเตอร์ 1 เฟส/3 เฟสได้เป็นเงื่อนไขของการไฟฟ้า เครื่องมือนี้เตือนให้ไปตรวจ ไม่ได้ยืนยันตัวเลขตามระเบียบ",
+        `พื้นที่แผงประมาณจาก ${SOLAR.panelWm2.value} W/ตร.ม. แผงรุ่นใหม่ประสิทธิภาพสูงกว่านี้ใช้พื้นที่น้อยลง ดูขนาดจริงในสเปกแผง`,
         DISCLAIMER_AB,
       ],
       refs: [{ label: "แนวปฏิบัติงานประเมินระบบโซลาร์เซลล์ on-grid บ้านพักอาศัย" }, { label: SOLAR.pricePerKwp.source }],
@@ -500,10 +520,16 @@ export function calcBattery(v: Values) {
   const kwh = usedKwh / (dod * eff);
   const ah = (kwh * 1000) / volt;
   const reserve = kwh - usedKwh;
+  // แบตซื้อเป็นลูก/โมดูลเต็ม: ปัดขึ้นตามความจุต่อโมดูลที่กรอก
+  const modAh = num(v, "modAh", 100);
+  const modules = ceil(ah / modAh - 1e-9);
+  const packAh = modules * modAh;
+  const packKwh = (packAh * volt) / 1000;
+  const voltText = fmtTrim(volt, 1);
 
   return resultX({
     title: "ขนาดแบตเตอรี่",
-    headline: `แบตประมาณ ${fmt(kwh, 2)} kWh (${fmt(ceil(ah))} Ah ที่ ${fmt(volt)}V)`,
+    headline: `แบต ${fmt(modules)} โมดูล × ${fmt(modAh)} Ah ที่ ${voltText}V (ต้องการ ${fmt(kwh, 2)} kWh · ${fmt(ceil(ah))} Ah)`,
     chart: {
       kind: "stack",
       parts: [
@@ -515,7 +541,8 @@ export function calcBattery(v: Values) {
     },
     rows: [
       { label: "พลังงานที่ต้องเก็บ", value: `${fmt(kwh, 2)} kWh`, emphasize: true },
-      { label: "ความจุ", value: `${fmt(ceil(ah))} Ah @ ${fmt(volt)} V` },
+      { label: "ความจุ", value: `${fmt(ceil(ah))} Ah @ ${voltText} V` },
+      { label: "ซื้อเป็นโมดูล", value: `${fmt(modules)} โมดูล × ${fmt(modAh)} Ah = ${fmt(packAh)} Ah (${fmt(packKwh, 2)} kWh)`, emphasize: true },
       { label: "DoD ที่ใช้คิด", value: `${fmt(dod * 100)}%` },
     ],
     tip: "ลิเธียมใช้ DoD 80% ได้ ถ้าเป็นแบตตะกั่วกรดให้ใส่ 50 ในช่อง DoD เพราะลากลึกกว่านั้นแบตเสื่อมเร็ว",
@@ -537,7 +564,13 @@ export function calcBattery(v: Values) {
         {
           label: "แปลงเป็น Ah ที่แรงดันชุด",
           expr: "Ah = kWh × 1000 ÷ V",
-          subst: `${fmt(kwh, 2)} × 1000 ÷ ${fmt(volt)} = ${fmt(ah, 0)} Ah`,
+          subst: `${fmt(kwh, 2)} × 1000 ÷ ${voltText} = ${fmt(ah, 0)} Ah`,
+        },
+        {
+          label: "ปัดเป็นโมดูลที่ซื้อได้",
+          expr: "โมดูล = ปัดขึ้น(Ah ÷ Ah ต่อโมดูล)",
+          subst: `${fmt(ah, 0)} ÷ ${fmt(modAh)} = ${fmt(modules)} โมดูล (${fmt(packAh)} Ah)`,
+          note: "โมดูลนับที่แรงดันชุด ถ้าใช้แบต 12 V ต่ออนุกรม จำนวนลูก = โมดูล × (แรงดันชุด ÷ 12)",
         },
       ],
       assumptions: ["โหลดคงที่ตลอดวัน ไม่ได้คิดกำลังสูงสุด (peak) ที่อาจต้องใช้อินเวอร์เตอร์กำลังสูงกว่าค่าเฉลี่ย"],
@@ -729,7 +762,19 @@ export const electricalTools: ToolDef[] = [
       { type: "number", key: "days", label: "สำรอง", unit: "วัน", default: 1, min: 0.5, max: 7, step: 0.5 },
       { type: "number", key: "dod", label: "ความลึกการคายประจุ (DoD)", unit: "%", default: 80, min: 30, max: 100 },
       { type: "number", key: "eff", label: "ประสิทธิภาพ", unit: "%", default: 90, min: 70, max: 100 },
-      { type: "number", key: "volt", label: "แรงดันชุด", unit: "V", default: 24, min: 6, max: 1000 },
+      {
+        type: "select",
+        key: "volt",
+        label: "แรงดันชุด",
+        default: "24",
+        options: [
+          { value: "12", label: "12 V" },
+          { value: "24", label: "24 V" },
+          { value: "48", label: "48 V" },
+          { value: "51.2", label: "51.2 V (ลิเธียม 16 เซลล์)" },
+        ],
+      },
+      { type: "number", key: "modAh", label: "ความจุต่อโมดูล/ลูก", unit: "Ah", default: 100, min: 10, max: 1000 },
     ],
     calc: calcBattery,
   },
@@ -793,15 +838,63 @@ export const electricalJob: JobDef = {
     if (bad) return bad;
     const v = withDefaults(electricalJob.fields, input);
     const cable = calcCable(v);
-    const mm2 = Number(String(cable.rows.find((r) => r.label === "ขนาดสายแนะนำ")?.value).replace(/[^\d.]/g, "")) || 2.5;
-    const drop = calcVdrop({ ...v, mm2: Number.isFinite(mm2) && mm2 > 0 ? mm2 : 2.5 });
+    // parseFloat อ่านเลขนำหน้าของ "10 ตร.มม." ได้ตรง (ของเดิมลบตัวอักษรแล้วเหลือ "10.." กลายเป็น NaN จึงคิดแรงดันตกที่สาย 2.5 เสมอ)
+    const parsed = Number.parseFloat(String(cable.rows.find((r) => r.label === "ขนาดสายแนะนำ")?.value ?? ""));
+    const base = Number.isFinite(parsed) && parsed > 0 ? parsed : 2.5;
+    // แรงดันตกเกินเกณฑ์วงจรย่อย → ขยับสายขึ้นทีละขั้นในตารางจนผ่าน แล้วให้หัวผลลัพธ์กับแถวพูดเรื่องเดียวกัน
+    const il = num(v, "il", 15);
+    const len = num(v, "len", 25);
+    const volts = num(v, "volts", 220);
+    const phase = str(v, "phase", "1");
+    const limit = ELEC.vdBranchLimit.value;
+    const sizes = CABLE_TABLE_5_20.map((r) => r.mm2 as number).filter((x) => x >= base);
+    const fit = sizes.find((x) => (vdropVolts(il, len, x, phase) / volts) * 100 <= limit);
+    const chosen = fit ?? sizes[sizes.length - 1] ?? base;
+    const stepped = !cable.invalid && fit !== undefined && chosen > base;
+    const noFit = !cable.invalid && fit === undefined;
+    if (noFit) {
+      const pctBig = (vdropVolts(il, len, chosen, phase) / volts) * 100;
+      return blockedResult({
+        headline: `ระยะ ${fmt(len)} ม. ไกลเกิน — สายใหญ่สุดในตาราง (${fmtTrim(chosen, 1)} ตร.มม.) ยังแรงดันตก ${fmt(pctBig, 1)}% เกิน ${limit}%`,
+        rows: [
+          ...cable.rows.filter((r) => r.label === "เบรกเกอร์" || r.label === "ขนาดสายแนะนำ").map((r) => (r.label === "ขนาดสายแนะนำ" ? { label: "ขนาดสายตามกระแส", value: r.value } : r)),
+          { label: "สรุป", value: "ย่อระยะ ย้ายตู้ไฟให้ใกล้โหลด หรือให้วิศวกรไฟฟ้าออกแบบสายป้อน" },
+        ],
+        tip: "ระยะไกลระดับนี้ไม่ใช่วงจรย่อยในบ้านแล้ว ต้องออกแบบสายป้อนและแรงดันตกเต็มรูปแบบ",
+      });
+    }
+    const drop = calcVdrop({ ...v, mm2: chosen });
+    const breakerText = cable.rows.find((r) => r.label === "เบรกเกอร์")?.value ?? "";
+    const cableRows = stepped
+      ? cable.rows.flatMap((r) =>
+          r.label === "ขนาดสายแนะนำ"
+            ? [
+                { label: "ขนาดสายตามกระแส", value: r.value },
+                {
+                  label: "ขนาดสายแนะนำ",
+                  value: `${fmtTrim(chosen, 1)} ตร.มม. (ขยับจาก ${fmtTrim(base, 1)} เพราะระยะ ${fmt(len)} ม. แรงดันตกเกิน ${limit}%)`,
+                  emphasize: true,
+                },
+              ]
+            : r.label === "พิกัดตาราง / ใช้งานจริง"
+              ? [{ ...r, label: "พิกัดของสายตามกระแส (ตาราง / ใช้งานจริง)" }]
+              : [r],
+        )
+      : cable.rows;
+    const dropRows = drop.rows
+      .filter((r) => r.emphasize || r.label === "สรุป")
+      .map((r) => (r.label === "คิดเป็น" ? { ...r, label: `แรงดันตก (สาย ${fmtTrim(chosen, 1)} ตร.มม.)` } : r));
     return jobFromParts({
       title: "งานไฟบ้าน",
-      headline: cable.headline ?? "งานไฟบ้าน",
-      rows: [...cable.rows, ...drop.rows.filter((r) => r.emphasize || r.label === "สรุป")],
-      tip: "งานเมนเข้าบ้าน สามเฟสโรงงาน หรืองานที่ต้องขออนุญาต ให้วิศวกรไฟฟ้าเซ็นก่อน",
+      headline: stepped
+        ? `สาย ${fmtTrim(chosen, 1)} ตร.มม. · เบรกเกอร์ ${breakerText} (ขยับสายกันแรงดันตก)`
+        : (cable.headline ?? "งานไฟบ้าน"),
+      rows: [...cableRows, ...dropRows],
+      tip: stepped
+        ? "สายใหญ่ขึ้นเพราะระยะไกล ไม่ใช่เพราะกระแส เบรกเกอร์คงเดิม · งานเมนเข้าบ้าน สามเฟสโรงงาน หรืองานที่ต้องขออนุญาต ให้วิศวกรไฟฟ้าเซ็นก่อน"
+        : "งานเมนเข้าบ้าน สามเฟสโรงงาน หรืองานที่ต้องขออนุญาต ให้วิศวกรไฟฟ้าเซ็นก่อน",
       parts: [cable, drop],
-      chart: cable.chart,
+      chart: stepped ? drop.chart : cable.chart,
     });
   },
 };

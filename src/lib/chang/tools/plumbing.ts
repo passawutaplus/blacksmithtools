@@ -1,6 +1,6 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
-import { DISCLAIMER_AB, PUMP, PVC_PIPES, PVC_VEL_MAX, TANK_SIZES, UNIT, WATER } from "../constants";
+import { ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
+import { DISCLAIMER_AB, PUMP, PUMP_HP_SIZES, PVC_PIPES, PVC_VEL_MAX, TANK_SIZES, UNIT, WATER } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(plumbingTools, id, v);
 
@@ -81,8 +81,6 @@ export function calcTank(v: Values) {
   });
 }
 
-const PUMP_HP_SIZES = [0.33, 0.5, 0.75, 1, 1.5, 2, 3] as const;
-
 export function calcPump(v: Values) {
   const bad = guard("pump", v);
   if (bad) return bad;
@@ -90,13 +88,18 @@ export function calcPump(v: Values) {
   const h = num(v, "h", 18);
   const kw = (q / 60) * UNIT.gravity.value * h * PUMP.headReserve.value / (PUMP.efficiency.value * 1000);
   const hp = kw / PUMP.hpPerKw.value;
+  const watts = kw * 1000;
   const rec = PUMP_HP_SIZES.find((s) => s >= hp) ?? ceil(hp);
   const chosenIdx = PUMP_HP_SIZES.indexOf(rec as (typeof PUMP_HP_SIZES)[number]);
   const ladder = chosenIdx < 0 ? [] : PUMP_HP_SIZES.slice(Math.max(0, chosenIdx - 2), chosenIdx + 3);
+  // ปั๊มบ้านตัวเล็กติดป้ายเป็นวัตต์ จึงตอบวัตต์นำเมื่อกำลังที่ต้องการไม่เกินขั้น 0.5 แรงม้า
+  const small = hp <= PUMP.smallHp.value;
+  const hpText = `${fmtTrim(rec, 2)} HP`;
+  const wattText = `${fmt(ceil(watts))} วัตต์`;
 
   return resultX({
     title: "เลือกปั๊มน้ำ",
-    headline: `ปั๊มประมาณ ${fmt(rec, 2)} HP`,
+    headline: small ? `ปั๊มกำลังไม่ต่ำกว่า ${wattText} (เทียบขั้น ${hpText})` : `ปั๊มประมาณ ${hpText} (ต้องการ ${wattText})`,
     chart:
       ladder.length > 1
         ? {
@@ -105,19 +108,25 @@ export function calcPump(v: Values) {
             need: round(hp, 2),
             needLabel: "กำลังที่ต้องการ",
             items: ladder.map((s) => ({
-              label: `${fmt(s, 2)} HP`,
+              label: `${fmtTrim(s, 2)} HP`,
               value: s,
               state: s === rec ? "chosen" : s < hp ? "under" : "over",
             })),
           }
         : undefined,
     rows: [
-      { label: "Q", value: `${fmt(q)} ลิตร/นาที` },
-      { label: "Head รวม", value: `${fmt(h)} ม.` },
-      { label: "กำลังคำนวณ", value: `${fmt(hp, 2)} HP` },
-      { label: "ปั๊มแนะนำ", value: `${fmt(rec, 2)} HP`, emphasize: true },
+      { label: "อัตราไหล", value: `${fmt(q)} ลิตร/นาที` },
+      { label: "เฮดรวม", value: `${fmt(h)} ม.` },
+      { label: "กำลังที่ต้องการ", value: `${wattText} (${fmt(hp, 2)} HP)` },
+      {
+        label: "ปั๊มแนะนำ",
+        value: small ? `รุ่นที่กำลังมอเตอร์ไม่ต่ำกว่า ${wattText} · ถ้าดูเป็นแรงม้า ${hpText}` : `${hpText} (${fmt(rec * PUMP.hpPerKw.value * 1000)} วัตต์)`,
+        emphasize: true,
+      },
     ],
-    tip: "เผื่อประสิทธิภาพ 55% และ Head สำรอง 20% เลือกกราฟปั๊มจริงอีกที",
+    tip: small
+      ? "ปั๊มบ้านดูวัตต์บนฉลาก เลือกรุ่นที่วัตต์ไม่ต่ำกว่านี้ แล้วเทียบกราฟอัตราไหล-เฮดของรุ่นนั้นอีกที"
+      : "เผื่อประสิทธิภาพ 55% และเฮดสำรอง 20% เลือกจากกราฟปั๊มจริงอีกที",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -132,15 +141,17 @@ export function calcPump(v: Values) {
         {
           label: "แปลงเป็นแรงม้า",
           expr: `HP = kW ÷ ${PUMP.hpPerKw.value}`,
-          subst: `${fmt(kw, 3)} ÷ ${PUMP.hpPerKw.value} = ${fmt(hp, 2)} HP`,
+          subst: `${fmt(kw, 3)} kW = ${fmt(watts)} วัตต์ · ${fmt(kw, 3)} ÷ ${PUMP.hpPerKw.value} = ${fmt(hp, 2)} HP`,
         },
         {
           label: "เลือกไซซ์ที่ขายจริง",
           expr: "ปั๊ม = ไซซ์มาตรฐานตัวถัดไปที่ ≥ HP ที่คำนวณ",
-          subst: `${fmt(hp, 2)} HP → ${fmt(rec, 2)} HP`,
+          subst: `${fmt(hp, 2)} HP → ${hpText}`,
+          note: "ขั้นแรงม้าตามพิกัดมอเตอร์มาตรฐาน ปั๊มบ้านตัวเล็กให้ดูวัตต์บนฉลากแทน",
         },
       ],
-      assumptions: ["Head รวม = Head สถิต (ความสูงที่ส่งจริง) + ประมาณ Head เสียดทานในท่อและอุปกรณ์", "ปั๊มหอยโข่งบ้านพักอาศัยทั่วไป ประสิทธิภาพประมาณ 55%"],
+      constants: [PUMP.efficiency, PUMP.headReserve, PUMP.hpPerKw],
+      assumptions: ["เฮดรวม = ความสูงที่ส่งน้ำขึ้นจริง + แรงดันที่ต้องการปลายทาง + แรงเสียดทานในท่อและอุปกรณ์ (คิดเป็นเมตรน้ำ)", "ปั๊มหอยโข่งบ้านพักอาศัยทั่วไป ประสิทธิภาพประมาณ 55%"],
       caveats: [
         "ปั๊มแต่ละยี่ห้อมีกราฟ Q-H ต่างกัน ค่าที่ได้ใช้เลือกเบื้องต้น ควรเทียบกราฟปั๊มจริงก่อนซื้อ",
         "ระยะท่อดูดยาวหรือมีสิ่งกีดขวางมาก ให้เพิ่ม Head สำรองมากกว่า 20%",
@@ -324,7 +335,7 @@ export function calcPlumbBom(v: Values) {
       { label: "กาว PVC", value: `${fmt(glue)} มล. (ประมาณ ${bottles} ขวด 50 มล.)`, emphasize: true },
       { label: "เทปพันเกลียว", value: `${tape} ม้วน` },
     ],
-    tip: "เผื่อกาวอีกขวดบนรถ หน้างานแห้งเร็ว กาวหมดกลางงานโคตรเสียจังหวะ",
+    tip: "เผื่อกาวอีกขวดบนรถ หน้างานแห้งเร็ว กาวหมดกลางงานเสียจังหวะมาก",
     explain: {
       risk: "A",
       updatedAt: "2026-08-21",
@@ -367,10 +378,10 @@ export const plumbingTools: ToolDef[] = [
   {
     id: "pump",
     name: "เลือกปั๊มน้ำ",
-    blurb: "Flow + Head รวม",
+    blurb: "อัตราไหล + เฮดรวม → วัตต์ / แรงม้า",
     fields: [
-    { type: "number", key: "q", label: "อัตราไหล (ล./นาที)", unit: "ล./นาที", default: 40, min: 5, max: 500 },
-    { type: "number", key: "h", label: "เฮดรวม (Flow + Head)", unit: "ม.", default: 18, min: 1, max: 100 },
+      { type: "number", key: "q", label: "อัตราไหล", unit: "ล./นาที", default: 40, min: 5, max: 500 },
+      { type: "number", key: "h", label: "เฮดรวม (สูงที่ส่ง + แรงเสียดทานท่อ)", unit: "ม.", default: 18, min: 1, max: 100 },
     ],
     calc: calcPump,
   },
@@ -429,7 +440,8 @@ export const plumbingJob: JobDef = {
   fields: [
     { type: "number", key: "people", label: "จำนวนคน", unit: "คน", default: 4, min: 1, max: 100 },
     { type: "number", key: "floors", label: "ชั้นที่ปั๊มส่ง", unit: "ชั้น", default: 2, min: 1, max: 10 },
-    { type: "number", key: "len", label: "ระยะท่อประมาณ", unit: "ม.", default: 12, min: 1, max: 200 },
+    { type: "number", key: "len", label: "ยาวท่อน้ำดีประมาณ", unit: "ม.", default: 12, min: 1, max: 200 },
+    { type: "number", key: "drainLen", label: "ยาวท่อน้ำทิ้ง (เส้นยาวสุด)", unit: "ม.", default: 8, min: 1, max: 200, step: 0.5 },
     { type: "number", key: "joints", label: "ข้อต่อประมาณ", unit: "จุด", default: 20, min: 1, max: 2000 },
   ],
   calc: (input) => {
@@ -445,7 +457,9 @@ export const plumbingJob: JobDef = {
     const pump = calcPump({ q, h });
     const pipe = calcPlumbPipe({ q, vel: 1.8, pvcClass: "13.5" });
     const bom = calcPlumbBom(v);
-    const slope = calcSlope({ ...v, ratio: "50" });
+    // ความลาดคิดจากความยาวท่อน้ำทิ้งโดยเฉพาะ ไม่ใช่ระยะท่อน้ำดี (40 ม. ของท่อน้ำดีเคยกลายเป็น "ตก 80 ซม.")
+    const drainLen = num(v, "drainLen", 8);
+    const slope = calcSlope({ len: drainLen, ratio: "50" });
     return jobFromParts({
       title: "งานประปาบ้าน",
       headline: "ชุดงานประปาบ้านคร่าว ๆ",
@@ -454,10 +468,10 @@ export const plumbingJob: JobDef = {
         { label: "อัตราไหลจากจำนวนคน", value: `${fmt(q)} ล./นาที` },
         ...pump.rows.filter((r) => r.emphasize),
         ...pipe.rows.filter((r) => r.emphasize),
-        ...slope.rows.filter((r) => r.emphasize),
+        ...slope.rows.filter((r) => r.emphasize).map((r) => ({ ...r, label: `ท่อน้ำทิ้ง ${fmtTrim(drainLen, 1)} ม. ต้องตก (1:50)` })),
         ...bom.rows.filter((r) => r.emphasize || r.label.includes("เทป")),
       ],
-      tip: "อัตราไหลผูกกับจำนวนคน Head รวมระยะท่อที่กรอก ยังไม่รวมสุขภัณฑ์และบอยเลอร์",
+      tip: "อัตราไหลผูกกับจำนวนคน เฮดรวมคิดจากจำนวนชั้นและระยะท่อน้ำดี ยังไม่รวมสุขภัณฑ์และเครื่องทำน้ำอุ่น",
       parts: [tank, pump, pipe, slope, bom],
     });
   },

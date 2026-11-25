@@ -10,10 +10,13 @@ import { fmtInchFraction, fmtTrim, inchFraction, parseLengthList, stockPieces } 
 import type { CalcResult } from "../types";
 import { calcLen, feetInchText, generalJob, generalTools, inchHunText, calcGeometry, calcWeightForce } from "../tools/general";
 import { calcGypsum, calcTbar, ceilingJob } from "../tools/ceiling";
+import { calcBattery, calcSolar, electricalJob, vdropVolts } from "../tools/electrical";
 import { calcAluCut, calcGlassWeight, glassJob } from "../tools/glass";
 import { calcLaminate, handymanTools } from "../tools/handyman";
+import { calcPipe, copperHun, hvacJob } from "../tools/hvac";
 import { calcLintel, calcMix, calcMortar, calcPlaster, masonryJob } from "../tools/masonry";
 import { calcPaintQty, calcWallpaper, paintJob, paintPacks, paintTools } from "../tools/paint";
+import { calcPump, plumbingJob, plumbingTools } from "../tools/plumbing";
 import { calcRoofMaterial, pitchWarning, roofJob } from "../tools/roof";
 import { calcCut, calcSteelWeight, packBfd, steelJob, steelTools } from "../tools/steel";
 import { calcGrout, calcLeveling, calcTileQty, clipsPerTile, tileJob, tileLayout, tileTools } from "../tools/tile";
@@ -610,5 +613,148 @@ describe("บิ้วอิน: ลามิเนตออกเป็นแ�
     expect(rowStarting(r, "สั่งลามิเนต")).toBe("4 แผ่น");
     expect(hasRow(r, "ชิ้นงานใหญ่กว่าแผ่น")).toBe(true);
     expect(handymanTools.find((t) => t.id === "laminate")?.keywords).toContain("ไม้อัด");
+  });
+});
+
+/* ═══════════════ งานระบบ ═══════════════ */
+
+describe("แอร์: ท่อทองแดงเป็นหุน และ job ที่ยึดเครื่องที่ซื้อแล้ว", () => {
+  it("1 หุน = 1/8 นิ้ว: 1/4\" = 2 หุน · 3/8\" = 3 หุน · 1/2\" = 4 หุน · 5/8\" = 5 หุน · 3/4\" = 6 หุน", () => {
+    expect(copperHun('1/4"')).toBe('2 หุน (1/4")');
+    expect(copperHun('3/8"')).toBe('3 หุน (3/8")');
+    expect(copperHun('1/2"')).toBe('4 หุน (1/2")');
+    expect(copperHun('5/8"')).toBe('5 หุน (5/8")');
+    expect(copperHun('3/4"')).toBe('6 หุน (3/4")');
+  });
+
+  it("แอร์ 18,000 BTU ระยะ 8 ม.: ท่อ 2 หุน + 4 หุน และบอกความยาวที่ต้องซื้อ", () => {
+    const r = calcPipe({ btu: 18000, run: 8 });
+    expect(r.headline).toBe('ท่อทองแดง 2 หุน + 4 หุน (1/4" + 1/2") ยาว 8 ม.');
+    expect(rowOf(r, "ท่อน้ำยาเหลว (ท่อเล็ก)")).toBe('2 หุน (1/4")');
+    expect(rowOf(r, "ท่อดูด (ท่อใหญ่)")).toBe('4 หุน (1/2")');
+    expect(rowOf(r, "ความยาวที่ต้องซื้อ")).toContain("ท่อคู่ 8 ม.");
+  });
+
+  it("job: ลูกค้าซื้อ 12,000 BTU มาแล้ว ระยะท่อ 9 ม. → คิดท่อ/น้ำยา/เบรกเกอร์ตามเครื่องนั้น และเตือนว่าเล็กกว่าห้อง", () => {
+    // ห้อง 4×5 ห้องนั่งเล่น 800 BTU/ตร.ม. = 16,000 → ต้องการ 18,000 BTU
+    // เครื่อง 12,000: ท่อ 2 หุน + 3 หุน · น้ำยา (9 − 5) × 20 ก./ม. = 80 ก. · เบรกเกอร์ 16 A
+    const r = hvacJob.calc({ bought: "12000", run: 9 });
+    expect(r.headline).toContain("12,000 BTU (ซื้อแล้ว)");
+    expect(rowOf(r, "ขนาดที่ห้องต้องการ")).toBe("18,000 BTU");
+    expect(rowOf(r, "ขนาดแอร์ที่ใช้คิด (ซื้อแล้ว)")).toContain("เล็กกว่าที่ห้องต้องการ");
+    expect(rowOf(r, "ท่อทองแดง")).toBe('2 หุน + 3 หุน (1/4" + 3/8") ยาว 9 ม.');
+    expect(numberIn(rowOf(r, "น้ำยา R32 เติมเพิ่ม"))).toBe(80);
+    expect(rowOf(r, "เบรกเกอร์")).toBe("16 A");
+  });
+
+  it("job ค่าตั้งต้น: มีแถวท่อทองแดง และท่อ 4 ม. ไม่ต้องเติมน้ำยา", () => {
+    const r = hvacJob.calc({});
+    expect(rowOf(r, "ท่อทองแดง")).toBe('2 หุน + 4 หุน (1/4" + 1/2") ยาว 4 ม.');
+    expect(rowOf(r, "น้ำยา R32 เติมเพิ่ม")).toContain("ไม่ต้องเติม");
+  });
+
+  it("ห้องใหญ่เกินแอร์ตัวเดียว แต่เลือกเครื่องที่ซื้อแล้ว → คิดต่อเครื่องได้ ไม่ติดบล็อก", () => {
+    const r = hvacJob.calc({ w: 20, l: 20, bought: "36000", run: 20 });
+    expect(r.invalid).toBeFalsy();
+    expect(rowOf(r, "ขนาดแอร์ที่ใช้คิด (ซื้อแล้ว)")).toContain("หลายเครื่อง");
+    // (20 − 5) × 20 = 300 ก.
+    expect(numberIn(rowOf(r, "น้ำยา R32 เติมเพิ่ม"))).toBe(300);
+  });
+});
+
+describe("ไฟฟ้า: job ขยับสายเมื่อแรงดันตก · โซลาร์ · แบตเป็นโมดูล", () => {
+  it("ค่าตั้งต้น 15 A ระยะ 25 ม.: สาย 2.5 ตก 3.07% → ขยับเป็น 4 ตร.มม. (1.92%) หัวกับแถวตรงกัน", () => {
+    // 2 × 25 × 15 × 0.0225 ÷ 2.5 = 6.75 V = 3.07% (เกิน 3%) · ÷ 4 = 4.22 V = 1.92%
+    expect((vdropVolts(15, 25, 2.5, "1") / 220) * 100).toBeCloseTo(3.07, 2);
+    const r = electricalJob.calc({});
+    expect(r.headline).toBe("สาย 4 ตร.มม. · เบรกเกอร์ 20 A (ขยับสายกันแรงดันตก)");
+    expect(rowOf(r, "ขนาดสายตามกระแส")).toBe("2.5 ตร.มม.");
+    expect(rowOf(r, "ขนาดสายแนะนำ")).toMatch(/^4 ตร\.มม\./);
+    expect(rowOf(r, "แรงดันตก (สาย 4 ตร.มม.)")).toBe("1.92 %");
+    expect(rowOf(r, "สรุป")).toBe("ใช้สายนี้ได้");
+  });
+
+  it("ระยะสั้น 10 ม. ไม่ต้องขยับ: สาย 2.5 ตก 1.23%", () => {
+    const r = electricalJob.calc({ len: 10 });
+    expect(r.headline).toBe("สาย 2.5 ตร.มม. · เบรกเกอร์ 20 A");
+    expect(rowOf(r, "แรงดันตก (สาย 2.5 ตร.มม.)")).toBe("1.23 %");
+  });
+
+  it("30 A ระยะ 150 ม.: สายตามกระแส 10 → ขยับถึง 35 ตร.มม. (25 ยังตก 3.68%)", () => {
+    // 2 × 150 × 30 × 0.0225 = 202.5 → ÷25 = 8.1 V = 3.68% · ÷35 = 5.79 V = 2.63%
+    const r = electricalJob.calc({ il: 30, len: 150 });
+    expect(rowOf(r, "ขนาดสายตามกระแส")).toBe("10 ตร.มม.");
+    expect(rowOf(r, "ขนาดสายแนะนำ")).toMatch(/^35 ตร\.มม\. \(ขยับจาก 10 /);
+    expect(rowOf(r, "แรงดันตก (สาย 35 ตร.มม.)")).toBe("2.63 %");
+  });
+
+  it("ระยะ 1,000 ม.: สายใหญ่สุดในตารางยังตก 3.2% ต้องบอกว่าคิดไม่ได้ ไม่ใช่แนะนำสาย", () => {
+    const r = electricalJob.calc({ len: 1000 });
+    expect(r.invalid).toBe(true);
+    expect(r.headline).toContain("ไกลเกิน");
+  });
+
+  it("โซลาร์: พื้นที่แผงตามกำลังแผง — 9 แผง 450 W = 20.7 ตร.ม. · 7 แผง 585 W = 20.9 ตร.ม.", () => {
+    // 450 ÷ 196 = 2.296 ตร.ม./แผง × 9 = 20.66 · 585 ÷ 196 = 2.985 × 7 = 20.89 (ของเดิม 7 × 2.3 = 16.1)
+    expect(rowOf(calcSolar({}), "พื้นที่หลังคา")).toMatch(/^20\.7 ตร\.ม\./);
+    const big = calcSolar({ panel: 585 });
+    expect(rowOf(big, "จำนวนแผง")).toMatch(/^7 แผง/);
+    expect(rowOf(big, "พื้นที่หลังคา")).toMatch(/^20\.9 ตร\.ม\./);
+  });
+
+  it("โซลาร์ 1,500 หน่วย/เดือน = 31 แผง 13.95 kWp ต้องเตือนให้ตรวจเงื่อนไขการไฟฟ้า โดยไม่อ้างตัวเลขกฎหมาย", () => {
+    // 1500 ÷ (4.5 × 30 × 0.8) = 13.89 kWp ÷ 0.45 = 30.9 → 31 แผง = 13.95 kWp
+    const r = calcSolar({ kwh: 1500 });
+    expect(rowOf(r, "จำนวนแผง")).toMatch(/^31 แผง/);
+    const warn = rowOf(r, "ตรวจเงื่อนไขการไฟฟ้า");
+    expect(warn).toContain("1 เฟส");
+    expect(warn).not.toMatch(/ไม่เกิน|กฎหมาย|ระเบียบกำหนด/);
+    expect(hasRow(calcSolar({}), "ตรวจเงื่อนไขการไฟฟ้า")).toBe(false);
+    expect(K.SOLAR.singlePhaseCheckKw.source).toContain("ไม่ใช่ตัวเลขตามระเบียบ");
+  });
+
+  it("แบต: 116 Ah ที่ 24 V → 2 โมดูล × 100 Ah · 5,000 Wh ที่ 51.2 V = 136 Ah → 2 โมดูล · โมดูล 280 Ah → 1", () => {
+    // 2000 ÷ 0.72 = 2,778 Wh ÷ 24 = 115.7 Ah → 2 × 100 Ah = 200 Ah = 4.80 kWh
+    expect(rowOf(calcBattery({}), "ซื้อเป็นโมดูล")).toBe("2 โมดูล × 100 Ah = 200 Ah (4.80 kWh)");
+    // 5000 ÷ 0.72 = 6,944 Wh ÷ 51.2 = 135.6 Ah → 2 โมดูล = 10.24 kWh
+    const li = calcBattery({ wh: 5000, volt: "51.2" });
+    expect(rowOf(li, "ความจุ")).toBe("136 Ah @ 51.2 V");
+    expect(rowOf(li, "ซื้อเป็นโมดูล")).toBe("2 โมดูล × 100 Ah = 200 Ah (10.24 kWh)");
+    expect(rowOf(calcBattery({ wh: 5000, volt: "51.2", modAh: 280 }), "ซื้อเป็นโมดูล")).toMatch(/^1 โมดูล/);
+    // แรงดันนอกรายการต้องไม่ผ่าน
+    expect(calcBattery({ volt: "36" }).invalid).toBe(true);
+  });
+});
+
+describe("ประปา: ปั๊มเป็นวัตต์ ขั้นแรงม้าที่มีขาย ความลาดจากท่อน้ำทิ้ง", () => {
+  it("ปั๊มบ้าน 40 ล./นาที เฮด 18 ม. ต้องการ 257 วัตต์ (0.34 HP) ตอบวัตต์นำ", () => {
+    // (40/60) × 9.80665 × 18 × 1.2 ÷ 0.55 = 256.8 W = 0.344 HP → ขั้น 0.5 HP
+    const r = calcPump({ q: 40, h: 18 });
+    expect(r.headline).toBe("ปั๊มกำลังไม่ต่ำกว่า 257 วัตต์ (เทียบขั้น 0.5 HP)");
+    expect(rowOf(r, "กำลังที่ต้องการ")).toBe("257 วัตต์ (0.34 HP)");
+  });
+
+  it("200 ล./นาที เฮด 40 ม. = 3.82 HP → 5 HP ไม่ใช่ “4.00 HP” ที่ไม่มีขาย", () => {
+    // (200/60) × 9.80665 × 40 × 1.2 ÷ 0.55 = 2,853 W ÷ 746 = 3.82 HP → ขั้นถัดไป 5 HP = 3,730 W
+    const r = calcPump({ q: 200, h: 40 });
+    expect(r.headline).toBe("ปั๊มประมาณ 5 HP (ต้องการ 2,853 วัตต์)");
+    expect(rowOf(r, "ปั๊มแนะนำ")).toBe("5 HP (3,730 วัตต์)");
+    expect(K.PUMP_HP_SIZES).not.toContain(4);
+    // ปลายช่วงฟอร์ม 500 ล./นาที × 100 ม. = 23.9 HP → 25 HP ยังอยู่ในขั้นที่มี
+    expect(calcPump({ q: 500, h: 100 }).headline).toContain("25 HP");
+  });
+
+  it("ป้ายช่องเฮดรวมไม่เขียน Flow + Head แล้ว", () => {
+    const pump = plumbingTools.find((t) => t.id === "pump");
+    const head = pump?.fields.find((f) => f.key === "h");
+    expect(head?.label).not.toContain("Flow");
+    expect(head?.label).toContain("เฮดรวม");
+  });
+
+  it("job: ท่อน้ำดี 40 ม. ไม่ทำให้ท่อน้ำทิ้ง “ตก 80 ซม.” — ความลาดคิดจากช่องยาวท่อน้ำทิ้ง", () => {
+    // ท่อน้ำทิ้ง 8 ม. (ค่าตั้งต้น) ÷ 50 = 16 ซม. · 12 ม. ÷ 50 = 24 ซม.
+    const a = plumbingJob.calc({ len: 40 });
+    expect(rowStarting(a, "ท่อน้ำทิ้ง 8 ม.")).toBe("16.0 ซม.");
+    expect(rowStarting(plumbingJob.calc({ len: 40, drainLen: 12 }), "ท่อน้ำทิ้ง 12 ม.")).toBe("24.0 ซม.");
   });
 });
