@@ -659,7 +659,7 @@ export const roofTools: ToolDef[] = [
     blurb: "ความยาวครอบ",
     fields: [
       { type: "number", key: "ridge", label: "ยาวสัน", unit: "ม.", default: 12, min: 0, max: 500, step: 0.1 },
-      { type: "number", key: "hips", label: "จำนวนตะเข้สัน", unit: "เส้น", default: 4, min: 0, max: 20 },
+      { type: "number", integer: true, key: "hips", label: "จำนวนตะเข้สัน", unit: "เส้น", default: 4, min: 0, max: 20 },
       { type: "number", key: "hipLen", label: "ยาวตะเข้/เส้น", unit: "ม.", default: 6, min: 0, max: 50, step: 0.1 },
     ],
     calc: calcRidge,
@@ -695,7 +695,7 @@ export const roofJob: JobDef = {
     ...metalFields,
     ...tileFields,
     { type: "number", key: "ridge", label: "ยาวสัน", unit: "ม.", default: 12, min: 0, max: 500, step: 0.1 },
-    { type: "number", key: "hips", label: "ตะเข้สัน", unit: "เส้น", default: 0, min: 0, max: 20 },
+    { type: "number", integer: true, key: "hips", label: "ตะเข้สัน", unit: "เส้น", default: 0, min: 0, max: 20 },
     { type: "number", key: "hipLen", label: "ยาวตะเข้/เส้น", unit: "ม.", default: 6, min: 0, max: 50, step: 0.1 },
   ],
   calc: (input) => {

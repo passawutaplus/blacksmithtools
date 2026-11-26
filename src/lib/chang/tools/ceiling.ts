@@ -585,7 +585,7 @@ export const ceilingTools: ToolDef[] = [
           { value: "1", label: "ด้านเดียว" },
         ],
       },
-      { type: "number", key: "doors", label: "ช่องประตู", unit: "ช่อง", default: 1, min: 0, max: 4 },
+      { type: "number", integer: true, key: "doors", label: "ช่องประตู", unit: "ช่อง", default: 1, min: 0, max: 4 },
       { type: "number", key: "stock", label: "โครงยาวเส้นละ", unit: "ม.", default: PARTITION.stock.value, min: 2, max: 6, step: 0.1 },
       { type: "number", key: "waste", label: "เผื่อเสียแผ่น", unit: "%", default: WASTE_DEFAULT.value, min: 0, max: 25 },
     ],

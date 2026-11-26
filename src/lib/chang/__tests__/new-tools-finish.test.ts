@@ -346,7 +346,7 @@ describe("ลงทะเบียนสายงานกันซึมแล�
     expect(ids.indexOf("waterproof")).toBe(ids.indexOf("paint") + 1);
     const wp = getTrade("waterproof")!;
     expect(wp.pillarId).toBe("shell");
-    expect(wp.tools.map((t) => t.id)).toEqual(["bathroom", "roof", "crack"]);
+    expect(wp.tools.map((t) => t.id)).toEqual(["bathroom", "roof", "crack", "sheet"]);
     expect(wp.job).toBeDefined();
     expect(TRADE_ICONS.waterproof).toBeDefined();
     expect(TOOL_COVERS["waterproof/roof"]).toBeUndefined();

@@ -1,5 +1,5 @@
-import type { JobDef, ToolDef, Values } from "../types";
-import { blockedResult, ceil, fmt, guardInputs, guardTool, jobFromParts, lerpTable, num, resultX, round, str, withDefaults } from "../math";
+import type { Field, JobDef, ToolDef, Values } from "../types";
+import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, lerpTable, num, resultX, round, str, withDefaults } from "../math";
 import {
   ALU_BAR,
   DISCLAIMER_AB,
@@ -11,6 +11,7 @@ import {
   PLATE_BETA_SOURCE,
   SEALANT,
   UNIT,
+  WINDOW_FILM,
 } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(glassTools, id, v);
@@ -469,6 +470,163 @@ function sashField(def: string) {
   };
 }
 
+/* ═══════════════ รอบ 4 (2026-11-26): ฟิล์มกรองแสง ═══════════════ */
+
+const FILM_SIZES_MAX = 4;
+const FILM_DEFAULTS = [
+  { w: 120, h: 150, n: 4 },
+  { w: 60, h: 120, n: 2 },
+  { w: 180, h: 200, n: 1 },
+  { w: 80, h: 80, n: 2 },
+];
+
+/**
+ * ความยาวม้วนที่ใช้กับกระจกขนาดเดียวกัน n บาน (ชิ้นตัดรวมเผื่อขอบแล้ว หน่วย ม.)
+ * ลองวางทั้งสองทิศ: ด้านที่ขวางม้วน (across) กับด้านที่กินความยาวม้วน (run)
+ * ขวางม้วนได้หลายชิ้นวางเรียงกันในแถวเดียว · ชิ้นกว้างกว่าม้วนต้องต่อแผ่น (หลายแถบต่อบาน)
+ */
+export function filmRun(a: number, b: number, n: number, rollW: number) {
+  const tryOrient = (across: number, run: number) => {
+    if (across <= rollW + 1e-9) {
+      const perRow = Math.floor(rollW / across + 1e-9);
+      return { across, run, perRow, strips: 1, len: ceil(n / perRow) * run };
+    }
+    const strips = ceil(across / rollW);
+    return { across, run, perRow: 1, strips, len: n * strips * run };
+  };
+  const x = tryOrient(a, b);
+  const y = tryOrient(b, a);
+  return y.len < x.len - 1e-9 ? y : x;
+}
+
+export function calcFilm(v: Values) {
+  const bad = guard("film", v);
+  if (bad) return bad;
+  const count = Number(str(v, "sizes", "2"));
+  const rollW = num(v, "rollW", WINDOW_FILM.rollW.value);
+  const rollL = num(v, "rollL", WINDOW_FILM.rollL.value);
+  const trim = num(v, "trim", WINDOW_FILM.trimCm.value) / 100;
+  const wastePct = num(v, "waste", WINDOW_FILM.wastePct.value);
+  const priceMode = str(v, "priceMode", "none");
+  const price = num(v, "price", 0);
+  const items: Array<{ i: number; w: number; h: number; n: number; glass: number; cut: ReturnType<typeof filmRun> }> = [];
+  for (let i = 1; i <= count; i++) {
+    const d = FILM_DEFAULTS[i - 1];
+    const w = num(v, `w${i}`, d.w) / 100;
+    const h = num(v, `h${i}`, d.h) / 100;
+    const n = num(v, `n${i}`, d.n);
+    const cut = filmRun(w + 2 * trim, h + 2 * trim, n, rollW);
+    items.push({ i, w, h, n, glass: w * h * n, cut });
+  }
+  const glass = items.reduce((s, x) => s + x.glass, 0);
+  const runNet = items.reduce((s, x) => s + x.cut.len, 0);
+  const run = runNet * (1 + wastePct / 100);
+  const filmArea = run * rollW;
+  const rolls = ceil(run / rollL);
+  const cost = priceMode === "sqm" ? glass * price : priceMode === "metre" ? run * price : priceMode === "roll" ? rolls * price : 0;
+  const priceLabel: Record<string, string> = { sqm: "ตร.ม. กระจก", metre: "เมตรฟิล์ม", roll: "ม้วน" };
+  const orientText = (x: (typeof items)[number]) => {
+    const c = x.cut;
+    const base = `วางด้าน ${fmtTrim(c.across * 100, 1)} ซม. ขวางม้วน`;
+    if (c.strips > 1) return `${base} ต่อ ${fmt(c.strips)} แผ่นต่อบาน`;
+    return c.perRow > 1 ? `${base} เรียง ${fmt(c.perRow)} ชิ้นต่อแถว` : base;
+  };
+  return resultX({
+    title: "ฟิล์มกรองแสง",
+    headline: `ฟิล์มยาว ${fmt(run, 2)} ม. (หน้ากว้าง ${fmtTrim(rollW, 3)} ม.) · ${fmt(rolls)} ม้วน${cost > 0 ? ` · ${fmt(cost)} บาท` : ""}`,
+    chart: {
+      kind: "packs",
+      unitLabel: `ม้วน ${fmtTrim(rollW, 3)} × ${fmtTrim(rollL, 2)} ม.`,
+      count: rolls,
+      lastUsed: (run - (rolls - 1) * rollL) / rollL,
+      note: `ใช้ยาวรวม ${fmt(run, 2)} ม.`,
+    },
+    rows: [
+      ...items.map((x) => ({
+        label: `ขนาด ${x.i}: ${fmtTrim(x.w * 100, 1)}×${fmtTrim(x.h * 100, 1)} ซม. × ${fmt(x.n)} บาน`,
+        value: `ใช้ม้วน ${fmt(x.cut.len, 2)} ม. (${orientText(x)})`,
+      })),
+      { label: "พื้นที่กระจกสุทธิ", value: `${fmt(glass, 2)} ตร.ม.` },
+      { label: `ความยาวฟิล์ม (รวมเผื่อ ${fmtTrim(wastePct, 1)}%)`, value: `${fmt(run, 2)} ม.`, emphasize: true },
+      { label: "พื้นที่ฟิล์มที่ตัดจากม้วน", value: `${fmt(filmArea, 2)} ตร.ม. (เศษ ${fmt(Math.max(0, filmArea - glass), 2)} ตร.ม.)` },
+      { label: `ม้วน ${fmtTrim(rollL, 2)} ม.`, value: `${fmt(rolls)} ม้วน`, emphasize: true },
+      ...(cost > 0 ? [{ label: `ราคา (${fmt(price, 2)} บาท/${priceLabel[priceMode]})`, value: `${fmt(cost)} บาท`, emphasize: true }] : []),
+    ],
+    tip: "วัดขนาดกระจกที่เห็นในยางขอบบาน แล้วตัดเผื่อขอบไว้กรีดเข้ามุม บานกว้างกว่าหน้าม้วนต้องต่อแผ่น รอยต่อจะเห็น ถามลูกค้าก่อน",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary: "ชิ้นตัด = กระจก + เผื่อขอบทุกด้าน · ลองวางชิ้นทั้งสองทิศบนม้วน (ชิ้นเล็กเรียงขวางม้วนได้หลายชิ้น) เลือกทิศที่กินความยาวม้วนน้อยกว่า · รวมความยาว บวกเผื่อ แล้วหารความยาวม้วน",
+      steps: [
+        ...items.map((x) => ({
+          label: `ขนาด ${x.i}`,
+          expr: "ยาวที่ใช้ = ปัดขึ้น(จำนวน ÷ ชิ้นต่อแถว) × ด้านตามม้วน · กว้างกว่าม้วน = จำนวน × แผ่นต่อบาน × ด้านตามม้วน",
+          subst: `ชิ้นตัด ${fmtTrim((x.w + 2 * trim) * 100, 1)}×${fmtTrim((x.h + 2 * trim) * 100, 1)} ซม. · ${orientText(x)} → ${fmt(x.cut.len, 2)} ม.`,
+        })),
+        { label: "รวมเผื่อ", expr: "ยาวรวม × (1 + เผื่อ%)", subst: `${fmt(runNet, 2)} × ${fmtTrim(1 + wastePct / 100, 3)} = ${fmt(run, 2)} ม.` },
+        { label: "จำนวนม้วน", expr: "ปัดขึ้น(ยาวรวม ÷ ยาวม้วน)", subst: `${fmt(run, 2)} ÷ ${fmtTrim(rollL, 2)} = ${fmt(rolls)} ม้วน` },
+        ...(cost > 0
+          ? [{ label: "ราคา", expr: priceMode === "sqm" ? "พื้นที่กระจก × ราคา/ตร.ม." : priceMode === "metre" ? "ยาวฟิล์ม × ราคา/ม." : "ม้วน × ราคา/ม้วน", subst: `= ${fmt(cost, 2)} บาท` }]
+          : []),
+      ],
+      constants: [WINDOW_FILM.rollW, WINDOW_FILM.rollL, WINDOW_FILM.trimCm, WINDOW_FILM.wastePct],
+      assumptions: ["ตัดกระจกแต่ละขนาดเรียงกันเป็นแถว ไม่ได้ผสมชิ้นต่างขนาดในแถวเดียว (ของจริงอาจประหยัดกว่านี้เล็กน้อย)", "ฟิล์มไม่มีลายทิศทาง หมุนชิ้นได้ทั้งสองทิศ"],
+      caveats: ["ฟิล์มบางรุ่น (สะท้อนแสง/มีลาย) ห้ามหมุนชิ้น ต้องวางทิศเดียวกันทุกบาน ความยาวจะมากกว่านี้", DISCLAIMER_AB],
+      refs: [{ label: "ขนาดม้วนฟิล์มอาคาร 60 นิ้ว × 100 ฟุต" }, { label: "แนวปฏิบัติช่างติดฟิล์มกรองแสงอาคาร" }],
+    },
+  });
+}
+
+function filmSizeFields(): Field[] {
+  const out: Field[] = [];
+  for (let i = 1; i <= FILM_SIZES_MAX; i++) {
+    const d = FILM_DEFAULTS[i - 1];
+    const shown = Array.from({ length: FILM_SIZES_MAX - i + 1 }, (_, k) => String(i + k));
+    const when = i === 1 ? undefined : { key: "sizes", is: shown };
+    out.push(
+      { type: "number", key: `w${i}`, label: `ขนาด ${i}: กว้างกระจก`, unit: "ซม.", default: d.w, min: 5, max: 1000, step: 0.1, ...(when ? { when } : {}) },
+      { type: "number", key: `h${i}`, label: `ขนาด ${i}: สูงกระจก`, unit: "ซม.", default: d.h, min: 5, max: 1000, step: 0.1, ...(when ? { when } : {}) },
+      { type: "number", integer: true, key: `n${i}`, label: `ขนาด ${i}: จำนวน`, unit: "บาน", default: d.n, min: 1, max: 500, ...(when ? { when } : {}) },
+    );
+  }
+  return out;
+}
+
+const filmTool: ToolDef = {
+  id: "film",
+  name: "ฟิล์มกรองแสง",
+  blurb: "ขนาดกระจกสูงสุด 4 ขนาด → ฟิล์มกี่เมตร กี่ม้วน ราคาตามพื้นที่/เมตร/ม้วน",
+  keywords: ["ฟิล์ม", "ฟิล์มกรองแสง", "ฟิล์มอาคาร", "ติดฟิล์ม", "ฟิล์มกันร้อน", "window film"],
+  fields: [
+    {
+      type: "select",
+      key: "sizes",
+      label: "จำนวนขนาดกระจก",
+      default: "2",
+      options: Array.from({ length: FILM_SIZES_MAX }, (_, k) => ({ value: String(k + 1), label: `${k + 1} ขนาด` })),
+    },
+    ...filmSizeFields(),
+    { type: "number", key: "rollW", label: "หน้ากว้างม้วน", unit: "ม.", default: WINDOW_FILM.rollW.value, min: 0.5, max: 2, step: 0.001 },
+    { type: "number", key: "rollL", label: "ยาวม้วน", unit: "ม.", default: WINDOW_FILM.rollL.value, min: 1, max: 100, step: 0.01 },
+    { type: "number", key: "trim", label: "เผื่อตัดขอบต่อด้าน", unit: "ซม.", default: WINDOW_FILM.trimCm.value, min: 0, max: 10, step: 0.5 },
+    { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: WINDOW_FILM.wastePct.value, min: 0, max: 30 },
+    {
+      type: "select",
+      key: "priceMode",
+      label: "คิดราคา",
+      default: "none",
+      options: [
+        { value: "none", label: "ไม่คิดราคา" },
+        { value: "sqm", label: "ต่อ ตร.ม. กระจก (ค่าติดตั้ง)" },
+        { value: "metre", label: "ต่อเมตรฟิล์ม" },
+        { value: "roll", label: "ต่อม้วน" },
+      ],
+    },
+    { type: "number", key: "price", label: "ราคา", unit: "บาท", default: 500, min: 0, max: 1000000, step: 1, when: { key: "priceMode", is: ["sqm", "metre", "roll"] } },
+  ],
+  calc: calcFilm,
+};
+
 export const glassTools: ToolDef[] = [
   {
     id: "cut",
@@ -477,7 +635,7 @@ export const glassTools: ToolDef[] = [
     fields: [
       { type: "number", key: "w", label: "กว้างช่อง", unit: "มม.", default: 1200, min: 200, max: 5800 },
       { type: "number", key: "h", label: "สูงช่อง", unit: "มม.", default: 1500, min: 200, max: 5800 },
-      { type: "number", key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 2, min: 1, max: 200 },
+      { type: "number", integer: true, key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 2, min: 1, max: 200 },
       { type: "number", key: "profile", label: "หน้าตัดเฟรม", unit: "มม.", default: 45, min: 20, max: 100 },
       {
         type: "select",
@@ -500,7 +658,7 @@ export const glassTools: ToolDef[] = [
       { type: "number", key: "w", label: "กว้าง", unit: "มม.", default: 1200, min: 100, max: 6000 },
       { type: "number", key: "h", label: "สูง", unit: "มม.", default: 1500, min: 100, max: 6000 },
       thicknessField,
-      { type: "number", key: "n", label: "จำนวนช่อง/แผ่น", unit: "ชุด", default: 1, min: 1, max: 500 },
+      { type: "number", integer: true, key: "n", label: "จำนวนช่อง/แผ่น", unit: "ชุด", default: 1, min: 1, max: 500 },
       sashField("1"),
     ],
     calc: calcGlassWeight,
@@ -547,6 +705,7 @@ export const glassTools: ToolDef[] = [
     ],
     calc: calcGlassHw,
   },
+  filmTool,
 ];
 
 export const glassJob: JobDef = {
@@ -555,7 +714,7 @@ export const glassJob: JobDef = {
   fields: [
     { type: "number", key: "w", label: "กว้างช่อง", unit: "มม.", default: 1200, min: 200, max: 5800 },
     { type: "number", key: "h", label: "สูงช่อง", unit: "มม.", default: 1500, min: 200, max: 5800 },
-    { type: "number", key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 1, min: 1, max: 200 },
+    { type: "number", integer: true, key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 1, min: 1, max: 200 },
     { type: "number", key: "profile", label: "หน้าตัดเฟรม", unit: "มม.", default: 45, min: 20, max: 100 },
     thicknessField,
     sashField("2"),

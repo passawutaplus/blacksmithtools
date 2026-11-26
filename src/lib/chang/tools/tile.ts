@@ -859,6 +859,7 @@ const barLenField = {
 
 const perBoxField = {
   type: "number" as const,
+  integer: true,
   key: "perBox",
   label: "แผ่น/กล่อง (ดูข้างกล่อง)",
   unit: "แผ่น",
@@ -949,7 +950,7 @@ export const tileTools: ToolDef[] = [
     fields: [
       { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
       { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 0.5, max: 100, step: 0.1 },
-      { type: "number", key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+      { type: "number", integer: true, key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0, max: 10 },
       barLenField,
     ],
     calc: calcTrim,
@@ -963,12 +964,12 @@ export const tileTools: ToolDef[] = [
       { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 2, min: 0.8, max: 10, step: 0.05 },
       { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 2.5, min: 0.8, max: 10, step: 0.05 },
       { type: "number", key: "tileH", label: "ปูผนังสูง (0 = ปูแค่พื้น)", unit: "ม.", default: 2.4, min: 0, max: 4, step: 0.05 },
-      { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 2 },
+      { type: "number", integer: true, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 2 },
       { type: "number", key: "deductWall", label: "หักช่องอื่นบนผนัง (หน้าต่าง ช่องเปิด)", unit: "ตร.ม.", default: 0, min: 0, max: 10, step: 0.1 },
       { type: "select", key: "floorSize", label: "กระเบื้องพื้น", default: "30", options: sizeOptions },
-      { type: "number", key: "floorPerBox", label: "พื้น: แผ่น/กล่อง (ดูข้างกล่อง)", unit: "แผ่น", default: BATHROOM.floorPerBox.value, min: 1, max: 100 },
+      { type: "number", integer: true, key: "floorPerBox", label: "พื้น: แผ่น/กล่อง (ดูข้างกล่อง)", unit: "แผ่น", default: BATHROOM.floorPerBox.value, min: 1, max: 100 },
       { type: "select", key: "wallSize", label: "กระเบื้องผนัง", default: "3060", options: sizeOptions },
-      { type: "number", key: "wallPerBox", label: "ผนัง: แผ่น/กล่อง (ดูข้างกล่อง)", unit: "แผ่น", default: BATHROOM.wallPerBox.value, min: 1, max: 100 },
+      { type: "number", integer: true, key: "wallPerBox", label: "ผนัง: แผ่น/กล่อง (ดูข้างกล่อง)", unit: "แผ่น", default: BATHROOM.wallPerBox.value, min: 1, max: 100 },
       { type: "number", key: "wallWaste", label: "เผื่อเสียผนัง", unit: "%", default: BATHROOM.wallWaste.value, min: 0, max: 30 },
       { type: "select", key: "floorTrowel", label: "เกรียงหวีพื้น", default: "6", options: trowelOptions },
       { type: "select", key: "wallTrowel", label: "เกรียงหวีผนัง", default: "8", options: trowelOptions },
@@ -1050,7 +1051,7 @@ export const tileJob: JobDef = {
         { value: "12", label: "12 มม." },
       ],
     },
-    { type: "number", key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+    { type: "number", integer: true, key: "doors", label: "จำนวนประตู", unit: "บาน", default: 1, min: 0, max: 10 },
     barLenField,
   ],
   calc: (input) => {

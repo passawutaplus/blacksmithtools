@@ -13,6 +13,12 @@ export type Field =
       min?: number;
       max?: number;
       step?: number;
+      /**
+       * ช่องนับจำนวน (ชิ้น ขา ชั้น บาน กล้อง ทีม งวด …) — ต้องเป็นจำนวนเต็มเท่านั้น
+       * ด่านตรวจกลาง (validateFields / guardInputs) ปฏิเสธเลขมีเศษ ทั้งจากฟอร์ม ลิงก์แชร์ และหน้า "คิดทั้งงาน"
+       * ห้ามใส่กับปริมาณต่อเนื่อง (ความยาว พื้นที่ ชั่วโมง อัตราต่อ ตร.ม.)
+       */
+      integer?: boolean;
       default: number;
       when?: FieldWhen;
     }

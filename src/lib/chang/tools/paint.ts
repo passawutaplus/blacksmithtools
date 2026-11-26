@@ -529,7 +529,7 @@ const sizeOnly = [
   { type: "number" as const, key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 1, max: 100, step: 0.1 },
   { type: "number" as const, key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 1, max: 100, step: 0.1 },
   { type: "number" as const, key: "h", label: "สูงห้อง", unit: "ม.", default: 2.6, min: 2, max: 15, step: 0.1 },
-  { type: "number" as const, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+  { type: "number" as const, integer: true, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
 ];
 
 /** ช่องเสริมของเครื่องมือที่คิดจากพื้นที่ทา: รู้พื้นที่อยู่แล้วกรอกตรง ๆ ได้ / ทาฝ้าด้วย */
@@ -553,8 +553,8 @@ const room = [
   { type: "number" as const, key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 1, max: 100, step: 0.1 },
   { type: "number" as const, key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 1, max: 100, step: 0.1 },
   { type: "number" as const, key: "h", label: "สูงห้อง", unit: "ม.", default: 2.6, min: 2, max: 15, step: 0.1 },
-  { type: "number" as const, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
-  { type: "number" as const, key: "windows", label: "หน้าต่าง", unit: "บาน", default: 1, min: 0, max: 20 },
+  { type: "number" as const, integer: true, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+  { type: "number" as const, integer: true, key: "windows", label: "หน้าต่าง", unit: "บาน", default: 1, min: 0, max: 20 },
   {
     type: "select" as const,
     key: "surf",
@@ -578,9 +578,9 @@ export const paintTools: ToolDef[] = [
       ...room,
       ...areaExtras,
       { type: "number", key: "covP", label: "รองพื้นครอบคลุม", unit: "ตร.ม./แกลลอน", default: 30, min: 10, max: 60 },
-      { type: "number", key: "coatsP", label: "เที่ยวรองพื้น", unit: "เที่ยว", default: 1, min: 0, max: 3 },
+      { type: "number", integer: true, key: "coatsP", label: "เที่ยวรองพื้น", unit: "เที่ยว", default: 1, min: 0, max: 3 },
       { type: "number", key: "covT", label: "ทับหน้าครอบคลุม", unit: "ตร.ม./แกลลอน", default: 32, min: 10, max: 60 },
-      { type: "number", key: "coatsT", label: "เที่ยวทับหน้า", unit: "เที่ยว", default: 2, min: 1, max: 5 },
+      { type: "number", integer: true, key: "coatsT", label: "เที่ยวทับหน้า", unit: "เที่ยว", default: 2, min: 1, max: 5 },
       packField,
     ],
     calc: calcPaintQty,
@@ -623,7 +623,7 @@ export const paintTools: ToolDef[] = [
           { value: "out", label: "ภายนอก" },
         ],
       },
-      { type: "number", key: "topCoats", label: "เที่ยวทับหน้า (0 = ตามระบบ)", unit: "เที่ยว", default: 0, min: 0, max: 4 },
+      { type: "number", integer: true, key: "topCoats", label: "เที่ยวทับหน้า (0 = ตามระบบ)", unit: "เที่ยว", default: 0, min: 0, max: 4 },
       packField,
     ],
     calc: calcPaintSystem,
@@ -654,9 +654,9 @@ export const paintJob: JobDef = {
     },
     ...areaExtras,
     { type: "number", key: "covP", label: "รองพื้น ตร.ม./แกลลอน", default: 30, min: 10, max: 60 },
-    { type: "number", key: "coatsP", label: "เที่ยวรองพื้น", default: 1, min: 0, max: 3 },
+    { type: "number", integer: true, key: "coatsP", label: "เที่ยวรองพื้น", default: 1, min: 0, max: 3 },
     { type: "number", key: "covT", label: "ทับหน้า ตร.ม./แกลลอน", default: 32, min: 10, max: 60 },
-    { type: "number", key: "coatsT", label: "เที่ยวทับหน้า", default: 2, min: 1, max: 5 },
+    { type: "number", integer: true, key: "coatsT", label: "เที่ยวทับหน้า", default: 2, min: 1, max: 5 },
     packField,
   ],
   calc: (input) => {

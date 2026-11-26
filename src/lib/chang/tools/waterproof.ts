@@ -1,6 +1,6 @@
 import type { CalcResult, Field, JobDef, ToolDef, Values } from "../types";
 import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, str, withDefaults } from "../math";
-import { DISCLAIMER_AB, SEALANT, UNIT, WATERPROOF, WATERPROOF_PRODUCTS } from "../constants";
+import { DISCLAIMER_AB, MEMBRANE_ROLL, SEALANT, UNIT, WATERPROOF, WATERPROOF_PRODUCTS } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(waterproofTools, id, v);
 
@@ -338,9 +338,106 @@ export function calcWpCrack(v: Values): CalcResult {
   });
 }
 
+/* ─────────── แผ่นกันซึมชนิดม้วน (รอบ 4) ─────────── */
+
+/** พื้นที่ที่ม้วนหนึ่งปูได้จริงหลังหักทับข้างและทับหัวท้าย (ตร.ม.) */
+export function rollCoverage(rollW: number, rollL: number, sideLapM: number, endLapM: number): number {
+  return (rollW - sideLapM) * (rollL - endLapM);
+}
+
+export function calcWpSheet(v: Values): CalcResult {
+  const bad = guard("sheet", v);
+  if (bad) return bad;
+  const w = num(v, "w", 6);
+  const l = num(v, "l", 8);
+  const up = num(v, "up", WATERPROOF.parapetUp.value) / 100;
+  const layers = num(v, "layers", 1);
+  const rw = num(v, "rw", MEMBRANE_ROLL.width.value);
+  const rl = num(v, "rl", MEMBRANE_ROLL.length.value);
+  const side = num(v, "side", MEMBRANE_ROLL.sideLap.value) / 100;
+  const end = num(v, "end", MEMBRANE_ROLL.endLap.value) / 100;
+  const wastePct = num(v, "waste", MEMBRANE_ROLL.wastePct.value);
+  const primerRate = num(v, "primer", MEMBRANE_ROLL.primerLPerM2.value);
+  const cov = rollCoverage(rw, rl, side, end);
+  if (cov <= 0) {
+    return blockedResult({ headline: "ระยะทับกว้างกว่าม้วน — ตรวจขนาดม้วนกับระยะทับ", tip: "ระยะทับใส่เป็น ซม. ขนาดม้วนใส่เป็น ม." });
+  }
+  const floor = w * l;
+  const perimeter = 2 * (w + l);
+  const upArea = perimeter * up;
+  const area = floor + upArea;
+  const need = area * layers * (1 + wastePct / 100);
+  const rolls = ceil(need / cov);
+  const primerL = area * primerRate;
+  const primerGal = primerL > 0 ? ceil(primerL / UNIT.gallon.value) : 0;
+  return resultX({
+    title: "แผ่นกันซึมชนิดม้วน",
+    headline: `แผ่นกันซึม ${fmt(rolls)} ม้วน (${fmtTrim(rw, 2)}×${fmtTrim(rl, 2)} ม.)${primerL > 0 ? ` · ไพรเมอร์ ${fmt(primerL, 1)} ลิตร` : ""}`,
+    chart: {
+      kind: "packs",
+      unitLabel: `ม้วน ${fmtTrim(rw, 2)}×${fmtTrim(rl, 2)} ม.`,
+      count: rolls,
+      lastUsed: (need - (rolls - 1) * cov) / cov,
+      note: `ม้วนละปูได้จริง ${fmt(cov, 2)} ตร.ม.`,
+    },
+    rows: [
+      { label: "พื้น", value: `${fmt(floor, 2)} ตร.ม.` },
+      { label: up > 0 ? `ขึ้นขอบผนัง ${fmt(up * 100)} ซม.` : "ขึ้นขอบผนัง", value: up > 0 ? `${fmt(upArea, 2)} ตร.ม. (รอบ ${fmt(perimeter, 1)} ม.)` : "ไม่มี" },
+      { label: "พื้นที่ปูรวม", value: `${fmt(area, 2)} ตร.ม.${layers > 1 ? ` × ${fmt(layers)} ชั้น` : ""}` },
+      { label: "ม้วนละปูได้จริง", value: `${fmt(cov, 3)} ตร.ม. (หน้าม้วน ${fmt(rw * rl, 2)} ตร.ม. หักทับข้าง ${fmt(side * 100)} ซม. ทับหัวท้าย ${fmt(end * 100)} ซม.)` },
+      { label: `แผ่นกันซึม (รวมเผื่อ ${fmtTrim(wastePct, 1)}%)`, value: `${fmt(rolls)} ม้วน`, emphasize: true },
+      primerL > 0
+        ? { label: `ไพรเมอร์ (${fmtTrim(primerRate, 2)} ล./ตร.ม.)`, value: `${fmt(primerL, 1)} ลิตร ≈ ${fmt(primerGal)} แกลลอน (${UNIT.gallon.value} ล.)`, emphasize: true }
+        : { label: "ไพรเมอร์", value: "ไม่คิด" },
+    ],
+    tip: "ปูจากจุดต่ำ (ท่อระบาย) ขึ้นหาจุดสูง ให้แผ่นบนทับแผ่นล่างตามทางน้ำไหล รอยทับหัวท้ายแถวติดกันอย่าให้ตรงกัน",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-26",
+      summary: "พื้นที่ปู = พื้น + ขอบผนังที่ปูขึ้น · ม้วนละปูได้ = (กว้างม้วน − ทับข้าง) × (ยาวม้วน − ทับหัวท้าย) · ม้วน = พื้นที่ × ชั้น × (1 + เผื่อ) ÷ ที่ม้วนละปูได้ ปัดขึ้น",
+      steps: [
+        { label: "พื้น", expr: "กว้าง × ยาว", subst: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} = ${fmt(floor, 2)} ตร.ม.` },
+        { label: "ขอบผนัง", expr: "2 × (กว้าง + ยาว) × สูงที่ปูขึ้น", subst: `${fmt(perimeter, 2)} × ${fmtTrim(up, 2)} = ${fmt(upArea, 2)} ตร.ม.` },
+        {
+          label: "ม้วนละปูได้จริง",
+          expr: "(กว้างม้วน − ทับข้าง) × (ยาวม้วน − ทับหัวท้าย)",
+          subst: `(${fmtTrim(rw, 2)} − ${fmtTrim(side, 2)}) × (${fmtTrim(rl, 2)} − ${fmtTrim(end, 2)}) = ${fmt(cov, 3)} ตร.ม.`,
+        },
+        {
+          label: "จำนวนม้วน",
+          expr: "ปัดขึ้น(พื้นที่ × ชั้น × (1 + เผื่อ) ÷ ม้วนละปูได้)",
+          subst: `${fmt(area, 2)} × ${fmt(layers)} × ${fmtTrim(1 + wastePct / 100, 3)} ÷ ${fmt(cov, 3)} = ${fmt(need / cov, 2)} → ${fmt(rolls)} ม้วน`,
+        },
+        { label: "ไพรเมอร์", expr: "ลิตร = พื้นที่ × อัตราใช้ · แกลลอน = ลิตร ÷ 3.785 ปัดขึ้น", subst: `${fmt(area, 2)} × ${fmtTrim(primerRate, 2)} = ${fmt(primerL, 2)} ล. → ${fmt(primerGal)} แกลลอน` },
+      ],
+      constants: [MEMBRANE_ROLL.width, MEMBRANE_ROLL.length, MEMBRANE_ROLL.sideLap, MEMBRANE_ROLL.endLap, MEMBRANE_ROLL.wastePct, MEMBRANE_ROLL.primerLPerM2, WATERPROOF.parapetUp, UNIT.gallon],
+      assumptions: [
+        "พื้นสี่เหลี่ยม มีขอบผนังรอบทุกด้านสูงเท่ากัน (ขอบ 0 = ไม่มีขอบ)",
+        "คิดระยะทับจากพื้นที่ต่อม้วน ไม่ได้วางผังแผ่นจริง พื้นแคบกว่าหน้าม้วนหรือมีมุมเยอะใช้เศษมากกว่านี้",
+        "ไพรเมอร์ทา 1 รอบบนผิวเดิมก่อนปูแผ่นแรก",
+      ],
+      caveats: ["รอบท่อระบาย มุมผนัง และขอบบนของแผ่นที่ขึ้นผนัง ต้องปิดทับหรือเก็บขอบตามคู่มือผู้ผลิต", ...WP_CAVEATS],
+      refs: [{ label: "คู่มือติดตั้งแผ่นกันซึมบิทูเมนชนิดม้วนของผู้ผลิต (ระยะทับข้าง/หัวท้าย)" }],
+    },
+  });
+}
+
+const sheetFields: Field[] = [
+  { type: "number", key: "w", label: "กว้างพื้นที่", unit: "ม.", default: 6, min: 0.5, max: 200, step: 0.05 },
+  { type: "number", key: "l", label: "ยาวพื้นที่", unit: "ม.", default: 8, min: 0.5, max: 200, step: 0.05 },
+  { type: "number", key: "up", label: "ปูขึ้นขอบผนัง (0 = ไม่มีขอบ)", unit: "ซม.", default: WATERPROOF.parapetUp.value, min: 0, max: 100 },
+  { type: "number", integer: true, key: "layers", label: "จำนวนชั้น", unit: "ชั้น", default: 1, min: 1, max: 2 },
+  { type: "number", key: "rw", label: "กว้างม้วน", unit: "ม.", default: MEMBRANE_ROLL.width.value, min: 0.5, max: 2, step: 0.01 },
+  { type: "number", key: "rl", label: "ยาวม้วน", unit: "ม.", default: MEMBRANE_ROLL.length.value, min: 5, max: 50, step: 0.5 },
+  { type: "number", key: "side", label: "ทับด้านข้าง", unit: "ซม.", default: MEMBRANE_ROLL.sideLap.value, min: 5, max: 20 },
+  { type: "number", key: "end", label: "ทับหัว-ท้าย", unit: "ซม.", default: MEMBRANE_ROLL.endLap.value, min: 5, max: 30 },
+  { type: "number", key: "waste", label: "เผื่อตัดรอบท่อ/มุม", unit: "%", default: MEMBRANE_ROLL.wastePct.value, min: 0, max: 30 },
+  { type: "number", key: "primer", label: "ไพรเมอร์ (0 = ไม่คิด)", unit: "ล./ตร.ม.", default: MEMBRANE_ROLL.primerLPerM2.value, min: 0, max: 1, step: 0.01 },
+];
+
 /* ─────────── ฟอร์ม ─────────── */
 
-const coatsField: Field = { type: "number", key: "coats", label: "จำนวนเที่ยว", unit: "เที่ยว", default: 2, min: 1, max: 4 };
+const coatsField: Field = { type: "number", integer: true, key: "coats", label: "จำนวนเที่ยว", unit: "เที่ยว", default: 2, min: 1, max: 4 };
 const wasteField: Field = { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: WATERPROOF.waste.value, min: 0, max: 30 };
 
 function productField(keys: string[], def: string): Field {
@@ -356,12 +453,12 @@ function productField(keys: string[], def: string): Field {
 export const wpBathroomFields: Field[] = [
   { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 2, min: 0.8, max: 10, step: 0.05 },
   { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 2.5, min: 0.8, max: 10, step: 0.05 },
-  { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 2 },
+  { type: "number", integer: true, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 2 },
   { type: "number", key: "up", label: "ขึ้นผนังรอบห้อง", unit: "ซม.", default: WATERPROOF.upturn.value, min: 10, max: 60 },
   { type: "number", key: "showerRun", label: "ผนังโซนอาบน้ำยาวรวม (0 = ไม่มี)", unit: "ม.", default: WATERPROOF.showerRun.value, min: 0, max: 20, step: 0.1 },
   { type: "number", key: "showerH", label: "สูงกันซึมโซนอาบน้ำ", unit: "ซม.", default: WATERPROOF.showerH.value, min: 100, max: 250 },
-  { type: "number", key: "corners", label: "มุมผนังในโซนอาบน้ำ", unit: "มุม", default: 1, min: 0, max: 4 },
-  { type: "number", key: "pipes", label: "ท่อ/รูระบายที่ทะลุพื้น", unit: "จุด", default: 3, min: 0, max: 20 },
+  { type: "number", integer: true, key: "corners", label: "มุมผนังในโซนอาบน้ำ", unit: "มุม", default: 1, min: 0, max: 4 },
+  { type: "number", integer: true, key: "pipes", label: "ท่อ/รูระบายที่ทะลุพื้น", unit: "จุด", default: 3, min: 0, max: 20 },
 ];
 
 const roofFields: Field[] = [
@@ -380,7 +477,7 @@ const roofFields: Field[] = [
       { value: "full", label: "ปูผ้าใยเต็มพื้นที่" },
     ],
   },
-  { type: "number", key: "drains", label: "ท่อระบายน้ำ", unit: "จุด", default: 2, min: 0, max: 30 },
+  { type: "number", integer: true, key: "drains", label: "ท่อระบายน้ำ", unit: "จุด", default: 2, min: 0, max: 30 },
   wasteField,
 ];
 
@@ -427,6 +524,14 @@ export const waterproofTools: ToolDef[] = [
     keywords: ["รอยร้าว", "ร้าว", "ผนังร้าว", "ซีลแลนท์"],
     fields: crackFields,
     calc: calcWpCrack,
+  },
+  {
+    id: "sheet",
+    name: "แผ่นกันซึมชนิดม้วน",
+    blurb: "พื้นที่ + ขนาดม้วน + ระยะทับ → กี่ม้วน ไพรเมอร์กี่ลิตร",
+    keywords: ["แผ่นกันซึม", "เมมเบรน", "membrane", "บิทูเมน", "ลนไฟ", "torch on", "ม้วนกันซึม"],
+    fields: sheetFields,
+    calc: calcWpSheet,
   },
 ];
 

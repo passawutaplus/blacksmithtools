@@ -2,6 +2,9 @@ import type { LucideIcon } from "lucide-react";
 import {
   Snowflake,
   AppWindow,
+  Axe,
+  Blinds,
+  Cctv,
   Droplets,
   Hammer,
   Home,
@@ -9,9 +12,12 @@ import {
   LayoutGrid,
   Paintbrush,
   PanelTop,
+  ReceiptText,
   Ruler,
   Box,
   ShieldCheck,
+  Shovel,
+  Trees,
   Truck,
   Wrench,
   Zap,
@@ -19,11 +25,16 @@ import {
 import type { Pillar, Trade } from "./types";
 import { ceilingJob, ceilingTools } from "./tools/ceiling";
 import { concreteJob, concreteTools } from "./tools/concrete";
+import { earthTools } from "./tools/earth";
+import { curtainTools } from "./tools/curtain";
 import { electricalJob, electricalTools } from "./tools/electrical";
+import { estimateTools } from "./tools/estimate";
 import { generalJob, generalTools } from "./tools/general";
 import { glassJob, glassTools } from "./tools/glass";
 import { handymanJob, handymanTools } from "./tools/handyman";
 import { hvacJob, hvacTools } from "./tools/hvac";
+import { landscapeTools } from "./tools/landscape";
+import { lowvoltTools } from "./tools/lowvolt";
 import { masonryJob, masonryTools } from "./tools/masonry";
 import { paintJob, paintTools } from "./tools/paint";
 import { plumbingJob, plumbingTools } from "./tools/plumbing";
@@ -32,30 +43,38 @@ import { steelJob, steelTools } from "./tools/steel";
 import { tileJob, tileTools } from "./tools/tile";
 import { vinylJob, vinylTools } from "./tools/vinyl";
 import { waterproofJob, waterproofTools } from "./tools/waterproof";
+import { woodTools } from "./tools/wood";
 
 export const PILLARS: Pillar[] = [
-  { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา" },
-  { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก" },
+  { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา กล้องวงจรปิด" },
+  { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก ม่าน ไม้" },
   { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ คอนกรีต หลังคา เหล็ก สี กันซึม" },
-  { id: "general", name: "เครื่องมือทั่วไป", blurb: "แปลงหน่วย รูปทรง" },
+  { id: "outdoor", name: "งานภายนอกและที่ดิน", blurb: "ถมดิน สวน พื้นภายนอก" },
+  { id: "general", name: "เครื่องมือทั่วไปและราคา", blurb: "แปลงหน่วย รูปทรง ใบเสนอราคา" },
 ];
 
 export const TRADE_ICONS: Record<string, LucideIcon> = {
   hvac: Snowflake,
   electrical: Zap,
   plumbing: Droplets,
+  lowvolt: Cctv,
   handyman: Hammer,
   tile: LayoutGrid,
   vinyl: Layers,
   ceiling: PanelTop,
   glass: AppWindow,
+  wood: Axe,
+  curtain: Blinds,
   masonry: Box,
   concrete: Truck,
   roof: Home,
   steel: Wrench,
   paint: Paintbrush,
   waterproof: ShieldCheck,
+  earth: Shovel,
+  landscape: Trees,
   general: Ruler,
+  estimate: ReceiptText,
 };
 
 /**
@@ -107,6 +126,14 @@ export const TRADES: Trade[] = [
     job: plumbingJob,
   },
   {
+    id: "lowvolt",
+    name: "ช่างกล้องวงจรปิดและเน็ต",
+    short: "กล้อง/เน็ต",
+    pillarId: "mep",
+    blurb: "ฮาร์ดดิสก์ PoE สาย LAN มุมกล้อง",
+    tools: lowvoltTools,
+  },
+  {
     id: "handyman",
     name: "ช่างติดตั้งและบิ้วอิน",
     short: "บิ้วอิน",
@@ -151,6 +178,22 @@ export const TRADES: Trade[] = [
     tools: glassTools,
     job: glassJob,
   },
+  {
+    id: "curtain",
+    name: "ช่างผ้าม่าน",
+    short: "ผ้าม่าน",
+    pillarId: "finish",
+    blurb: "ผ้ากี่หลา ความฟู ม่านม้วน มู่ลี่",
+    tools: curtainTools,
+  },  {
+    id: "wood",
+    name: "ช่างไม้และพื้นไม้",
+    short: "ไม้",
+    pillarId: "finish",
+    blurb: "ลูกบาศก์ฟุต ระแนง ไม้ฝา เดค",
+    tools: woodTools,
+  },
+
   {
     id: "masonry",
     name: "ช่างก่ออิฐฉาบปูน",
@@ -206,6 +249,22 @@ export const TRADES: Trade[] = [
     job: waterproofJob,
   },
   {
+    id: "earth",
+    name: "ช่างดินและถมที่",
+    short: "ดิน",
+    pillarId: "outdoor",
+    blurb: "ถมดิน ขุดดิน เที่ยวรถ",
+    tools: earthTools,
+  },
+  {
+    id: "landscape",
+    name: "ช่างสวนและพื้นภายนอก",
+    short: "สวน",
+    pillarId: "outdoor",
+    blurb: "หญ้า บล็อกปูพื้น สปริงเกอร์ น้ำฝน",
+    tools: landscapeTools,
+  },
+  {
     id: "general",
     name: "เครื่องมือทั่วไป",
     short: "ทั่วไป",
@@ -213,6 +272,14 @@ export const TRADES: Trade[] = [
     blurb: "แปลงหน่วย รูปทรง พีทาโกรัส",
     tools: generalTools,
     job: generalJob,
+  },
+  {
+    id: "estimate",
+    name: "ประมาณราคาและใบเสนอราคา",
+    short: "ใบเสนอราคา",
+    pillarId: "general",
+    blurb: "VAT หัก ณ ที่จ่าย กำไร งวดงาน ค่าแรง",
+    tools: estimateTools,
   },
 ];
 
@@ -240,6 +307,43 @@ export const TOOLS_WITHOUT_COVER: string[] = [
   "steel/railing",
   "concrete/slab",
   "concrete/rebar",
+  // รอบ 4: สายงานใหม่ ยังไม่มีภาพปก
+  "wood/timber",
+  "wood/cladding",
+  "wood/deck",
+  "earth/fill",
+  "earth/dig",
+  "landscape/sod",
+  "landscape/paver",
+  "landscape/sprinkler",
+  "landscape/rain",
+  // รอบ 4: เครื่องมือใหม่ในสายงานเดิม
+  "electrical/appliance",
+  "electrical/lux",
+  "electrical/heater",
+  "electrical/ev",
+  "hvac/fan",
+  "plumbing/tankload",
+  "concrete/members",
+  "concrete/formwork",
+  "waterproof/sheet",
+  "glass/film",
+  "general/slope",
+  "general/rai",
+  "general/tank",
+  "general/unitprice",
+  // รอบ 4: สายงานใหม่ (ยังไม่มีภาพปก)
+  "lowvolt/hdd",
+  "lowvolt/poe",
+  "lowvolt/lan",
+  "lowvolt/fov",
+  "curtain/fabric",
+  "curtain/blind",
+  "estimate/quote",
+  "estimate/markup",
+  "estimate/vat",
+  "estimate/instalment",
+  "estimate/labour",
 ];
 
 /**
@@ -306,7 +410,7 @@ export function searchCatalog(q: string) {
   return { trades, tools };
 }
 
-const TRADE_ALIASES: Record<string, string[]> = {
+export const TRADE_ALIASES: Record<string, string[]> = {
   hvac: ["แอร์", "เครื่องปรับอากาศ", "น้ำยา", "btu"],
   electrical: ["สายไฟ", "เบรกเกอร์", "แรงดันตก", "โซลาร์", "ไฟ"],
   plumbing: ["ประปา", "ท่อ", "ปั๊ม", "ถังน้ำ"],
@@ -322,10 +426,17 @@ const TRADE_ALIASES: Record<string, string[]> = {
   vinyl: ["กระเบื้องยาง", "spc", "lvt", "พื้นไม้", "ลามิเนตปูพื้น"],
   paint: ["ทาสี", "สกิมโค้ท", "โป๊ว", "วอลเปเปอร์", "รองพื้น", "กันสนิม", "สีน้ำมัน"],
   // รอบ 3: สายงานใหม่
+  // รอบ 4: สายงานใหม่
+  wood: ["ไม้", "ช่างไม้", "ไม้แปรรูป", "ระแนง", "ไม้ฝา", "wpc", "ไม้เทียม", "เดค", "deck"],
+  earth: ["ดิน", "ถมดิน", "ถมที่", "ขุดดิน", "ดินถม", "ลูกรัง", "รถดิน", "รถ 10 ล้อ"],
+  landscape: ["สวน", "จัดสวน", "หญ้า", "ตัวหนอน", "บล็อกปูพื้น", "สปริงเกอร์", "น้ำฝน", "พื้นภายนอก"],
+  lowvolt: ["กล้องวงจรปิด", "cctv", "กล้อง", "nvr", "dvr", "สายแลน", "lan", "poe", "เน็ต", "ไวไฟ", "wifi"],
+  curtain: ["ผ้าม่าน", "ม่าน", "ม่านม้วน", "มู่ลี่", "ราง", "หลา"],
+  estimate: ["ใบเสนอราคา", "เสนอราคา", "ประมาณราคา", "vat", "ภาษี", "หัก ณ ที่จ่าย", "มัดจำ", "งวดงาน", "กำไร", "ค่าแรง"],
   waterproof: ["กันซึม", "กันรั่ว", "ดาดฟ้า", "ดาดฟ้ารั่ว", "ห้องน้ำรั่ว", "รอยร้าว", "ร้าว", "pu", "เมมเบรน", "membrane", "ซีเมนต์กันซึม"],
 };
 
-const TOOL_ALIASES: Record<string, string[]> = {
+export const TOOL_ALIASES: Record<string, string[]> = {
   "hvac/btu": ["ขนาดแอร์", "ตันความเย็น"],
   "hvac/shsc": ["superheat", "subcooling", "sh", "sc", "ความร้อนเกิน", "ความเย็นเกิน"],
   "electrical/cable": ["thw", "เลือกสาย", "วสท"],
@@ -336,6 +447,7 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "handyman/screw": ["พุก", "สกรู", "ทีวี"],
   "handyman/stair": ["บันได", "ลูกตั้ง", "ลูกนอน"],
   // รอบ 2: คำช่างที่ค้นแล้วไม่เจอ ชี้ไปเครื่องมือที่ใกล้ที่สุด
+  "paint/qty": ["สีทาบ้าน", "สีทาผนัง", "กี่แกลลอน", "กี่ถัง"],
   "paint/skim": ["สกิมโค้ท", "สกิม", "โป๊ว", "โป้ว", "ฉาบบาง"],
   "masonry/plaster": ["สกิมโค้ท", "ฉาบบาง"],
   "ceiling/gypsum": ["ยิปซั่ม", "ซีลาย", "c-line", "cline", "โครงคร่าว", "โครงเคร่า"],
@@ -373,7 +485,45 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "steel/railing": ["รั้ว", "ราวกันตก", "ราวระเบียง", "ราวบันได", "ลูกกรง", "กันสาด", "ประตูรั้ว", "เหล็กกล่อง"],
   "steel/weight": ["ราคาเหล็ก", "กก./เส้น", "แป๊บ", "ท่อดำ"],
   "concrete/slab": ["เทพื้น", "ไวร์เมช", "wiremesh", "wire mesh", "รถโม่", "ปูนโม่", "คิว", "ลานจอดรถ"],
+  // รอบ 4: ไม้ ดิน สวน
+  "wood/timber": ["ลูกบาศก์ฟุต", "ลบ.ฟ.", "คิวไม้", "ราคาไม้", "ไม้แปรรูป", "ไม้ 2x4", "ไม้หน้าสาม", "board foot"],
+  "wood/cladding": ["ระแนง", "ไม้ฝา", "wpc", "ไม้เทียม", "ไม้ฝาซ้อนเกล็ด", "รั้วระแนง", "ไม้ฝาเฌอร่า", "โครงเคร่า"],
+  "wood/deck": ["เดค", "deck", "พื้นระเบียง", "พื้นไม้ภายนอก", "ตง", "คลิปซ่อน", "ไม้พื้น wpc"],
+  "earth/fill": ["ถมดิน", "ถมที่", "ดินถม", "ลูกรัง", "ทรายถม", "กี่คิว", "กี่เที่ยว", "รถ 6 ล้อ", "รถ 10 ล้อ", "ดินยุบ", "ไร่"],
+  "earth/dig": ["ขุดดิน", "ขนดินทิ้ง", "ขุดร่อง", "ขุดหลุม", "ดินพองตัว", "ขุดบ่อ"],
+  "landscape/sod": ["หญ้า", "หญ้าแผ่น", "ปูหญ้า", "หญ้านวลน้อย", "หญ้ามาเลเซีย", "สนามหญ้า"],
+  "landscape/paver": ["ตัวหนอน", "อิฐตัวหนอน", "บล็อกปูพื้น", "คันหิน", "บล็อกขอบ", "แผ่นทางเท้า", "ลานจอดรถ"],
+  "landscape/sprinkler": ["สปริงเกอร์", "sprinkler", "รดน้ำ", "หัวพ่นน้ำ", "ระบบรดน้ำ"],
+  "landscape/rain": ["น้ำฝน", "เก็บน้ำฝน", "ถังเก็บน้ำฝน", "rainwater"],
+  // รอบ 4: สายงานใหม่
+  "lowvolt/hdd": ["ฮาร์ดดิสก์", "hdd", "เก็บกี่วัน", "อัดกี่วัน", "nvr", "dvr", "tb"],
+  "lowvolt/poe": ["poe", "poe+", "สวิตช์ poe", "งบไฟ", "802.3af", "802.3at", "802.3bt"],
+  "lowvolt/lan": ["สายแลน", "สาย lan", "cat6", "cat5e", "rj45", "หัวแลน", "กล่อง 305", "305 เมตร"],
+  "lowvolt/fov": ["มุมกล้อง", "เลนส์", "เห็นหน้า", "ระยะกล้อง", "ppm", "fov", "dori"],
+  "curtain/fabric": ["ผ้าม่าน", "หลา", "ม่านจีบ", "ม่านตาไก่", "ม่านลอน", "ความฟู", "ตะขอม่าน", "รางม่าน"],
+  "curtain/blind": ["ม่านม้วน", "มู่ลี่", "roller blind", "ม่านปรับแสง", "ตร.หลา"],
+  "estimate/quote": ["ใบเสนอราคา", "quotation", "เสนอราคา", "vat", "หัก ณ ที่จ่าย"],
+  "estimate/markup": ["markup", "margin", "บวกกำไร", "กำไรกี่เปอร์เซ็นต์"],
+  "estimate/vat": ["vat", "ถอด vat", "รวม vat", "ภาษีมูลค่าเพิ่ม", "หัก ณ ที่จ่าย", "50 ทวิ", "3%", "7%"],
+  "estimate/instalment": ["งวดงาน", "มัดจำ", "แบ่งงวด", "เงินประกันผลงาน", "ค้ำประกันผลงาน"],
+  "estimate/labour": ["ค่าแรง", "ค่าช่าง", "ราคาต่อตารางเมตร", "รายวัน", "กี่วันเสร็จ"],
   "concrete/rebar": ["เหล็กเส้น", "ปลอก", "เหล็กปลอก", "ลวดผูก", "ข้ออ้อย", "db12", "rb6", "คานคอดิน", "ทาบเหล็ก"],
+
+  // รอบ 4: เครื่องมือใหม่ในสายงานเดิม
+  "electrical/appliance": ["ค่าไฟ", "ค่าไฟบ้าน", "หน่วยไฟ", "กินไฟ", "kwh", "บิลไฟ", "ค่าไฟตู้เย็น", "ค่าไฟพัดลม"],
+  "electrical/lux": ["lux", "ลักซ์", "ความสว่าง", "ลูเมน", "lumen", "ดาวน์ไลท์", "กี่ดวง", "ผังโคม", "ไฟเพดาน"],
+  "electrical/heater": ["เครื่องทำน้ำอุ่น", "น้ำอุ่น", "ฮีตเตอร์", "heater", "กี่วัตต์", "3500 วัตต์", "4500 วัตต์"],
+  "electrical/ev": ["ev", "รถไฟฟ้า", "ชาร์จรถ", "ค่าชาร์จ", "wallbox", "วอลล์ชาร์จ", "ชาร์จกี่ชั่วโมง"],
+  "hvac/fan": ["พัดลมระบายอากาศ", "พัดลมดูดอากาศ", "ดูดอากาศ", "ระบายอากาศ", "cfm", "ach", "ห้องน้ำอับ", "ครัวควัน"],
+  "plumbing/tankload": ["แท่นถังน้ำ", "ขาตั้งถัง", "หอถังน้ำ", "ถังบนดาดฟ้า", "น้ำหนักถังน้ำ", "ถังหนักกี่กิโล"],
+  "concrete/members": ["เสา", "คาน", "ฐานราก", "ฐานแผ่", "ตอม่อ", "เทเสา", "เทคาน", "คิว", "ปริมาตรคอนกรีต"],
+  "concrete/formwork": ["ไม้แบบ", "ไม้อัด", "แบบหล่อ", "ไม้เคร่า", "ตั้งแบบ", "ไม้อัดยาง", "แผ่น 4x8"],
+  "waterproof/sheet": ["แผ่นกันซึม", "เมมเบรน", "membrane", "บิทูเมน", "ลนไฟ", "torch on", "ม้วนกันซึม", "ไพรเมอร์"],
+  "glass/film": ["ฟิล์ม", "ฟิล์มกรองแสง", "ฟิล์มอาคาร", "ติดฟิล์ม", "ฟิล์มกันร้อน", "ฟิล์มบ้าน"],
+  "general/slope": ["ความชัน", "ความลาด", "องศา", "เปอร์เซ็นต์", "1:12", "ทางลาด", "slope", "ลาดเอียง"],
+  "general/rai": ["ไร่", "งาน", "ตารางวา", "ตร.วา", "ที่ดิน", "โฉนด", "ราคาที่ดิน", "ไร่งานวา"],
+  "general/tank": ["ลิตร", "ถังนอน", "ถังน้ำมัน", "ระดับน้ำ", "ทรงกระบอก", "ความจุถัง", "ถังกี่ลิตร"],
+  "general/unitprice": ["เทียบราคา", "ราคาต่อหน่วย", "คุ้มกว่า", "ถูกกว่า", "ถังเล็กถังใหญ่", "บาทต่อลิตร"],
 };
 
 export function toolCount(): number {

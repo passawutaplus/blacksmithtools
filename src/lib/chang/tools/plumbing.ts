@@ -2,6 +2,7 @@ import type { JobDef, ToolDef, Values } from "../types";
 import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
 import {
   DISCLAIMER_AB,
+  DISCLAIMER_C,
   HOME_PUMP,
   HOME_PUMP_WATTS,
   PIPE_KIT,
@@ -12,8 +13,10 @@ import {
   PVC_PIPES,
   PVC_VEL_MAX,
   TANK_SIZES,
+  TANK_STAND,
   UNIT,
   WATER,
+  WATER_HEAT,
 } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(plumbingTools, id, v);
@@ -699,13 +702,92 @@ export function calcFittings(v: Values) {
   });
 }
 
+/* ═══════════════ รอบ 4 (2026-11-26): น้ำหนักถังน้ำบนแท่น ═══════════════ */
+
+/** น้ำหนักเต็มถัง (กก.) = ลิตร × 1 กก./ลิตร + ถังเปล่า + แท่น · แรง (kN) = กก. × g ÷ 1000 */
+export function tankLoad(liters: number, emptyKg: number, standKg: number, legs: number) {
+  const waterKg = liters * WATER_HEAT.density.value;
+  const totalKg = waterKg + emptyKg + standKg;
+  const kN = (totalKg * UNIT.gravity.value) / 1000;
+  return { waterKg, totalKg, kN, legKg: totalKg / legs, legKN: kN / legs };
+}
+
+export function calcTankLoad(v: Values) {
+  const bad = guard("tankload", v);
+  if (bad) return bad;
+  const liters = num(v, "liters", 1000);
+  const emptyKg = num(v, "empty", TANK_STAND.emptyKg.value);
+  const standKg = num(v, "stand", 0);
+  const legs = num(v, "legs", 4);
+  const t = tankLoad(liters, emptyKg, standKg, legs);
+  return resultX({
+    title: "น้ำหนักถังน้ำบนแท่น",
+    headline: `เต็มถัง ${fmt(t.totalKg)} กก. (${fmt(t.kN, 2)} kN) · ขาละ ${fmt(t.legKg)} กก.`,
+    chart:
+      emptyKg + standKg > 0
+        ? {
+            kind: "stack",
+            parts: [
+              { label: "น้ำ", value: t.waterKg, display: `${fmt(t.waterKg)} กก.`, tone: "accent" },
+              { label: "ถังเปล่า", value: emptyKg, display: `${fmt(emptyKg)} กก.`, tone: "mute" },
+              ...(standKg > 0 ? [{ label: "แท่น/โครง", value: standKg, display: `${fmt(standKg)} กก.`, tone: "mute" as const }] : []),
+            ],
+            totalLabel: "รวมเต็มถัง",
+            totalDisplay: `${fmt(t.totalKg)} กก.`,
+          }
+        : undefined,
+    rows: [
+      { label: `น้ำ ${fmt(liters)} ลิตร`, value: `${fmt(t.waterKg)} กก.` },
+      { label: "ถังเปล่า", value: `${fmt(emptyKg, 1)} กก.` },
+      ...(standKg > 0 ? [{ label: "แท่น/โครงเหล็ก", value: `${fmt(standKg, 1)} กก.` }] : []),
+      { label: "น้ำหนักรวมเต็มถัง", value: `${fmt(t.totalKg, 1)} กก. = ${fmt(t.kN, 2)} kN`, emphasize: true },
+      { label: `แบ่ง ${fmt(legs)} ขาเท่ากัน`, value: `ขาละ ${fmt(t.legKg, 1)} กก. = ${fmt(t.legKN, 2)} kN`, emphasize: true },
+      { label: "แท่น / โครง / พื้นที่วาง", value: "ต้องให้วิศวกรออกแบบหรือตรวจ" },
+    ],
+    tip: "น้ำ 1 ลิตรหนัก 1 กก. ถัง 1,000 ลิตรเต็มถังหนักเกิน 1 ตัน วางบนดาดฟ้า/หลังคาต้องให้วิศวกรดูพื้นก่อน",
+    explain: {
+      risk: "C",
+      updatedAt: "2026-11-26",
+      summary: "น้ำหนักเต็มถัง = น้ำ (ลิตร × 1 กก./ลิตร) + ถังเปล่า + แท่น · แรง (kN) = กก. × 9.80665 ÷ 1000 · แบ่งเท่ากันทุกขา",
+      steps: [
+        { label: "น้ำ", expr: "กก. = ลิตร × 1 กก./ลิตร", subst: `${fmt(liters)} × ${WATER_HEAT.density.value} = ${fmt(t.waterKg)} กก.` },
+        { label: "รวม", expr: "น้ำ + ถังเปล่า + แท่น", subst: `${fmt(t.waterKg)} + ${fmtTrim(emptyKg, 1)} + ${fmtTrim(standKg, 1)} = ${fmt(t.totalKg, 1)} กก.` },
+        { label: "เป็นแรง", expr: `kN = กก. × ${UNIT.gravity.value} ÷ 1000`, subst: `${fmt(t.totalKg, 1)} × ${UNIT.gravity.value} ÷ 1000 = ${fmt(t.kN, 3)} kN` },
+        { label: "ต่อขา", expr: "รวม ÷ จำนวนขา", subst: `${fmt(t.totalKg, 1)} ÷ ${fmt(legs)} = ${fmt(t.legKg, 1)} กก. (${fmt(t.legKN, 3)} kN)` },
+      ],
+      constants: [WATER_HEAT.density, TANK_STAND.emptyKg, UNIT.gravity],
+      assumptions: ["ถังตั้งตรงกลางแท่น ทุกขารับเท่ากัน", "ใส่น้ำเต็มความจุตามป้ายถัง (บางถังใส่ได้เกินป้ายเล็กน้อย)"],
+      caveats: [
+        "แท่น/โครงต้องให้วิศวกร — ขาที่พื้นไม่เรียบหรือแท่นไม่ตรง ขาบางขารับมากกว่าค่าเฉลี่ยมาก (ขา 4 ขาอาจเหลือ 2 ขาทแยงรับเกือบทั้งหมด)",
+        "ยังไม่รวมแรงลม แรงสั่นจากปั๊ม และแผ่นดินไหว",
+        DISCLAIMER_C,
+      ],
+      refs: [{ label: "ความหนาแน่นน้ำและความเร่งโน้มถ่วงมาตรฐาน (ISO 80000-3)" }],
+    },
+  });
+}
+
+const tankLoadTool: ToolDef = {
+  id: "tankload",
+  name: "น้ำหนักถังน้ำบนแท่น",
+  blurb: "ลิตร + ถังเปล่า → น้ำหนักเต็มถัง กก./kN และต่อขา",
+  keywords: ["แท่นถังน้ำ", "ขาตั้งถัง", "หอถังน้ำ", "ถังบนดาดฟ้า", "น้ำหนักถัง", "kn"],
+  fields: [
+    { type: "number", key: "liters", label: "ความจุถัง", unit: "ลิตร", default: 1000, min: 50, max: 20000, step: 50 },
+    { type: "number", key: "empty", label: "น้ำหนักถังเปล่า (ดูป้ายถัง)", unit: "กก.", default: TANK_STAND.emptyKg.value, min: 0, max: 2000, step: 0.5 },
+    { type: "number", key: "stand", label: "น้ำหนักแท่น/โครง (ไม่รู้ใส่ 0)", unit: "กก.", default: 0, min: 0, max: 5000, step: 0.5 },
+    { type: "number", integer: true, key: "legs", label: "จำนวนขา", unit: "ขา", default: 4, min: 1, max: 12 },
+  ],
+  calc: calcTankLoad,
+};
+
 export const plumbingTools: ToolDef[] = [
   {
     id: "tank",
     name: "ขนาดถังเก็บน้ำ",
     blurb: "สำรองตามจำนวนคน",
     fields: [
-      { type: "number", key: "people", label: "จำนวนคน", unit: "คน", default: 4, min: 1, max: 100 },
+      { type: "number", integer: true, key: "people", label: "จำนวนคน", unit: "คน", default: 4, min: 1, max: 100 },
       { type: "number", key: "lp", label: "ใช้น้ำ/คน/วัน", unit: "ลิตร", default: 150, min: 50, max: 500 },
       { type: "number", key: "days", label: "สำรอง", unit: "วัน", default: 1, min: 0.5, max: 7, step: 0.5 },
     ],
@@ -726,8 +808,8 @@ export const plumbingTools: ToolDef[] = [
     name: "ปั๊มบ้านกี่วัตต์",
     blurb: "จำนวนชั้น + ห้องน้ำ → ปั๊ม 150–400 วัตต์",
     fields: [
-      { type: "number", key: "floors", label: "จำนวนชั้นที่ส่งน้ำขึ้น", unit: "ชั้น", default: 2, min: 1, max: 4 },
-      { type: "number", key: "baths", label: "ห้องน้ำ", unit: "ห้อง", default: 2, min: 1, max: 6 },
+      { type: "number", integer: true, key: "floors", label: "จำนวนชั้นที่ส่งน้ำขึ้น", unit: "ชั้น", default: 2, min: 1, max: 4 },
+      { type: "number", integer: true, key: "baths", label: "ห้องน้ำ", unit: "ห้อง", default: 2, min: 1, max: 6 },
       { type: "number", key: "len", label: "ระยะท่อจากปั๊มถึงจุดไกลสุด", unit: "ม.", default: 15, min: 1, max: 100 },
     ],
     calc: calcHomePump,
@@ -788,7 +870,7 @@ export const plumbingTools: ToolDef[] = [
     id: "bom",
     name: "ของสิ้นเปลืองงานประปา",
     blurb: "กาว PVC + เทปพันเกลียว",
-    fields: [{ type: "number", key: "joints", label: "จำนวนข้อต่อ", unit: "จุด", default: 24, min: 1, max: 2000 }],
+    fields: [{ type: "number", integer: true, key: "joints", label: "จำนวนข้อต่อ", unit: "จุด", default: 24, min: 1, max: 2000 }],
     calc: calcPlumbBom,
   },
   {
@@ -796,28 +878,29 @@ export const plumbingTools: ToolDef[] = [
     name: "นับท่อ + ข้อต่อจากจุดน้ำ",
     blurb: "จำนวนก๊อก ชักโครก ฝักบัว → ท่อเป็นเส้น ข้องอ สามทาง วาล์ว",
     fields: [
-      { type: "number", key: "faucet", label: "ก๊อกน้ำ (ซิงค์/ล้างพื้น/สนาม)", unit: "จุด", default: 3, min: 0, max: 30 },
-      { type: "number", key: "toilet", label: "ชักโครก", unit: "จุด", default: 2, min: 0, max: 10 },
-      { type: "number", key: "shower", label: "ฝักบัว", unit: "จุด", default: 2, min: 0, max: 10 },
-      { type: "number", key: "basin", label: "อ่างล้างหน้า/ซิงค์", unit: "จุด", default: 2, min: 0, max: 10 },
-      { type: "number", key: "washer", label: "เครื่องซักผ้า", unit: "จุด", default: 1, min: 0, max: 5 },
-      { type: "number", key: "heater", label: "เครื่องทำน้ำอุ่น", unit: "จุด", default: 1, min: 0, max: 10 },
+      { type: "number", integer: true, key: "faucet", label: "ก๊อกน้ำ (ซิงค์/ล้างพื้น/สนาม)", unit: "จุด", default: 3, min: 0, max: 30 },
+      { type: "number", integer: true, key: "toilet", label: "ชักโครก", unit: "จุด", default: 2, min: 0, max: 10 },
+      { type: "number", integer: true, key: "shower", label: "ฝักบัว", unit: "จุด", default: 2, min: 0, max: 10 },
+      { type: "number", integer: true, key: "basin", label: "อ่างล้างหน้า/ซิงค์", unit: "จุด", default: 2, min: 0, max: 10 },
+      { type: "number", integer: true, key: "washer", label: "เครื่องซักผ้า", unit: "จุด", default: 1, min: 0, max: 5 },
+      { type: "number", integer: true, key: "heater", label: "เครื่องทำน้ำอุ่น", unit: "จุด", default: 1, min: 0, max: 10 },
       { type: "number", key: "run", label: "ระยะท่อเมนถึงจุดไกลสุด", unit: "ม.", default: 15, min: 1, max: 200, step: 0.5 },
       { type: "number", key: "waste", label: "เผื่อท่อตัดเสีย", unit: "%", default: 10, min: 0, max: 30 },
     ],
     calc: calcFittings,
   },
+  tankLoadTool,
 ];
 
 export const plumbingJob: JobDef = {
   name: "คิดทั้งงานประปาบ้าน",
   blurb: "คนในบ้าน → ถัง ปั๊ม ท่อ ของสิ้นเปลือง",
   fields: [
-    { type: "number", key: "people", label: "จำนวนคน", unit: "คน", default: 4, min: 1, max: 100 },
-    { type: "number", key: "floors", label: "ชั้นที่ปั๊มส่ง", unit: "ชั้น", default: 2, min: 1, max: 10 },
+    { type: "number", integer: true, key: "people", label: "จำนวนคน", unit: "คน", default: 4, min: 1, max: 100 },
+    { type: "number", integer: true, key: "floors", label: "ชั้นที่ปั๊มส่ง", unit: "ชั้น", default: 2, min: 1, max: 10 },
     { type: "number", key: "len", label: "ยาวท่อน้ำดีประมาณ", unit: "ม.", default: 12, min: 1, max: 200 },
     { type: "number", key: "drainLen", label: "ยาวท่อน้ำทิ้ง (เส้นยาวสุด)", unit: "ม.", default: 8, min: 1, max: 200, step: 0.5 },
-    { type: "number", key: "joints", label: "ข้อต่อประมาณ", unit: "จุด", default: 20, min: 1, max: 2000 },
+    { type: "number", integer: true, key: "joints", label: "ข้อต่อประมาณ", unit: "จุด", default: 20, min: 1, max: 2000 },
   ],
   calc: (input) => {
     const bad = guardInputs(plumbingJob.fields, input);
