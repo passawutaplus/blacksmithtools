@@ -254,7 +254,7 @@ export function searchCatalog(q: string) {
   return { trades, tools };
 }
 
-const TRADE_ALIASES: Record<string, string[]> = {
+export const TRADE_ALIASES: Record<string, string[]> = {
   hvac: ["แอร์", "เครื่องปรับอากาศ", "น้ำยา", "btu"],
   electrical: ["สายไฟ", "เบรกเกอร์", "แรงดันตก", "โซลาร์", "ไฟ"],
   plumbing: ["ประปา", "ท่อ", "ปั๊ม", "ถังน้ำ"],
@@ -266,7 +266,7 @@ const TRADE_ALIASES: Record<string, string[]> = {
   handyman: ["บิ้วอิน", "พุก", "บันได", "ลามิเนต"],
 };
 
-const TOOL_ALIASES: Record<string, string[]> = {
+export const TOOL_ALIASES: Record<string, string[]> = {
   "hvac/btu": ["ขนาดแอร์", "ตันความเย็น"],
   "hvac/shsc": ["superheat", "subcooling", "sh", "sc", "ความร้อนเกิน", "ความเย็นเกิน"],
   "electrical/cable": ["thw", "เลือกสาย", "วสท"],

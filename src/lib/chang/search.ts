@@ -1,4 +1,4 @@
-import { TRADES } from "./catalog";
+import { TRADES, TOOL_ALIASES as CATALOG_TOOL_ALIASES, TRADE_ALIASES as CATALOG_TRADE_ALIASES } from "./catalog";
 import type { ToolDef, Trade } from "./types";
 
 /**
@@ -164,7 +164,12 @@ function buildIndex() {
   const tools: ToolEntry[] = [];
   const trades: NonNullable<typeof tradeIndex> = [];
   for (const trade of TRADES) {
-    const tradeTerms = [trade.name, trade.short, ...(TRADE_ALIASES[trade.id] ?? [])].map(normalizeSearchText);
+    const tradeTerms = [
+      trade.name,
+      trade.short,
+      ...(TRADE_ALIASES[trade.id] ?? []),
+      ...(CATALOG_TRADE_ALIASES[trade.id] ?? []),
+    ].map(normalizeSearchText);
     trades.push({ trade, name: normalizeSearchText(trade.name), terms: tradeTerms, blurb: normalizeSearchText(trade.blurb) });
     for (const tool of trade.tools) {
       const fieldBits: string[] = [];
@@ -178,7 +183,11 @@ function buildIndex() {
         tool,
         order: order++,
         name: normalizeSearchText(tool.name),
-        keywords: [...(tool.keywords ?? []), ...(TOOL_ALIASES[`${trade.id}/${tool.id}`] ?? [])].map(normalizeSearchText),
+        keywords: [
+          ...(tool.keywords ?? []),
+          ...(TOOL_ALIASES[`${trade.id}/${tool.id}`] ?? []),
+          ...(CATALOG_TOOL_ALIASES[`${trade.id}/${tool.id}`] ?? []),
+        ].map(normalizeSearchText),
         tradeTerms,
         blurb: normalizeSearchText(tool.blurb),
         fieldText: normalizeSearchText(fieldBits.join(" ")),
