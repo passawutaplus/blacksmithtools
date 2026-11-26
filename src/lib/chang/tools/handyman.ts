@@ -1,6 +1,6 @@
-import type { JobDef, ToolDef, Values } from "../types";
+import type { CalcResult, JobDef, ToolDef, Values } from "../types";
 import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
-import { ANCHOR, DISCLAIMER_AB, DISCLAIMER_C, LAMINATE, LED, LED_DRIVER_SIZES, STAIR_LAW, WASTE_DEFAULT } from "../constants";
+import { ANCHOR, CABINET, DISCLAIMER_AB, DISCLAIMER_C, LAMINATE, LED, LED_DRIVER_SIZES, STAIR_LAW, WASTE_DEFAULT } from "../constants";
 
 const HINGE_EDGE: Record<string, number> = { full: 4.5, half: 9.5, inset: 16 };
 
@@ -78,7 +78,7 @@ export function calcHingeQty(v: Values) {
   const drawers = num(v, "drawers", 3);
   const depth = num(v, "depth", 450);
   const per = hingeCount(dh);
-  const slides = SLIDE_SIZES.reduce((b, s) => (s <= depth - 10 ? s : b), 250);
+  const slides = slideFor(depth);
   const chosenIdx = SLIDE_SIZES.indexOf(slides as (typeof SLIDE_SIZES)[number]);
   const ladder = SLIDE_SIZES.slice(Math.max(0, chosenIdx - 2), chosenIdx + 3);
 
@@ -603,6 +603,155 @@ export function calcStair(v: Values) {
   });
 }
 
+/* ─────────── ตู้บิ้วอินจากขนาด ─────────── */
+
+/** รางลิ้นชักไซซ์ที่ใหญ่สุดที่ยังสั้นกว่า (ลึกตู้ − ระยะเผื่อ) — ตู้ตื้นกว่าไซซ์เล็กสุดได้ไซซ์เล็กสุด */
+export function slideFor(depthMm: number): number {
+  return SLIDE_SIZES.reduce<number>((b, s) => (s <= depthMm - CABINET.slideClear.value ? s : b), SLIDE_SIZES[0]);
+}
+
+export function calcCabinet(v: Values): CalcResult {
+  const bad = guard("cabinet", v);
+  if (bad) return bad;
+  const W = num(v, "w", 120) / 100;
+  const H = num(v, "h", 200) / 100;
+  const D = num(v, "d", 60) / 100;
+  const t = num(v, "thick", 16) / 1000;
+  const shelves = num(v, "shelves", 3);
+  const doors = num(v, "doors", 2);
+  const drawers = num(v, "drawers", 0);
+  const parts = num(v, "parts", 0);
+  const back = str(v, "back", "thin");
+  const lam = str(v, "lam", "front");
+  const wastePct = num(v, "waste", CABINET.sheetWaste.value);
+  const dfh = CABINET.drawerFrontH.value;
+  const drawerZone = drawers * dfh;
+  const innerH = H - 2 * t;
+  if (drawerZone > innerH + 1e-9) {
+    return blockedResult({
+      headline: `ลิ้นชัก ${fmt(drawers)} ลิ้น สูงรวม ${fmt(drawerZone * 100)} ซม. เกินความสูงในตู้ (${fmt(innerH * 100)} ซม.) — ลดจำนวนลิ้นชักหรือตรวจความสูงตู้`,
+      rows: [{ label: "หน้าลิ้นชักที่คิด", value: `ลิ้นละ ${fmt(dfh * 100)} ซม.` }],
+      tip: "ตู้เตี้ยใส่ลิ้นชักได้น้อยลง ลิ้นชักเสื้อผ้าทั่วไปสูงลิ้นละ 15–25 ซม.",
+    });
+  }
+  const Wi = W - 2 * t;
+  const doorH = H - drawerZone;
+  const slideMm = slideFor(D * 1000);
+  const boxD = slideMm / 1000;
+  const boxH = Math.max(0, dfh - CABINET.drawerBoxDrop.value);
+
+  // แผ่นหลัก (หนาตามที่กรอก)
+  const aSides = 2 * H * D;
+  const aTopBottom = 2 * Wi * D;
+  const aShelves = shelves * Wi * D;
+  const partH = Math.max(0, innerH - drawerZone);
+  const aParts = parts * partH * D;
+  const aDoors = doors > 0 ? W * doorH : 0;
+  const aFronts = drawerZone > 0 ? W * drawerZone : 0;
+  const aBoxes = drawers * 2 * (boxD + Wi) * boxH;
+  const mainA = aSides + aTopBottom + aShelves + aParts + aDoors + aFronts + aBoxes;
+  // แผ่นบาง: หลังตู้ + พื้นลิ้นชัก
+  const thinA = (back === "thin" ? W * H : 0) + drawers * Wi * boxD;
+  const sheetA = LAMINATE.sheetW.value * LAMINATE.sheetL.value;
+  const k = 1 + wastePct / 100;
+  const mainSheets = ceil((mainA * k) / sheetA);
+  const thinSheets = thinA > 0 ? ceil((thinA * k) / sheetA) : 0;
+
+  const lamA = lam === "none" ? 0 : lam === "all" ? 2 * mainA : 2 * (aDoors + aFronts) + aSides;
+  const lamSheets = lamA > 0 ? ceil((lamA * k) / sheetA) : 0;
+
+  const edgeCarcass = 2 * H + 2 * Wi + shelves * Wi + parts * partH;
+  const edgeDoors = doors > 0 ? 2 * W + 2 * doors * doorH : 0;
+  const edgeFronts = drawers * 2 * (W + dfh);
+  const edgeBoxes = drawers * 2 * (boxD + Wi);
+  const edgeRaw = edgeCarcass + edgeDoors + edgeFronts + edgeBoxes;
+  const edge = edgeRaw * (1 + CABINET.edgeWaste.value / 100);
+
+  const perDoor = doors > 0 ? hingeCount(doorH * 1000) : 0;
+  const hinges = doors * perDoor;
+  const handles = doors + drawers;
+  const pins = shelves * CABINET.shelfPins.value;
+  const oversize = Math.max(H, W) > LAMINATE.sheetL.value + 1e-9;
+  const sheetName = `แผ่น ${fmtTrim(LAMINATE.sheetW.value, 2)}×${fmtTrim(LAMINATE.sheetL.value, 2)} ม. (4×8 ฟุต)`;
+
+  return resultX({
+    title: "ตู้บิ้วอินจากขนาด",
+    headline: `ไม้ ${fmt(t * 1000)} มม. ${fmt(mainSheets)} แผ่น${thinSheets ? ` + แผ่นบาง ${fmt(thinSheets)} แผ่น` : ""}${lamSheets ? ` · ลามิเนต ${fmt(lamSheets)} แผ่น` : ""}`,
+    chart: {
+      kind: "stack",
+      parts: [
+        { label: "ข้าง บน ล่าง ชั้น แผงกั้น", value: aSides + aTopBottom + aShelves + aParts, display: `${fmt(aSides + aTopBottom + aShelves + aParts, 2)} ตร.ม.`, tone: "accent" },
+        { label: "บาน + หน้าลิ้นชัก", value: aDoors + aFronts, display: `${fmt(aDoors + aFronts, 2)} ตร.ม.`, tone: "mute" },
+        { label: "กล่องลิ้นชัก", value: aBoxes, display: `${fmt(aBoxes, 2)} ตร.ม.`, tone: "warn" },
+      ],
+      totalLabel: `ไม้หนา ${fmt(t * 1000)} มม. (ยังไม่เผื่อ)`,
+      totalDisplay: `${fmt(mainA, 2)} ตร.ม.`,
+    },
+    rows: [
+      { label: "ขนาดตู้", value: `กว้าง ${fmt(W * 100)} × สูง ${fmt(H * 100)} × ลึก ${fmt(D * 100)} ซม.` },
+      { label: `ไม้หนา ${fmt(t * 1000)} มม. ${sheetName}`, value: `${fmt(mainSheets)} แผ่น (${fmt(mainA, 2)} ตร.ม. + เผื่อ ${fmt(wastePct)}%)`, emphasize: true },
+      ...(thinSheets ? [{ label: "แผ่นบาง หลังตู้/พื้นลิ้นชัก", value: `${fmt(thinSheets)} แผ่น (${fmt(thinA, 2)} ตร.ม.)`, emphasize: true }] : []),
+      ...(lamSheets ? [{ label: `ลามิเนต ${lam === "all" ? "ทุกแผ่นสองหน้า" : "หน้าบาน + ข้างตู้"}`, value: `${fmt(lamSheets)} แผ่น (${fmt(lamA, 2)} ตร.ม.)`, emphasize: true }] : []),
+      { label: "ขอบ PVC", value: `${fmt(edge, 1)} ม. (รวมเผื่อ ${CABINET.edgeWaste.value}%)`, emphasize: true },
+      ...(doors > 0 ? [{ label: "บานพับถ้วย", value: `${fmt(hinges)} ตัว (บานสูง ${fmt(doorH * 100)} ซม. บานละ ${perDoor} ตัว)`, emphasize: true }] : []),
+      ...(drawers > 0 ? [{ label: "รางลิ้นชัก", value: `${fmt(drawers)} ชุด ยาว ${slideMm} มม.`, emphasize: true }] : []),
+      ...(handles > 0 ? [{ label: "มือจับ", value: `${fmt(handles)} ตัว` }] : []),
+      ...(pins > 0 ? [{ label: "หมุดรับชั้น", value: `${fmt(pins)} ตัว` }] : []),
+      ...(oversize ? [{ label: "แผ่นยาวเกิน", value: `ตู้ยาวหรือสูงเกิน ${fmtTrim(LAMINATE.sheetL.value, 2)} ม. ข้างตู้/แผ่นบนต้องต่อ หรือหาแผ่นยาวพิเศษ`, emphasize: true }] : []),
+    ],
+    tip: "นับตามพื้นที่ + เผื่อ ไม่ใช่ผังตัดจริง ชิ้นใหญ่หลายชิ้นอาจต้องเพิ่มแผ่น วางผังตัดก่อนสั่งถ้าเฉียดจำนวนแผ่น",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-25",
+      summary: "รวมพื้นที่ทุกชิ้นของตู้ (ข้าง บน ล่าง ชั้น แผงกั้น บาน หน้าลิ้นชัก กล่องลิ้นชัก) × (1 + เผื่อ) ÷ พื้นที่แผ่น 4×8 ฟุต แล้วปัดขึ้น · ขอบ PVC ตามขอบหน้าที่มองเห็น · ฮาร์ดแวร์ตามจำนวนบาน/ลิ้นชัก/ชั้น",
+      steps: [
+        {
+          label: "พื้นที่ชิ้นตู้",
+          expr: "ข้าง 2×สูง×ลึก + บน-ล่าง 2×กว้างใน×ลึก + ชั้น×กว้างใน×ลึก + แผงกั้น + บาน + หน้าลิ้นชัก + กล่องลิ้นชัก",
+          subst: `${fmt(aSides, 2)} + ${fmt(aTopBottom, 2)} + ${fmt(aShelves, 2)} + ${fmt(aParts, 2)} + ${fmt(aDoors, 2)} + ${fmt(aFronts, 2)} + ${fmt(aBoxes, 2)} = ${fmt(mainA, 2)} ตร.ม.`,
+          note: `กว้างใน = กว้าง − 2 × หนาไม้ = ${fmt(Wi * 100, 1)} ซม.`,
+        },
+        {
+          label: "แผ่นไม้",
+          expr: `แผ่น = พื้นที่ × (1 + เผื่อ) ÷ ${fmt(sheetA, 3)} ตร.ม. ปัดขึ้น`,
+          subst: `${fmt(mainA, 2)} × ${fmtTrim(k, 2)} ÷ ${fmt(sheetA, 3)} = ${fmt((mainA * k) / sheetA, 2)} → ${fmt(mainSheets)} แผ่น`,
+        },
+        ...(thinSheets
+          ? [{ label: "แผ่นบาง", expr: "หลังตู้ กว้าง×สูง + พื้นลิ้นชัก", subst: `${fmt(thinA, 2)} × ${fmtTrim(k, 2)} ÷ ${fmt(sheetA, 3)} → ${fmt(thinSheets)} แผ่น` }]
+          : []),
+        ...(lamSheets
+          ? [
+              {
+                label: "ลามิเนต",
+                expr: lam === "all" ? "2 หน้า × พื้นที่ชิ้นตู้ทั้งหมด" : "2 หน้า × (บาน + หน้าลิ้นชัก) + ข้างตู้ด้านนอก",
+                subst: `${fmt(lamA, 2)} × ${fmtTrim(k, 2)} ÷ ${fmt(sheetA, 3)} → ${fmt(lamSheets)} แผ่น`,
+                note: "บานปิดลามิเนตสองหน้ากันบานโก่ง",
+              },
+            ]
+          : []),
+        {
+          label: "ขอบ PVC",
+          expr: "ขอบหน้าโครงตู้ + รอบบาน + รอบหน้าลิ้นชัก + ขอบบนกล่องลิ้นชัก",
+          subst: `(${fmt(edgeCarcass, 2)} + ${fmt(edgeDoors, 2)} + ${fmt(edgeFronts, 2)} + ${fmt(edgeBoxes, 2)}) × ${fmtTrim(1 + CABINET.edgeWaste.value / 100, 2)} = ${fmt(edge, 1)} ม.`,
+        },
+        ...(doors > 0 ? [{ label: "บานพับ", expr: "บาน × บานพับต่อบานตามสูงบาน", subst: `${fmt(doors)} × ${perDoor} = ${fmt(hinges)} ตัว` }] : []),
+      ],
+      constants: [LAMINATE.sheetW, LAMINATE.sheetL, CABINET.sheetWaste, CABINET.drawerFrontH, CABINET.drawerBoxDrop, CABINET.edgeWaste, CABINET.shelfPins, CABINET.slideClear],
+      assumptions: [
+        "ตู้กล่องเดียว บานปิดทับเต็มหน้าตู้ ลิ้นชักเรียงอยู่ล่างเต็มความกว้าง บานอยู่เหนือลิ้นชัก",
+        `หน้าลิ้นชักสูงลิ้นละ ${fmt(dfh * 100)} ซม. ชั้นวางยาวเต็มความกว้างใน แผงกั้นสูงเฉพาะช่วงบาน`,
+        "คิดตามพื้นที่ ไม่ได้วางผังตัดจริง ยังไม่รวมขาตู้ ฐาน และบัวบน",
+      ],
+      caveats: [
+        "ถ้ามีชิ้นยาวใกล้ 2.44 ม. หรือกว้างใกล้ 1.22 ม. หลายชิ้น ผังตัดจริงอาจใช้แผ่นมากกว่านี้",
+        "ลายไม้ต้องเรียงทิศเดียวกัน เผื่อเสียเพิ่มถ้าลามิเนตมีลาย",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "แนวปฏิบัติงานเฟอร์นิเจอร์บิ้วอิน (แผ่น 4×8 ฟุต ขอบ PVC ฮาร์ดแวร์)" }],
+    },
+  });
+}
+
 export const handymanTools: ToolDef[] = [
   {
     id: "hinge",
@@ -710,6 +859,45 @@ export const handymanTools: ToolDef[] = [
       { type: "number", key: "r", label: "ลูกตั้งเป้า", unit: "ซม.", default: 17, min: 15, max: 22, step: 0.5 },
     ],
     calc: calcStair,
+  },
+  {
+    id: "cabinet",
+    name: "ตู้บิ้วอินจากขนาด",
+    blurb: "แผ่นไม้ ลามิเนต ขอบ PVC ฮาร์ดแวร์",
+    keywords: ["ตู้", "ตู้เสื้อผ้า", "ตู้บิ้วอิน", "ปาร์ติเกิล", "ขอบ pvc", "แผ่น 4x8"],
+    fields: [
+      { type: "number", key: "w", label: "กว้างตู้", unit: "ซม.", default: 120, min: 30, max: 400 },
+      { type: "number", key: "h", label: "สูงตู้", unit: "ซม.", default: 200, min: 30, max: 300 },
+      { type: "number", key: "d", label: "ลึกตู้", unit: "ซม.", default: 60, min: 30, max: 100 },
+      { type: "number", key: "thick", label: "ไม้หนา", unit: "มม.", default: 16, min: 9, max: 25 },
+      { type: "number", key: "shelves", label: "ชั้นวาง", unit: "ชั้น", default: 3, min: 0, max: 20 },
+      { type: "number", key: "doors", label: "บานประตู", unit: "บาน", default: 2, min: 0, max: 10 },
+      { type: "number", key: "drawers", label: "ลิ้นชัก", unit: "ลิ้น", default: 0, min: 0, max: 8 },
+      { type: "number", key: "parts", label: "แผงกั้นกลาง", unit: "แผ่น", default: 0, min: 0, max: 10 },
+      {
+        type: "select",
+        key: "back",
+        label: "หลังตู้",
+        default: "thin",
+        options: [
+          { value: "thin", label: "แผ่นบางปิดหลัง" },
+          { value: "none", label: "ไม่มี (ชิดผนัง)" },
+        ],
+      },
+      {
+        type: "select",
+        key: "lam",
+        label: "ปิดลามิเนต",
+        default: "front",
+        options: [
+          { value: "front", label: "หน้าบาน + ข้างตู้ด้านนอก" },
+          { value: "all", label: "ทุกแผ่นสองหน้า" },
+          { value: "none", label: "ไม่ปิด (ไม้เมลามีนสำเร็จ)" },
+        ],
+      },
+      { type: "number", key: "waste", label: "เผื่อเสียแผ่น", unit: "%", default: CABINET.sheetWaste.value, min: 0, max: 40 },
+    ],
+    calc: calcCabinet,
   },
 ];
 

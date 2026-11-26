@@ -1,6 +1,6 @@
-import type { JobDef, ToolDef, Values } from "../types";
-import { ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, stockPieces, str, withDefaults } from "../math";
-import { CEILING, DISCLAIMER_AB, WASTE_DEFAULT } from "../constants";
+import type { CalcResult, JobDef, ToolDef, Values } from "../types";
+import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, stockPieces, str, withDefaults } from "../math";
+import { CEILING, DISCLAIMER_AB, GYP_FINISH, PARTITION, WASTE_DEFAULT } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(ceilingTools, id, v);
 
@@ -336,6 +336,146 @@ export function calcHardware(v: Values) {
   });
 }
 
+/* ─────────── ผนังเบา C-stud / U-track ─────────── */
+
+/** สกรูต่อแผ่นผนังเบา 1.2×2.4 ม. (แผ่นตั้ง): แนวโครงใต้แผ่นตามระยะ C-stud × สกรูต่อแนวตามระยะสกรู */
+export function wallScrewsPerBoard(spacing: number): number {
+  const lines = Math.round(CEILING.boardW.value / spacing) + 1;
+  const perLine = Math.ceil(CEILING.boardL.value / CEILING.screwSpacing.value - 1e-9) + 1;
+  return lines * perLine;
+}
+
+/** โครงหนึ่งแนวต้องใช้กี่เส้น: สูงไม่เกินเส้นใช้เส้นเดียว สูงกว่านั้นต่อทับกันตามระยะทับต่อ */
+export function studsPerLine(h: number, stock: number): number {
+  if (h <= stock + 1e-9) return 1;
+  return 1 + ceil((h - stock) / (stock - PARTITION.spliceLap.value));
+}
+
+export function calcPartition(v: Values): CalcResult {
+  const bad = guard("partition", v);
+  if (bad) return bad;
+  const L = num(v, "l", 4);
+  const H = num(v, "h", 2.6);
+  const spacing = num(v, "spacing", 60) / 100;
+  const layers = num(v, "layers", 1);
+  const sides = num(v, "sides", 2);
+  const doors = num(v, "doors", 1);
+  const stock = num(v, "stock", PARTITION.stock.value);
+  const wastePct = num(v, "waste", WASTE_DEFAULT.value);
+  const doorW = PARTITION.doorW.value;
+  if (doors * doorW >= L - 1e-9) {
+    return blockedResult({
+      headline: `ช่องประตูรวม ${fmtTrim(doors * doorW, 2)} ม. กว้างเท่าหรือเกินผนัง (${fmtTrim(L, 2)} ม.) — ตรวจความยาวผนังกับจำนวนประตู`,
+      tip: "ลดจำนวนประตู หรือตรวจความยาวผนังอีกครั้ง",
+    });
+  }
+  const lines = ceil(L / spacing) + 1 + doors * 2;
+  const perLine = studsPerLine(H, stock);
+  const studSticks = lines * perLine;
+  const trackM = 2 * L;
+  const trackSticks = ceil(trackM / stock);
+  const doorArea = doors * doorW * Math.min(PARTITION.doorH.value, H);
+  const faceArea = L * H - doorArea;
+  const boardNeed = (faceArea * sides * layers * (1 + wastePct / 100)) / CEILING.boardArea.value;
+  const boards = ceil(boardNeed);
+  const perBoard = wallScrewsPerBoard(spacing);
+  const screws = boards * perBoard;
+  const screwBoxes = ceil(screws / PARTITION.screwBox.value);
+  const frameScrews = lines * PARTITION.frameScrews.value;
+  const fixings = 2 * (ceil(L / PARTITION.trackFix.value) + 1);
+  // เทปปิดรอยต่อเฉพาะแผ่นชั้นนอก: รอยต่อตั้งทุกความกว้างแผ่น + รอยต่อนอนเมื่อผนังสูงกว่าแผ่น
+  const vJoints = Math.max(0, ceil(L / CEILING.boardW.value) - 1) * H;
+  const hJoints = H > CEILING.boardL.value + 1e-9 ? L * (ceil(H / CEILING.boardL.value) - 1) : 0;
+  const tapeM = sides * (vJoints + hJoints);
+  const tapeRolls = ceil(tapeM / GYP_FINISH.tapeRoll.value);
+  const compoundKg = faceArea * sides * GYP_FINISH.compound.value;
+  const compoundBags = ceil(compoundKg / GYP_FINISH.compoundBag.value);
+  const tall = H > PARTITION.heightCheck.value + 1e-9;
+
+  return resultX({
+    title: "ผนังเบา C-stud / U-track",
+    headline: `C-stud ${fmt(studSticks)} เส้น · U-track ${fmt(trackSticks)} เส้น · ยิปซัม ${fmt(boards)} แผ่น`,
+    chart: {
+      kind: "packs",
+      unitLabel: "แผ่น 1.2×2.4 ม.",
+      count: boards,
+      lastUsed: boardNeed - Math.floor(boardNeed) || 1,
+      note: `ผิวผนัง ${fmt(faceArea, 2)} ตร.ม. × ${fmt(sides)} ด้าน × ${fmt(layers)} ชั้น + เผื่อ ${fmt(wastePct)}%`,
+    },
+    rows: [
+      { label: "ผนัง", value: `ยาว ${fmtTrim(L, 2)} × สูง ${fmtTrim(H, 2)} ม. · ประตู ${fmt(doors)} ช่อง` },
+      { label: `C-stud (ระยะ ${fmt(spacing * 100)} ซม.)`, value: `${fmt(lines)} แนว × ${fmt(perLine)} = ${fmt(studSticks)} เส้น (เส้นละ ${fmtTrim(stock, 2)} ม.)`, emphasize: true },
+      { label: "U-track บน + ล่าง", value: `${fmt(trackM, 1)} ม. = ${fmt(trackSticks)} เส้น`, emphasize: true },
+      { label: `แผ่นยิปซัม ${fmt(sides)} ด้าน ${layers === 2 ? "2 ชั้น" : "ชั้นเดียว"}`, value: `${fmt(boards)} แผ่น`, emphasize: true },
+      { label: "สกรูยิงแผ่น", value: `${fmt(screws)} ตัว ≈ ${fmt(screwBoxes)} กล่อง (${fmt(perBoard)} ตัว/แผ่น)` },
+      { label: "สกรูยึดโครง", value: `${fmt(frameScrews)} ตัว` },
+      { label: "พุก/ตะปูยิงยึดราง", value: `${fmt(fixings)} ตัว (ทุก ${fmtTrim(PARTITION.trackFix.value, 2)} ม.)` },
+      { label: "เทปปิดรอยต่อ", value: tapeM > 0 ? `${fmt(tapeM, 1)} ม. = ${fmt(tapeRolls)} ม้วน` : "ไม่มีรอยต่อกลางผนัง" },
+      { label: "ปูนฉาบรอยต่อ", value: `${fmt(compoundKg, 1)} กก. = ${fmt(compoundBags)} ถุง` },
+      ...(tall ? [{ label: "ผนังสูง", value: `เกิน ${fmtTrim(PARTITION.heightCheck.value, 2)} ม. เช็กตารางผู้ผลิตว่าใช้ C-stud ขนาดไหน ระยะเท่าไร`, emphasize: true }] : []),
+    ],
+    tip: tall
+      ? "ผนังสูงใช้ C-stud ตัวใหญ่ขึ้นหรือถี่ขึ้น ดูตารางผู้ผลิต อย่าใช้ระยะเดียวกับผนังสูงปกติ"
+      : "แขวนตู้/ทีวีบนผนังเบา ฝังไม้หรือเหล็กเสริมในโครงก่อนปิดแผ่น ประตูเสริมโครงคู่ข้างวงกบ",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary: "C-stud = (ยาว ÷ ระยะโครง + 1 + ข้างประตูข้างละ 1) แนว · U-track = บน + ล่าง · แผ่น = ผิวผนังหักประตู × ด้าน × ชั้น ÷ 2.88 ตร.ม.",
+      steps: [
+        {
+          label: "แนว C-stud",
+          expr: "ปัดขึ้น(ยาว ÷ ระยะ) + 1 + ประตู × 2",
+          subst: `ปัดขึ้น(${fmtTrim(L, 2)} ÷ ${fmtTrim(spacing, 2)}) + 1 + ${fmt(doors)} × 2 = ${fmt(lines)} แนว`,
+        },
+        {
+          label: "เส้นต่อแนว",
+          expr: `สูง ≤ ยาวเส้น → 1 เส้น · สูงกว่า → ต่อทับกัน ${PARTITION.spliceLap.value} ม.`,
+          subst: `สูง ${fmtTrim(H, 2)} ม. เส้น ${fmtTrim(stock, 2)} ม. → ${fmt(perLine)} เส้น/แนว → ${fmt(studSticks)} เส้น`,
+        },
+        { label: "U-track", expr: "2 × ยาว ÷ ยาวเส้น ปัดขึ้น", subst: `2 × ${fmtTrim(L, 2)} ÷ ${fmtTrim(stock, 2)} = ${fmt(trackSticks)} เส้น`, note: "รางล่างที่ตัดออกตรงประตูเอาไปทำทับหลังประตู" },
+        {
+          label: "แผ่นยิปซัม",
+          expr: `(ยาว × สูง − ประตู × ${doorW} × ${PARTITION.doorH.value}) × ด้าน × ชั้น × (1 + เผื่อ) ÷ ${CEILING.boardArea.value}`,
+          subst: `${fmt(faceArea, 2)} × ${fmt(sides)} × ${fmt(layers)} × ${fmtTrim(1 + wastePct / 100, 2)} ÷ ${CEILING.boardArea.value} = ${fmt(boardNeed, 2)} → ${fmt(boards)} แผ่น`,
+        },
+        { label: "สกรูยิงแผ่น", expr: "แผ่น × (แนวโครงใต้แผ่น × สกรูต่อแนว)", subst: `${fmt(boards)} × ${fmt(perBoard)} = ${fmt(screws)} ตัว` },
+        {
+          label: "เทปรอยต่อ",
+          expr: "ด้าน × (รอยต่อตั้ง × สูง + รอยต่อนอน × ยาว)",
+          subst: `${fmt(sides)} × (${fmt(vJoints, 2)} + ${fmt(hJoints, 2)}) = ${fmt(tapeM, 1)} ม. → ${fmt(tapeRolls)} ม้วน`,
+        },
+        { label: "ปูนฉาบรอยต่อ", expr: `ผิวผนัง × ด้าน × ${GYP_FINISH.compound.value} กก./ตร.ม.`, subst: `${fmt(faceArea, 2)} × ${fmt(sides)} × ${GYP_FINISH.compound.value} = ${fmt(compoundKg, 1)} กก.` },
+      ],
+      constants: [
+        CEILING.boardArea,
+        CEILING.screwSpacing,
+        PARTITION.stock,
+        PARTITION.spliceLap,
+        PARTITION.doorW,
+        PARTITION.doorH,
+        PARTITION.trackFix,
+        PARTITION.frameScrews,
+        PARTITION.screwBox,
+        PARTITION.heightCheck,
+        GYP_FINISH.tapeRoll,
+        GYP_FINISH.compound,
+        GYP_FINISH.compoundBag,
+      ],
+      assumptions: [
+        "ผนังตรงช่วงเดียว แผ่นยิปซัม 1.2×2.4 ม. ติดแนวตั้ง",
+        "แผ่น 2 ชั้นใช้สกรูต่อแผ่นเท่ากับชั้นเดียว (ชั้นในบางระบบยิงห่างกว่า ใช้น้อยกว่านี้)",
+        "C-stud ช่วงเหนือประตูใช้เศษจากเส้นเต็ม ไม่ได้นับเพิ่ม",
+      ],
+      caveats: [
+        "ระยะโครงและขนาด C-stud ต้องตรงกับตารางความสูงผนังของผู้ผลิตโครง ผนังสูงหรือบุกระเบื้องต้องถี่ขึ้น",
+        "ของหนักบนผนังเบาต้องเสริมโครงเฉพาะจุด ห้ามยึดแผ่นยิปซัมอย่างเดียว",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "คู่มือระบบผนังเบาของผู้ผลิตแผ่นยิปซัม/โครงเหล็กชุบ (ระยะโครง ความสูงสูงสุด)" }],
+    },
+  });
+}
+
 const room = [
   { type: "number" as const, key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 1, max: 100, step: 0.1 },
   { type: "number" as const, key: "l", label: "ยาว", unit: "ม.", default: 5, min: 1, max: 100, step: 0.1 },
@@ -407,6 +547,50 @@ export const ceilingTools: ToolDef[] = [
     calc: calcInsulation,
   },
   { id: "hardware", name: "สกรู + ฉาบรอยต่อ", blurb: "ของเก็บผิวฝ้า", fields: room, calc: calcHardware },
+  {
+    id: "partition",
+    name: "ผนังเบา C-stud / U-track",
+    blurb: "โครง แผ่น สกรู เทป ปูนฉาบ",
+    keywords: ["ผนังเบา", "c-stud", "u-track", "ผนังยิปซัม", "กั้นห้อง"],
+    fields: [
+      { type: "number", key: "l", label: "ยาวผนัง", unit: "ม.", default: 4, min: 1, max: 100, step: 0.1 },
+      { type: "number", key: "h", label: "สูงผนัง", unit: "ม.", default: 2.6, min: 1, max: 6, step: 0.05 },
+      {
+        type: "select",
+        key: "spacing",
+        label: "ระยะ C-stud",
+        default: "60",
+        options: [
+          { value: "60", label: "60 ซม. (ผนังทั่วไป)" },
+          { value: "40", label: "40 ซม. (บุกระเบื้อง / แข็งแรงขึ้น)" },
+        ],
+      },
+      {
+        type: "select",
+        key: "layers",
+        label: "แผ่นต่อด้าน",
+        default: "1",
+        options: [
+          { value: "1", label: "ชั้นเดียว" },
+          { value: "2", label: "2 ชั้น (กันเสียง/กันไฟ)" },
+        ],
+      },
+      {
+        type: "select",
+        key: "sides",
+        label: "ปิดแผ่น",
+        default: "2",
+        options: [
+          { value: "2", label: "สองด้าน" },
+          { value: "1", label: "ด้านเดียว" },
+        ],
+      },
+      { type: "number", key: "doors", label: "ช่องประตู", unit: "ช่อง", default: 1, min: 0, max: 4 },
+      { type: "number", key: "stock", label: "โครงยาวเส้นละ", unit: "ม.", default: PARTITION.stock.value, min: 2, max: 6, step: 0.1 },
+      { type: "number", key: "waste", label: "เผื่อเสียแผ่น", unit: "%", default: WASTE_DEFAULT.value, min: 0, max: 25 },
+    ],
+    calc: calcPartition,
+  },
 ];
 
 export const ceilingJob: JobDef = {

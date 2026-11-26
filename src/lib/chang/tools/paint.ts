@@ -1,6 +1,6 @@
-import type { JobDef, ToolDef, Values } from "../types";
+import type { CalcResult, JobDef, ToolDef, Values } from "../types";
 import { blockedResult, bool, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, str, withDefaults } from "../math";
-import { DISCLAIMER_AB, PAINT_PACKS, UNIT, WALLPAPER } from "../constants";
+import { DISCLAIMER_AB, PAINT_COVER, PAINT_PACKS, PAINT_QUARTER, PAINT_SURFACES, UNIT, WALLPAPER } from "../constants";
 
 function wallBreakdown(v: Values) {
   const l = num(v, "l", 5);
@@ -416,6 +416,115 @@ export function calcConsumables(v: Values) {
   });
 }
 
+/* ─────────── ระบบสีตามผิว ─────────── */
+
+/**
+ * สีสูตรน้ำมันขายเป็นแกลลอนกับกระป๋อง 1/4 แกลลอน: แกลลอนเต็มก่อน เศษปัดขึ้นเป็นกระป๋อง 1/4
+ * ถ้าเศษต้องใช้ 3 กระป๋องขึ้นไป ซื้อแกลลอนเดียวแทน (ปริมาณใกล้กัน ราคาต่อลิตรถูกกว่า)
+ */
+export function solventPacks(gals: number): { totalGal: number; text: string } {
+  const q = PAINT_QUARTER.value;
+  let full = Math.floor(Math.max(0, gals) + 1e-9);
+  let quarters = ceil((Math.max(0, gals) - full) / q);
+  if (quarters >= 3) {
+    full += 1;
+    quarters = 0;
+  }
+  const parts = [...(full > 0 ? [`${full} แกลลอน`] : []), ...(quarters > 0 ? [`${quarters} กระป๋อง 1/4 แกลลอน`] : [])];
+  return { totalGal: full + quarters * q, text: parts.length ? parts.join(" + ") : "0 แกลลอน" };
+}
+
+export function calcPaintSystem(v: Values): CalcResult {
+  const bad = guardTool(paintTools, "system", v);
+  if (bad) return bad;
+  const area = num(v, "area", 30);
+  const surfKey = str(v, "surface", "new");
+  const sys = PAINT_SURFACES[surfKey] ?? PAINT_SURFACES.new;
+  const outside = str(v, "loc", "in") === "out";
+  const topOverride = num(v, "topCoats", 0);
+  const topCoats = topOverride > 0 ? topOverride : sys.topCoats;
+  const primerRef = PAINT_COVER[sys.primer];
+  const topRef = PAINT_COVER[sys.top];
+  const primerL = (area * sys.primerCoats) / primerRef.value;
+  const topL = (area * topCoats) / topRef.value;
+  const gal = UNIT.gallon.value;
+  const waterSizes = PAINT_PACKS[str(v, "packs", "std") as keyof typeof PAINT_PACKS] ?? PAINT_PACKS.std;
+  // รองพื้นไม้/เหล็ก และสีน้ำมัน ขายเป็นแกลลอนกับกระป๋อง 1/4 ไม่มีถังใหญ่
+  const pack = (gals: number) => (sys.solvent ? solventPacks(gals) : paintPacks(gals, waterSizes));
+  const sizes = sys.solvent ? [1, PAINT_QUARTER.value] : waterSizes;
+  const primerPack = pack(primerL / gal);
+  const topPack = pack(topL / gal);
+  const topName =
+    sys.top === "enamel"
+      ? "สีน้ำมันเคลือบเงา"
+      : outside
+        ? "สีน้ำอะคริลิกภายนอก"
+        : "สีน้ำอะคริลิกภายใน";
+  const primerName = primerRef.label;
+
+  return resultX({
+    title: "ระบบสีตามผิว",
+    headline: `${sys.label}: ${primerName} ${sys.primerCoats} เที่ยว + ${topName} ${topCoats} เที่ยว`,
+    chart: {
+      kind: "stack",
+      parts: [
+        { label: `${primerName} ${sys.primerCoats} เที่ยว`, value: primerL, display: `${fmt(primerL, 1)} ล.`, tone: "mute" },
+        { label: `${topName} ${topCoats} เที่ยว`, value: topL, display: `${fmt(topL, 1)} ล.`, tone: "accent" },
+      ],
+      totalLabel: "เนื้อสีที่ใช้จริง",
+      totalDisplay: `${fmt(primerL + topL, 1)} ล.`,
+    },
+    rows: [
+      { label: "ผิวที่ทา", value: `${sys.label} · ${outside ? "ภายนอก" : "ภายใน"} · ${fmt(area, 2)} ตร.ม.` },
+      { label: "เตรียมผิว", value: sys.prep },
+      { label: `รองพื้น: ${primerName}`, value: `${sys.primerCoats} เที่ยว · ${fmt(primerL, 1)} ล.` },
+      { label: "สั่งรองพื้น", value: `${primerPack.text} (${fmt(primerPack.totalGal * gal, 1)} ล.)`, emphasize: true },
+      { label: `ทับหน้า: ${topName}`, value: `${topCoats} เที่ยว · ${fmt(topL, 1)} ล.` },
+      { label: "สั่งทับหน้า", value: `${topPack.text} (${fmt(topPack.totalGal * gal, 1)} ล.)`, emphasize: true },
+    ],
+    tip: sys.solvent
+      ? "สีน้ำมันผสมทินเนอร์ตามฉลาก ใช้ยี่ห้อเดียวกันทั้งรองพื้นและทับหน้า กันสีย่น"
+      : surfKey === "damp"
+        ? "ผนังชื้นทาไปก็ร่อน ต้องแก้น้ำซึมก่อน แล้วรอผนังแห้งตามที่ฉลากรองพื้นกำหนด"
+        : "รองพื้นกับทับหน้าใช้ระบบเดียวกันของยี่ห้อเดียว สั่ง Lot เดียวกันสีไม่เพี้ยน",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary: "เลือกรองพื้นและสีทับหน้าตามชนิดผิว แล้วคิดลิตร = พื้นที่ × เที่ยว ÷ ความครอบคลุมต่อลิตร จัดเป็นขนาดบรรจุที่ร้านขาย",
+      steps: [
+        { label: "ระบบสีของผิวนี้", expr: "ผิว → รองพื้น + เที่ยว · ทับหน้า + เที่ยว", subst: `${sys.label} → ${primerName} ${sys.primerCoats} + ${topName} ${topCoats}${topOverride > 0 ? " (กำหนดเที่ยวเอง)" : ""}` },
+        {
+          label: "รองพื้น",
+          expr: "ลิตร = พื้นที่ × เที่ยว ÷ ครอบคลุม (ตร.ม./ล.)",
+          subst: `${fmt(area, 2)} × ${sys.primerCoats} ÷ ${fmtTrim(primerRef.value, 1)} = ${fmt(primerL, 2)} ล. → ${primerPack.text}`,
+        },
+        {
+          label: "ทับหน้า",
+          expr: "ลิตร = พื้นที่ × เที่ยว ÷ ครอบคลุม (ตร.ม./ล.)",
+          subst: `${fmt(area, 2)} × ${topCoats} ÷ ${fmtTrim(topRef.value, 1)} = ${fmt(topL, 2)} ล. → ${topPack.text}`,
+        },
+        {
+          label: "จัดเป็นขนาดบรรจุ",
+          expr: `เลือกชุด (${sizes.map((x) => fmtTrim(x, 2)).join(" / ")} แกลลอน × ${gal} ล.) ที่ปริมาตรรวมน้อยสุดแต่ยังพอ`,
+          subst: `รองพื้น ${primerPack.text} · ทับหน้า ${topPack.text}`,
+        },
+      ],
+      constants: [primerRef, topRef, UNIT.gallon, ...(sys.solvent ? [PAINT_QUARTER] : [UNIT.paintPail])],
+      assumptions: [
+        "ระบบสีพื้นฐานตามแนวปฏิบัติผู้ผลิตสีในไทย ไม่ใช่สเปกของยี่ห้อใด",
+        "ความครอบคลุมเป็นค่ากลางบนผิวเรียบ ทาด้วยลูกกลิ้ง/แปรง",
+      ],
+      caveats: [
+        ...(surfKey === "galv" ? ["เหล็กชุบกัลวาไนซ์ห้ามทากันสนิมเรดออกไซด์หรือสีน้ำมันทั่วไปตรง ๆ สีจะลอกเป็นแผ่น"] : []),
+        ...(surfKey === "damp" ? ["รองพื้นกันชื้นช่วยได้เฉพาะความชื้นที่ฉลากรับได้ ถ้าน้ำยังซึมเข้าผนังอยู่ สีจะพองทุกระบบ"] : []),
+        "ค่าความครอบคลุมบนฉลากเป็นค่าห้องแล็บ หน้างานมักได้น้อยกว่า 10–20%",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "TDS สีรองพื้น/สีทับหน้า (ความครอบคลุมต่อลิตร จำนวนเที่ยว)" }, { label: "ISO 2808 การวัดความหนาฟิล์มสี" }],
+    },
+  });
+}
+
 const sizeOnly = [
   { type: "number" as const, key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 1, max: 100, step: 0.1 },
   { type: "number" as const, key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 1, max: 100, step: 0.1 },
@@ -490,6 +599,35 @@ export const paintTools: ToolDef[] = [
     calc: calcWallpaper,
   },
   { id: "consumables", name: "วัสดุสิ้นเปลือง", blurb: "เทป ลูกกลิ้ง ผ้าคลุม", fields: [...room, ...areaExtras], calc: calcConsumables },
+  {
+    id: "system",
+    name: "ระบบสีตามผิว",
+    blurb: "รองพื้นอะไร กี่เที่ยว กี่ลิตร",
+    keywords: ["รองพื้น", "กันสนิม", "สีน้ำมัน", "กัลวาไนซ์", "ปูนชื้น", "ด่าง", "สีไม้", "สีเหล็ก"],
+    fields: [
+      { type: "number", key: "area", label: "พื้นที่ทา", unit: "ตร.ม.", default: 30, min: 0.5, max: 10000, step: 0.5 },
+      {
+        type: "select",
+        key: "surface",
+        label: "ผิวที่ทา",
+        default: "new",
+        options: Object.entries(PAINT_SURFACES).map(([value, s]) => ({ value, label: s.label })),
+      },
+      {
+        type: "select",
+        key: "loc",
+        label: "ทาที่",
+        default: "in",
+        options: [
+          { value: "in", label: "ภายใน" },
+          { value: "out", label: "ภายนอก" },
+        ],
+      },
+      { type: "number", key: "topCoats", label: "เที่ยวทับหน้า (0 = ตามระบบ)", unit: "เที่ยว", default: 0, min: 0, max: 4 },
+      packField,
+    ],
+    calc: calcPaintSystem,
+  },
 ];
 
 const COND_LABEL: Record<string, string> = {

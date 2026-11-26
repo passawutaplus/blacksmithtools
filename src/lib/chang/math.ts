@@ -3,6 +3,7 @@ import type {
   CalcResult,
   ChartSpec,
   Field,
+  FieldWhen,
   FormulaExplain,
   ResultRow,
   RiskTier,
@@ -102,11 +103,14 @@ export function fmtInchFraction(inches: number, den = 16): string {
   return f.whole > 0 ? `${f.whole} ${f.num}/${f.den}` : `${f.num}/${f.den}`;
 }
 
+function whenHolds(when: FieldWhen, values: Values): boolean {
+  const current = String(values[when.key] ?? "");
+  const allowed = Array.isArray(when.is) ? when.is : [when.is];
+  return allowed.includes(current) && (!when.and || whenHolds(when.and, values));
+}
+
 export function fieldVisible(field: Field, values: Values): boolean {
-  if (!field.when) return true;
-  const current = String(values[field.when.key] ?? "");
-  const allowed = Array.isArray(field.when.is) ? field.when.is : [field.when.is];
-  return allowed.includes(current);
+  return !field.when || whenHolds(field.when, values);
 }
 
 export function visibleFields(fields: Field[], values: Values): Field[] {

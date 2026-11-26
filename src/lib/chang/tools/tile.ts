@@ -1,6 +1,7 @@
-import type { JobDef, ToolDef, Values } from "../types";
-import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
-import { ADHESIVE_PER_TROWEL, DISCLAIMER_AB, GROUT_BAGS, GROUT_DENSITY, TILE, TILE_WASTE } from "../constants";
+import type { CalcResult, JobDef, ToolDef, Values } from "../types";
+import { blockedResult, bool, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
+import { ADHESIVE_PER_TROWEL, BATHROOM, DISCLAIMER_AB, GROUT_BAGS, GROUT_DENSITY, TILE, TILE_LAYOUT, TILE_WASTE, WATERPROOF } from "../constants";
+import { calcWpBathroom, WP_BATH_DEFAULTS } from "./waterproof";
 
 const TILES: Record<string, { w: number; h: number }> = {
   "20": { w: 0.2, h: 0.2 },
@@ -207,6 +208,13 @@ export function calcTileQty(v: Values) {
   });
 }
 
+/** อัตราใช้ยาแนว (กก./ตร.ม.) ตามสูตร TDS/ISO 13007: (L + W) ÷ (L × W) × ลึก × กว้าง × ความหนาแน่น — L, W เป็น มม. */
+export function groutKgPerM2(t: { w: number; h: number }, jointMm: number, depthMm: number, density: number): number {
+  const L = t.w * 1000;
+  const W = t.h * 1000;
+  return ((L + W) / (L * W)) * depthMm * jointMm * density;
+}
+
 export function calcGrout(v: Values) {
   const bad = guard("grout", v);
   if (bad) return bad;
@@ -219,7 +227,7 @@ export function calcGrout(v: Values) {
   const t = TILES[size] ?? TILES["60"];
   const L = t.w * 1000;
   const W = t.h * 1000;
-  const kgM2 = ((L + W) / (L * W)) * thick * joint * density.value;
+  const kgM2 = groutKgPerM2(t, joint, thick, density.value);
   const waste = 1 + TILE.groutWaste.value / 100;
   const kg = kgM2 * net * waste;
   const bagKey = str(v, "groutBag", "5");
@@ -537,6 +545,273 @@ export function calcTrim(v: Values) {
   });
 }
 
+/* ─────────── แบ่งแผ่น / หาศูนย์เริ่มปู ─────────── */
+
+/** เศษริมที่แคบกว่านี้ (ม.) ถือว่าลงพอดี — ค่าความคลาดเคลื่อนของการคิด ไม่ใช่ค่าหน้างาน */
+const CUT_TOL = 0.0005;
+
+export type LayoutMode = "tile" | "joint" | "wall";
+
+/**
+ * วางแผ่นแนวเดียว: คืนจำนวนแผ่นเต็มและความกว้างเศษริมแต่ละชิ้น (ม.)
+ * tile = กึ่งกลางแผ่นทับเส้นกลางห้อง · joint = ร่องยาแนวทับเส้นกลางห้อง · wall = เริ่มชนผนังด้านหนึ่ง
+ * เศษริม = ที่เหลือหลังแผ่นเต็มแผ่นสุดท้ายหักร่องอีกหนึ่งร่อง (ไม่รวมระยะเว้นชิดผนัง)
+ */
+export function centreLayout(len: number, t: number, j: number, mode: LayoutMode): { full: number; cuts: number[] } {
+  const mod = t + j;
+  const piece = (r: number) => r - j;
+  if (mode === "wall") {
+    const n = Math.floor((len + j) / mod + 1e-9);
+    if (n === 0) return { full: 0, cuts: [len] };
+    const c = piece(len + j - n * mod);
+    return { full: n, cuts: c > CUT_TOL ? [c] : [] };
+  }
+  const half = len / 2;
+  if (mode === "tile") {
+    const s = half - t / 2;
+    // ห้องแคบกว่าแผ่น: แผ่นกลางต้องตัดเหลือเท่าห้อง
+    if (s < -1e-9) return { full: 0, cuts: [len] };
+    const n = Math.floor(s / mod + 1e-9);
+    const c = piece(s - n * mod);
+    return { full: 2 * n + 1, cuts: c > CUT_TOL ? [c, c] : [] };
+  }
+  const s = half + j / 2;
+  const n = Math.floor(s / mod + 1e-9);
+  const c = piece(s - n * mod);
+  return { full: 2 * n, cuts: c > CUT_TOL ? [c, c] : [] };
+}
+
+const MODE_LABEL: Record<LayoutMode, string> = {
+  tile: "กลางแผ่นทับเส้นกลางห้อง",
+  joint: "ร่องยาแนวทับเส้นกลางห้อง",
+  wall: "เริ่มชนผนังด้านหนึ่ง",
+};
+
+function planText(p: { full: number; cuts: number[] }): string {
+  if (p.cuts.length === 0) return `เต็ม ${fmt(p.full)} แผ่น ลงพอดีไม่มีเศษ`;
+  if (p.full === 0) return `ห้องแคบกว่าแผ่น ตัดแผ่นเดียวเหลือ ${fmt(p.cuts[0] * 100, 1)} ซม.`;
+  const each = p.cuts.length === 2 ? `เศษริมข้างละ ${fmt(p.cuts[0] * 100, 1)} ซม.` : `เศษริมด้านเดียว ${fmt(p.cuts[0] * 100, 1)} ซม.`;
+  return `เต็ม ${fmt(p.full)} แผ่น + ${each}`;
+}
+
+/** เศษเล็กสุดของแผน (ไม่มีเศษ = เท่าแผ่นเต็ม) */
+function smallest(p: { cuts: number[] }, t: number): number {
+  return p.cuts.length ? Math.min(...p.cuts) : t;
+}
+
+export function calcLayout(v: Values): CalcResult {
+  const bad = guardTool(tileTools, "layout", v);
+  if (bad) return bad;
+  const len = num(v, "len", 3.2);
+  const t = num(v, "tile", 60) / 100;
+  const j = num(v, "joint", 2) / 1000;
+  const gap = num(v, "gap", 0) / 1000;
+  const mode = (str(v, "mode", "tile") === "joint" ? "joint" : "tile") as LayoutMode;
+  const other: LayoutMode = mode === "tile" ? "joint" : "tile";
+  const eff = len - 2 * gap;
+  const minCut = t * TILE_LAYOUT.minCut.value;
+  const plan = centreLayout(eff, t, j, mode);
+  const alt = centreLayout(eff, t, j, other);
+  const wall = centreLayout(eff, t, j, "wall");
+  const small = smallest(plan, t) < minCut - 1e-9;
+  const altBetter = smallest(alt, t) > smallest(plan, t) + 1e-9;
+  const cutsTotal = plan.cuts.reduce((s, c) => s + c, 0);
+  const tilesSpan = eff - cutsTotal;
+
+  const parts = [
+    ...(plan.cuts.length === 2 ? [{ label: "เศษริมซ้าย", value: plan.cuts[0], display: `${fmt(plan.cuts[0] * 100, 1)} ซม.`, tone: (small ? "bad" : "mute") as "bad" | "mute" }] : []),
+    { label: `แผ่นเต็ม ${fmt(plan.full)} แผ่น + ร่อง`, value: Math.max(0, tilesSpan), display: `${fmt(Math.max(0, tilesSpan) * 100, 1)} ซม.`, tone: "accent" as const },
+    ...(plan.cuts.length === 2 ? [{ label: "เศษริมขวา", value: plan.cuts[1], display: `${fmt(plan.cuts[1] * 100, 1)} ซม.`, tone: (small ? "bad" : "mute") as "bad" | "mute" }] : []),
+  ];
+
+  return resultX({
+    title: "แบ่งแผ่น / หาศูนย์เริ่มปู",
+    headline: small && altBetter ? `เศษริมเล็กไป — เปลี่ยนเป็น${MODE_LABEL[other]}` : `${MODE_LABEL[mode]}: ${planText(plan)}`,
+    chart: parts.length > 1 && plan.full > 0 ? { kind: "stack", parts, totalLabel: "ระยะปูจริง", totalDisplay: `${fmt(eff * 100, 1)} ซม.` } : undefined,
+    rows: [
+      { label: "ระยะปูจริง", value: `${fmt(eff * 100, 1)} ซม.${gap > 0 ? ` (หักเว้นชิดผนังข้างละ ${fmt(gap * 1000)} มม.)` : ""}` },
+      { label: "แผ่น + ร่อง", value: `${fmtTrim(t * 100, 1)} ซม. + ${fmtTrim(j * 1000, 1)} มม.` },
+      { label: `เริ่ม${MODE_LABEL[mode]}`, value: planText(plan), emphasize: true },
+      { label: `ถ้าเริ่ม${MODE_LABEL[other]}`, value: planText(alt), emphasize: small && altBetter },
+      { label: `ถ้า${MODE_LABEL.wall}`, value: planText(wall) },
+      { label: "เศษริมที่ยอมได้", value: `ไม่เล็กกว่า ${fmt(minCut * 100, 1)} ซม. (1/3 แผ่น)` },
+    ],
+    tip:
+      small && altBetter
+        ? `เศษ ${fmt(smallest(plan, t) * 100, 1)} ซม. เล็กกว่า 1/3 แผ่น ตัดยากและหลุดง่าย เปลี่ยนเป็น${MODE_LABEL[other]} เศษจะเหลือ ${fmt(smallest(alt, t) * 100, 1)} ซม.`
+        : "ตีเส้นกลางห้องทั้งสองแนวก่อน วางแผ่นแห้งเทียบเศษริมทั้งสองฝั่งให้เท่ากันแล้วค่อยลงปูน",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-25",
+      summary: "แบ่งครึ่งห้องจากเส้นกลาง แล้วนับว่าครึ่งหนึ่งลงแผ่นเต็มได้กี่แผ่น (แผ่น + ร่อง) ที่เหลือหักอีกหนึ่งร่องคือเศษริมแต่ละข้าง เศษสองฝั่งจึงเท่ากันเสมอ",
+      steps: [
+        { label: "ระยะปูจริง", expr: "ยาวห้อง − 2 × เว้นชิดผนัง", subst: `${fmtTrim(len, 3)} − 2 × ${fmtTrim(gap, 3)} = ${fmtTrim(eff, 3)} ม.` },
+        {
+          label: mode === "tile" ? "ครึ่งห้องหักครึ่งแผ่นกลาง" : "ครึ่งห้องบวกครึ่งร่องกลาง",
+          expr: mode === "tile" ? "s = ระยะ ÷ 2 − แผ่น ÷ 2" : "s = ระยะ ÷ 2 + ร่อง ÷ 2",
+          subst: `s = ${fmtTrim(eff / 2, 4)} ${mode === "tile" ? "−" : "+"} ${fmtTrim(mode === "tile" ? t / 2 : j / 2, 4)} = ${fmtTrim(mode === "tile" ? eff / 2 - t / 2 : eff / 2 + j / 2, 4)} ม.`,
+        },
+        {
+          label: "แผ่นเต็มต่อข้าง",
+          expr: "n = ปัดลง(s ÷ (แผ่น + ร่อง)) · เศษริม = s − n × (แผ่น + ร่อง) − ร่อง",
+          subst: planText(plan),
+        },
+        { label: "เทียบกับเกณฑ์", expr: "เศษริม ≥ แผ่น × 1/3", subst: `${fmt(smallest(plan, t) * 100, 1)} ซม. ${small ? "<" : "≥"} ${fmt(minCut * 100, 1)} ซม.` },
+      ],
+      constants: [TILE_LAYOUT.minCut],
+      assumptions: ["คิดทีละแนว (กว้างหรือยาวห้อง) ทำซ้ำอีกแนวด้วยขนาดอีกด้านของแผ่น", "ผนังขนานกัน ห้องได้ฉาก"],
+      caveats: ["ผนังไม่ฉากหรือไม่ขนาน เศษสองฝั่งจะไม่เท่ากันจริง วัดสองจุดหัว-ท้ายก่อน", DISCLAIMER_AB],
+      refs: [{ label: "แนวปฏิบัติช่างปูกระเบื้อง (ตั้งศูนย์ให้เศษริมสมมาตร)" }],
+    },
+  });
+}
+
+/* ─────────── ห้องน้ำทั้งห้อง (พื้น + ผนัง) ─────────── */
+
+export function calcBathroom(v: Values): CalcResult {
+  const bad = guardTool(tileTools, "bathroom", v);
+  if (bad) return bad;
+  const w = num(v, "w", 2);
+  const l = num(v, "l", 2.5);
+  const tileH = num(v, "tileH", 2.4);
+  const doors = num(v, "doors", 1);
+  const deductWall = num(v, "deductWall", 0);
+  const doorW = WATERPROOF.doorW.value;
+  const perimeter = 2 * (w + l);
+  const doorCut = doors * doorW * Math.min(BATHROOM.doorH.value, tileH);
+  const wallGross = perimeter * tileH;
+  const wallNet = Math.max(0, wallGross - doorCut - deductWall);
+  if (tileH > 0 && wallGross - doorCut - deductWall <= 1e-9) {
+    return blockedResult({
+      headline: `หักประตูและช่องเปิดแล้วไม่เหลือผนังให้ปู — ตรวจความสูงกระเบื้องผนังกับพื้นที่ที่หัก`,
+      rows: [
+        { label: "ผนังรอบห้อง", value: `${fmt(wallGross, 2)} ตร.ม.` },
+        { label: "หักประตู + ช่องอื่น", value: `${fmt(doorCut + deductWall, 2)} ตร.ม.` },
+      ],
+      tip: "ลดพื้นที่ที่หัก หรือใส่ความสูงปูผนัง 0 ถ้าปูแค่พื้น",
+    });
+  }
+  const floorA = w * l;
+  const floorSize = str(v, "floorSize", "30");
+  const wallSize = str(v, "wallSize", "3060");
+  const ft = TILES[floorSize] ?? TILES["30"];
+  const wt = TILES[wallSize] ?? TILES["3060"];
+  const wallPerBox = Math.max(1, num(v, "wallPerBox", BATHROOM.wallPerBox.value));
+  const wallWaste = num(v, "wallWaste", BATHROOM.wallWaste.value);
+  const hasWall = tileH > 0 && wallNet > 0;
+
+  const wp = bool(v, "wp", true) ? calcWpBathroom({ ...WP_BATH_DEFAULTS, w, l, doors }) : null;
+  const floor = calcTileQty({ w, l, deduct: 0, size: floorSize, perBox: num(v, "floorPerBox", BATHROOM.floorPerBox.value), pattern: "straight" });
+
+  // กระเบื้องผนัง: นับตามพื้นที่ + เผื่อเสีย (ผนังมีมุม ท่อ ก๊อก จึงเผื่อมากกว่าพื้น)
+  const wallEach = wt.w * wt.h;
+  const wallRaw = hasWall ? wallNet / wallEach : 0;
+  const wallSheets = hasWall ? ceil(wallRaw * (1 + wallWaste / 100)) : 0;
+  const wallBoxes = ceil(wallSheets / wallPerBox);
+
+  // ปูนกาว: พื้นกับผนังใช้เกรียงคนละเบอร์
+  const rateF = ADHESIVE_PER_TROWEL[str(v, "floorTrowel", "6")] ?? ADHESIVE_PER_TROWEL["6"];
+  const rateW = ADHESIVE_PER_TROWEL[str(v, "wallTrowel", "8")] ?? ADHESIVE_PER_TROWEL["8"];
+  const adhRaw = floorA * rateF.value + wallNet * rateW.value;
+  const adhKg = adhRaw * (1 + TILE.adhesiveWaste.value / 100);
+  const adhBags = ceil(adhKg / TILE.adhesiveBag.value);
+
+  // ยาแนว: สูตรเดียวกับตัวคิดยาแนว แยกอัตราตามขนาดแผ่นพื้น/ผนัง
+  const joint = num(v, "joint", 2);
+  const thick = num(v, "thick", 8);
+  const gF = groutKgPerM2(ft, joint, thick, GROUT_DENSITY.cement.value);
+  const gW = groutKgPerM2(wt, joint, thick, GROUT_DENSITY.cement.value);
+  const groutKg = (floorA * gF + wallNet * gW) * (1 + TILE.groutWaste.value / 100);
+  const bagRef = GROUT_BAGS[str(v, "groutBag", "1")] ?? GROUT_BAGS["1"];
+  const groutBags = ceil(groutKg / bagRef.value);
+
+  // คิ้วจบขอบบนกระเบื้องผนัง (ถ้าปูไม่ชนฝ้า)
+  const trimOn = hasWall && bool(v, "trimTop", true);
+  const trimLen = trimOn ? Math.max(0, perimeter - doors * doorW) : 0;
+  const trimBars = ceil(trimLen / BATHROOM.trimBar.value);
+
+  // ความลาดพื้นเข้าท่อระบาย: จุดไกลสุดจากท่อ × ความลาด
+  const drain = str(v, "drain", "center");
+  const dist = drain === "corner" ? Math.hypot(w, l) : Math.hypot(w / 2, l / 2);
+  const fallCm = dist * BATHROOM.floorSlope.value; // ม. × % = ซม.
+
+  const sizeText = (t: { w: number; h: number }) => `${fmt(t.w * 100)}×${fmt(t.h * 100)}`;
+  const floorRow = (label: string) => floor.rows.find((r) => r.label === label)?.value ?? "";
+
+  const rest = resultX({
+    title: "ห้องน้ำ: ผนัง ปูนกาว ยาแนว คิ้ว",
+    headline: `กระเบื้องผนัง ${fmt(wallBoxes)} กล่อง`,
+    rows: [],
+    tip: "",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-25",
+      summary: "ผนัง = รอบห้อง × สูงปูผนัง − ประตู − ช่องอื่น · ปูนกาว = พื้น × อัตราเกรียงพื้น + ผนัง × อัตราเกรียงผนัง · ยาแนวคิดตามขนาดแผ่นแยกพื้น/ผนัง",
+      steps: [
+        {
+          label: "พื้นที่ผนังที่ปู",
+          expr: `รอบห้อง × สูงปู − ประตู × ${doorW} × สูงประตู − ช่องอื่น`,
+          subst: `${fmt(perimeter, 2)} × ${fmtTrim(tileH, 2)} − ${fmt(doors)} × ${doorW} × ${fmtTrim(Math.min(BATHROOM.doorH.value, tileH), 2)} − ${fmtTrim(deductWall, 2)} = ${fmt(wallNet, 2)} ตร.ม.`,
+        },
+        {
+          label: "กระเบื้องผนัง",
+          expr: "แผ่น = ผนัง ÷ พื้นที่แผ่น × (1 + เผื่อ) ปัดขึ้น · กล่อง = แผ่น ÷ แผ่นต่อกล่อง ปัดขึ้น",
+          subst: `${fmt(wallNet, 2)} ÷ ${fmt(wallEach, 3)} × ${fmtTrim(1 + wallWaste / 100, 2)} = ${fmt(wallSheets)} แผ่น → ${fmt(wallBoxes)} กล่อง`,
+        },
+        {
+          label: "ปูนกาว",
+          expr: `(พื้น × อัตราเกรียงพื้น + ผนัง × อัตราเกรียงผนัง) × (1 + ${TILE.adhesiveWaste.value}%) ÷ ${TILE.adhesiveBag.value} กก.`,
+          subst: `(${fmt(floorA, 2)} × ${fmtTrim(rateF.value, 1)} + ${fmt(wallNet, 2)} × ${fmtTrim(rateW.value, 1)}) × ${fmtTrim(1 + TILE.adhesiveWaste.value / 100, 2)} = ${fmt(adhKg, 1)} กก. → ${fmt(adhBags)} ถุง`,
+        },
+        {
+          label: "ยาแนว",
+          expr: `(พื้น × อัตราแผ่นพื้น + ผนัง × อัตราแผ่นผนัง) × (1 + ${TILE.groutWaste.value}%)`,
+          subst: `(${fmt(floorA, 2)} × ${fmtTrim(gF, 3)} + ${fmt(wallNet, 2)} × ${fmtTrim(gW, 3)}) × ${fmtTrim(1 + TILE.groutWaste.value / 100, 2)} = ${fmt(groutKg, 2)} กก. → ${fmt(groutBags)} ถุง`,
+          note: "อัตราต่อ ตร.ม. = (L + W) ÷ (L × W) × ลึก × กว้างร่อง × ความหนาแน่น",
+        },
+        ...(trimOn
+          ? [{ label: "คิ้วจบขอบบน", expr: `(รอบห้อง − ประตู × ${doorW}) ÷ ${BATHROOM.trimBar.value} ม./เส้น ปัดขึ้น`, subst: `${fmt(trimLen, 2)} ÷ ${BATHROOM.trimBar.value} = ${fmt(trimBars)} เส้น` }]
+          : []),
+        {
+          label: "ต่างระดับพื้นเข้าท่อ",
+          expr: `ระยะไกลสุดจากท่อ × ${BATHROOM.floorSlope.value}%`,
+          subst: `${fmt(dist, 2)} ม. × ${BATHROOM.floorSlope.value}% = ${fmt(fallCm, 1)} ซม.`,
+        },
+      ],
+      constants: [rateF, rateW, TILE.adhesiveBag, TILE.adhesiveWaste, GROUT_DENSITY.cement, TILE.groutWaste, bagRef, BATHROOM.wallWaste, BATHROOM.doorH, WATERPROOF.doorW, BATHROOM.trimBar, BATHROOM.floorSlope],
+      assumptions: [
+        "ห้องสี่เหลี่ยม ผนังปูสูงเท่ากันทุกด้าน ประตูสูงไม่เกินแนวปูผนัง",
+        "ร่องยาแนวพื้นและผนังกว้าง-ลึกเท่ากัน ใช้ยาแนวซีเมนต์",
+        "จำนวนแผ่นต่อกล่องเป็นค่าตั้งต้น ดูข้างกล่องจริงแล้วแก้",
+      ],
+      caveats: ["ผนังที่มีช่องท่อ ชั้นวาง หรือช่องกระจกเยอะ เผื่อเสียผนังเพิ่ม", DISCLAIMER_AB],
+      refs: [{ label: "TDS ปูนกาว/ยาแนว (อัตราใช้ต่อเบอร์เกรียง สูตรยาแนว ISO 13007)" }, { label: "แนวปฏิบัติงานห้องน้ำ (ความลาดพื้นเข้าท่อระบาย)" }],
+    },
+  });
+
+  const wpPick = (prefix: string) => (wp ? wp.rows.filter((r) => r.emphasize).map((r) => ({ ...r, label: `${prefix}${r.label}` })) : []);
+
+  return jobFromParts({
+    title: "ห้องน้ำทั้งห้อง (พื้น + ผนัง)",
+    headline: `พื้น ${floorRow("จำนวนกล่อง")}${hasWall ? ` · ผนัง ${fmt(wallBoxes)} กล่อง` : ""} · ปูนกาว ${fmt(adhBags)} ถุง`,
+    rows: [
+      { label: "พื้นที่พื้น / ผนังที่ปู", value: `${fmt(floorA, 2)} / ${fmt(wallNet, 2)} ตร.ม.` },
+      ...(wp ? wpPick("1. กันซึม: ") : [{ label: "1. กันซึม", value: "ไม่คิด (ติ๊กกันซึมถ้าต้องการ)" }]),
+      { label: `2. ปูนกาว (ถุง ${TILE.adhesiveBag.value} กก.)`, value: `${fmt(adhBags)} ถุง (${fmt(adhKg, 1)} กก.)`, emphasize: true },
+      { label: `3. กระเบื้องพื้น ${sizeText(ft)}`, value: `${floorRow("จำนวนแผ่น")} = ${floorRow("จำนวนกล่อง")}`, emphasize: true },
+      hasWall
+        ? { label: `4. กระเบื้องผนัง ${sizeText(wt)}`, value: `${fmt(wallSheets)} แผ่น = ${fmt(wallBoxes)} กล่อง (เผื่อ ${fmt(wallWaste)}%)`, emphasize: true }
+        : { label: "4. กระเบื้องผนัง", value: "ไม่ปูผนัง" },
+      { label: `5. ยาแนว (ถุง ${fmt(bagRef.value)} กก.)`, value: `${fmt(groutBags)} ถุง (${fmt(groutKg, 2)} กก.)`, emphasize: true },
+      ...(trimOn ? [{ label: `6. คิ้วจบขอบบน (เส้นละ ${BATHROOM.trimBar.value} ม.)`, value: `${fmt(trimLen, 2)} ม. = ${fmt(trimBars)} เส้น`, emphasize: true }] : []),
+      { label: "ความลาดพื้นเข้าท่อ", value: `${BATHROOM.floorSlope.value}% · จุดไกลสุด ${fmt(dist, 2)} ม. สูงกว่าปากท่อ ${fmt(fallCm, 1)} ซม.` },
+    ],
+    tip: "เทปรับระดับให้ลาดเข้าท่อก่อนทากันซึม อย่าไปถมความลาดด้วยปูนกาว ขังน้ำทดสอบก่อนปูทุกครั้ง",
+    parts: [...(wp ? [wp] : []), floor, rest],
+    chart: floor.chart,
+  });
+}
+
 const sizeOptions = [
   { value: "20", label: "20×20 ซม." },
   { value: "30", label: "30×30 ซม." },
@@ -563,6 +838,13 @@ const groutBagField = {
     { value: "1", label: "ถุง 1 กก." },
   ],
 };
+
+const trowelOptions = [
+  { value: "6", label: "6 มม. แผ่นเล็ก" },
+  { value: "8", label: "8 มม." },
+  { value: "10", label: "10 มม. ทั่วไป" },
+  { value: "12", label: "12 มม. แผ่นใหญ่" },
+];
 
 const barLenField = {
   type: "number" as const,
@@ -671,6 +953,65 @@ export const tileTools: ToolDef[] = [
       barLenField,
     ],
     calc: calcTrim,
+  },
+  {
+    id: "bathroom",
+    name: "ห้องน้ำทั้งห้อง (พื้น + ผนัง)",
+    blurb: "กันซึม ปูนกาว กระเบื้อง ยาแนว คิ้ว",
+    keywords: ["ห้องน้ำ", "ปูห้องน้ำ", "กระเบื้องผนัง", "ปูผนัง"],
+    fields: [
+      { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 2, min: 0.8, max: 10, step: 0.05 },
+      { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 2.5, min: 0.8, max: 10, step: 0.05 },
+      { type: "number", key: "tileH", label: "ปูผนังสูง (0 = ปูแค่พื้น)", unit: "ม.", default: 2.4, min: 0, max: 4, step: 0.05 },
+      { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 2 },
+      { type: "number", key: "deductWall", label: "หักช่องอื่นบนผนัง (หน้าต่าง ช่องเปิด)", unit: "ตร.ม.", default: 0, min: 0, max: 10, step: 0.1 },
+      { type: "select", key: "floorSize", label: "กระเบื้องพื้น", default: "30", options: sizeOptions },
+      { type: "number", key: "floorPerBox", label: "พื้น: แผ่น/กล่อง (ดูข้างกล่อง)", unit: "แผ่น", default: BATHROOM.floorPerBox.value, min: 1, max: 100 },
+      { type: "select", key: "wallSize", label: "กระเบื้องผนัง", default: "3060", options: sizeOptions },
+      { type: "number", key: "wallPerBox", label: "ผนัง: แผ่น/กล่อง (ดูข้างกล่อง)", unit: "แผ่น", default: BATHROOM.wallPerBox.value, min: 1, max: 100 },
+      { type: "number", key: "wallWaste", label: "เผื่อเสียผนัง", unit: "%", default: BATHROOM.wallWaste.value, min: 0, max: 30 },
+      { type: "select", key: "floorTrowel", label: "เกรียงหวีพื้น", default: "6", options: trowelOptions },
+      { type: "select", key: "wallTrowel", label: "เกรียงหวีผนัง", default: "8", options: trowelOptions },
+      { type: "number", key: "joint", label: "ร่องยาแนว", unit: "มม.", default: 2, min: 1, max: 10, step: 0.5 },
+      { type: "number", key: "thick", label: "หนาแผ่น", unit: "มม.", default: 8, min: 5, max: 20 },
+      { ...groutBagField, default: "1" },
+      { type: "bool", key: "wp", label: "คิดกันซึมด้วย", default: true },
+      { type: "bool", key: "trimTop", label: "คิ้วจบขอบบนกระเบื้องผนัง", default: true },
+      {
+        type: "select",
+        key: "drain",
+        label: "ท่อระบายพื้นอยู่",
+        default: "center",
+        options: [
+          { value: "center", label: "กลางห้อง" },
+          { value: "corner", label: "มุมห้อง" },
+        ],
+      },
+    ],
+    calc: calcBathroom,
+  },
+  {
+    id: "layout",
+    name: "แบ่งแผ่น / หาศูนย์เริ่มปู",
+    blurb: "เศษริมสองฝั่ง เตือนเศษเล็ก",
+    keywords: ["หาศูนย์", "ตั้งศูนย์", "เศษริม", "แบ่งแผ่น"],
+    fields: [
+      { type: "number", key: "len", label: "ยาวห้องแนวที่จะแบ่ง", unit: "ม.", default: 3.2, min: 0.3, max: 100, step: 0.01 },
+      { type: "number", key: "tile", label: "ขนาดแผ่นแนวนี้", unit: "ซม.", default: 60, min: 5, max: 120, step: 0.5 },
+      { type: "number", key: "joint", label: "ร่องยาแนว", unit: "มม.", default: 2, min: 0, max: 10, step: 0.5 },
+      { type: "number", key: "gap", label: "เว้นชิดผนังข้างละ", unit: "มม.", default: 0, min: 0, max: 20 },
+      {
+        type: "select",
+        key: "mode",
+        label: "เริ่มปูจาก",
+        default: "tile",
+        options: [
+          { value: "tile", label: "กลางแผ่นทับเส้นกลางห้อง" },
+          { value: "joint", label: "ร่องยาแนวทับเส้นกลางห้อง" },
+        ],
+      },
+    ],
+    calc: calcLayout,
   },
 ];
 

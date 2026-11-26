@@ -111,6 +111,8 @@ const EXPECTED_BLOCKED = [
   "hvac/shsc:liqT@max",
   // แอร์ใหญ่กว่าตารางเบรกเกอร์คร่าว
   "hvac/breaker:btu@max",
+  // ชุดติดตั้งแอร์: สูงต่างมากกว่าระยะท่อทั้งเส้น (เป็นไปไม่ได้)
+  "hvac/kit:height@max",
   // กระแสเกินตารางสาย / แรงดันตกเกินที่สูตรใช้ได้
   "electrical/cable:il@max",
   "electrical/vdrop:il@max",
@@ -120,6 +122,9 @@ const EXPECTED_BLOCKED = [
   "electrical/job:len@max",
   // อัตราไหลเกินท่อใหญ่สุดในตาราง
   "plumbing/pipe:q@max",
+  // ถังแรงดัน: ปั๊มตัดต้องสูงกว่าปั๊มติดอย่างน้อย 0.5 bar
+  "plumbing/ptank:cutIn@max",
+  "plumbing/ptank:cutOut@min",
   // หน้าบานลิ้นชักเตี้ยเกิน / น้ำหนักต่อจุดเกินเพดานพุก
   "handyman/drawer:opening@min",
   "handyman/screw:load@max",
@@ -133,6 +138,8 @@ const EXPECTED_BLOCKED = [
   "vinyl/level:deduct@max",
   "vinyl/adhesive:deduct@max",
   "vinyl/job:deduct@max",
+  // ผนังโซนอาบน้ำยาวกว่าผนังห้องที่เหลือหลังหักประตู
+  "waterproof/bathroom:showerRun@max",
   // ผนังสูงกว่าความยาวม้วนวอลเปเปอร์ตั้งต้น (10 ม.) ตัดแถบไม่ได้สักแถบ
   "paint/wallpaper:h@max",
   // กระจกใหญ่/ลมแรงเกินตารางหน้างาน
@@ -149,6 +156,10 @@ const EXPECTED_BLOCKED = [
   // ชิ้นงานตั้งต้นยาวกว่าเส้นวัตถุดิบสั้นสุด
   "steel/cut:stock@min",
   "steel/job:stock@min",
+  // แบ่งระยะ: ชิ้นกว้างรวมกันเต็มระยะแล้ว ไม่เหลือช่อง (9 × 20 ≥ 10 มม. · 500 × 20 · 9 × 2000)
+  "general/spacing:total@min",
+  "general/spacing:n@max",
+  "general/spacing:w@max",
 ].sort();
 
 describe("กวาดทุกเครื่องมือ: ค่าตั้งต้นและค่าปลายช่วง", () => {

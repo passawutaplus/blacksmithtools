@@ -1,6 +1,6 @@
 import type { JobDef, ToolDef, Values } from "../types";
-import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, str, withDefaults } from "../math";
-import { DISCLAIMER_AB, ROOF, UNIT, WASTE_DEFAULT } from "../constants";
+import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, stockPieces, str, withDefaults } from "../math";
+import { DISCLAIMER_AB, ROOF, ROOF_KIT, UNIT, WASTE_DEFAULT } from "../constants";
 
 /** ด่านตรวจของสายหลังคา: ช่องกรอกอยู่ในช่วง + ความชันไม่เกินที่สูตรรองรับ */
 const guard = (id: string, v: Values) => guardTool(roofTools, id, v) ?? pitchGuard(v);
@@ -103,6 +103,26 @@ export function pitchWarning(kind: string, pitchPct: number): string | null {
   return `ชัน ${fmt(deg, 1)}° ค่อนข้างต่ำสำหรับ${name} (ทั่วไปแนะนำราว ${fmt(ref.value)}° ขึ้นไป) เสี่ยงน้ำย้อนรอยซ้อน — เช็กคู่มือรุ่นที่ใช้ก่อนมุง`;
 }
 
+/**
+ * เรขาคณิตเมทัลชีทตามแถว — ใช้ร่วมกันระหว่าง "จำนวนแผ่นหลังคา" กับ "เมทัลชีทสั่งตัด + แป"
+ * ยาวแนวลาดต่อด้าน = (กว้างแปลน ÷ ด้าน + ชายคายื่น) × √(1 + ชัน²) · แถว = ปัดขึ้น(ยาวแปลน ÷ กว้างคลุม)
+ */
+export function metalLayout(v: Values, coverDefault: number, eaveDefault = 0) {
+  const w = num(v, "w", 8);
+  const l = num(v, "l", 12);
+  const pitch = pitchPercent(v);
+  const lean = str(v, "shape", "gable") === "lean";
+  const sides = lean ? 1 : 2;
+  const coverW = num(v, "coverW", coverDefault);
+  const eave = num(v, "eave", eaveDefault);
+  const run = w / sides + eave;
+  const slopeLen = run * Math.sqrt(1 + (pitch / 100) ** 2);
+  const rows = ceil(l / coverW);
+  // สั่งตัดปัดขึ้นเป็นเซนติเมตร
+  const cutLen = Math.ceil(slopeLen * 100 - 1e-6) / 100;
+  return { w, l, pitch, lean, sides, coverW, eave, run, slopeLen, rows, cutLen };
+}
+
 export function calcRoofMaterial(v: Values) {
   const bad = guard("material", v);
   if (bad) return bad;
@@ -148,16 +168,7 @@ export function calcRoofMaterial(v: Values) {
   }
   // เมทัลชีทนับเป็น "แถว" ตามแนวชายคา × จำนวนแผ่นต่อแถวตามแนวลาด — หารพื้นที่ตรง ๆ จะได้แผ่นน้อยเกินจริง
   // เพราะเศษปลายแผ่นเอาไปต่อแถวอื่นไม่ได้ (รอยต่อกลางลาดต้องซ้อนและรั่วง่าย)
-  const w = num(v, "w", 8);
-  const l = num(v, "l", 12);
-  const pitch = pitchPercent(v);
-  const lean = str(v, "shape", "gable") === "lean";
-  const sides = lean ? 1 : 2;
-  const coverW = num(v, "coverW", 0.7);
-  const eave = num(v, "eave", 0);
-  const run = w / sides + eave;
-  const slopeLen = run * Math.sqrt(1 + (pitch / 100) ** 2);
-  const rows = ceil(l / coverW);
+  const { w, l, pitch, lean, sides, coverW, eave, slopeLen, rows, cutLen } = metalLayout(v, 0.7);
   const shapeName = lean ? "เพิงหมาแหงน (ลาดทางเดียว)" : "จั่ว 2 ด้าน";
   const slopeStep = {
     label: "ยาวแนวลาดต่อด้าน",
@@ -175,7 +186,6 @@ export function calcRoofMaterial(v: Values) {
 
   if (kind === "cut") {
     // สั่งตัดตามยาวแนวลาด: ได้แผ่นยาวถึงสันพอดี ไม่มีเศษปลายแผ่น จึงไม่คูณเผื่อเสีย
-    const cutLen = Math.ceil(slopeLen * 100 - 1e-6) / 100;
     const sheets = sides * rows;
     const long = cutLen > ROOF.longSheetWarn.value;
     return resultX({
@@ -442,6 +452,116 @@ export function calcFastener(v: Values) {
   });
 }
 
+/* ─────────── เมทัลชีทสั่งตัด + แป (ใบสั่งของ) ─────────── */
+
+/** ชายคายื่นตั้งต้นของเครื่องมือเมทัลชีท + แป (ค่าตั้งต้นของช่องกรอก ไม่ใช่ค่าคำนวณ — ผู้ใช้แก้ได้) */
+const METAL_KIT_EAVE = 0.5;
+
+export function calcMetalKit(v: Values) {
+  const bad = guard("metal-kit", v);
+  if (bad) return bad;
+  const g = metalLayout(v, ROOF_KIT.coverW.value, METAL_KIT_EAVE);
+  const spacing = num(v, "spacing", ROOF_KIT.purlinSpacing.value);
+  const warn = pitchWarning("cut", g.pitch);
+  const sheets = g.sides * g.rows;
+  // แปตัวแรกที่ปลายชายคา ตัวสุดท้ายชิดสัน — ช่วงแนวลาดแบ่งเป็นช่องไม่เกินระยะแป
+  const lines = ceil(g.slopeLen / spacing) + 1;
+  const totalLines = lines * g.sides;
+  const stock = ROOF_KIT.purlinStock.value;
+  const sticksPerLine = ceil(g.l / stock);
+  const purlinSticks = totalLines * sticksPerLine;
+  const perSheetLine = ROOF_KIT.screwsPerSheetPerPurlin.value;
+  const screws = sheets * lines * perSheetLine;
+  const boxes = ceil(screws / ROOF_KIT.screwBox.value);
+  const ridge = g.lean ? null : calcRidge({ ridge: g.l, hips: 0, hipLen: 0 });
+  const ridgePcs = ridge?.rows.find((r) => r.label === "เส้น 2 ม.")?.value ?? "";
+  const trimLen = ROOF_KIT.trimLen.value;
+  const sideTrimM = 2 * g.sides * g.slopeLen;
+  const sideTrim = stockPieces(sideTrimM, trimLen, "ท่อน");
+  const wallTrim = g.lean ? stockPieces(g.l, trimLen, "ท่อน") : null;
+  const long = g.cutLen > ROOF.longSheetWarn.value;
+  const wide = spacing > ROOF_KIT.purlinSpacingWarn.value + 1e-9;
+  const shapeName = g.lean ? "เพิงหมาแหงน (ลาดทางเดียว)" : "หน้าจั่ว 2 ด้าน";
+  const perSide = g.lean ? "" : ` (ด้านละ ${fmt(g.rows)} แผ่น)`;
+
+  return resultX({
+    title: "เมทัลชีทสั่งตัด + แป",
+    headline: warn ? `สั่งตัดยาว ${fmt(g.cutLen, 2)} ม. × ${fmt(sheets)} แผ่น — ชันต่ำ เช็กคู่มือก่อน` : `สั่งตัดยาว ${fmt(g.cutLen, 2)} ม. × ${fmt(sheets)} แผ่น`,
+    chart: {
+      kind: "stack",
+      parts: Array.from({ length: g.sides }, (_, i) => ({
+        label: g.sides === 1 ? `ลาดทางเดียว ${g.rows} แถว` : `ด้านที่ ${i + 1} · ${g.rows} แถว`,
+        value: g.rows,
+        display: `${g.rows} แผ่น`,
+        tone: "accent" as const,
+      })),
+      totalLabel: `แผ่นคลุม ${fmtTrim(g.coverW, 2)} ม. ยาว ${fmt(g.cutLen, 2)} ม.`,
+      totalDisplay: `${fmt(sheets)} แผ่น`,
+    },
+    rows: [
+      { label: "ทรงหลังคา", value: `${shapeName} · ชัน ${fmt(g.pitch, 1)}% ≈ ${fmt(pitchDegrees(g.pitch), 1)}°` },
+      { label: "ยาวแนวลาดต่อด้าน", value: `${fmt(g.slopeLen, 2)} ม.${g.eave > 0 ? ` (รวมชายคายื่น ${fmtTrim(g.eave, 2)} ม.)` : ""}` },
+      { label: "เมทัลชีทสั่งตัด", value: `ยาว ${fmt(g.cutLen, 2)} ม. × ${fmt(sheets)} แผ่น${perSide}`, emphasize: true },
+      {
+        label: `แป ระยะ ${fmtTrim(spacing, 2)} ม.`,
+        value: `${fmt(lines)} แนว/ด้าน × ${fmt(g.sides)} ด้าน = ${fmt(totalLines)} แนว ยาวแนวละ ${fmtTrim(g.l, 2)} ม.`,
+      },
+      { label: "เหล็กแป", value: `${fmt(purlinSticks)} เส้น (เส้นละ ${fmtTrim(stock, 1)} ม. · แนวละ ${fmt(sticksPerLine)} เส้น)`, emphasize: true },
+      { label: "สกรูยึดแผ่น", value: `${fmt(screws)} ตัว → ${fmt(boxes)} กล่อง (${fmt(ROOF_KIT.screwBox.value)} ตัว)`, emphasize: true },
+      ...(ridge ? [{ label: "ครอบสัน", value: `${fmtTrim(g.l, 2)} ม. → ${ridgePcs}` }] : []),
+      { label: "ครอบข้าง/ปั้นลม (ขอบหัว-ท้าย 2 ข้าง)", value: `${fmt(sideTrimM, 1)} ม. → ${sideTrim.text}` },
+      ...(wallTrim ? [{ label: "แผ่นปิดชนผนัง (ด้านบน)", value: `${fmtTrim(g.l, 2)} ม. → ${wallTrim.text}` }] : []),
+      ...(warn ? [{ label: "เตือนความชัน", value: warn, emphasize: true }] : []),
+      ...(wide
+        ? [{ label: "แปห่าง", value: `เกิน ${fmtTrim(ROOF_KIT.purlinSpacingWarn.value, 1)} ม. เช็กตารางช่วงพาดของแผ่นรุ่นที่สั่ง แผ่นบางอาจยุบเวลาเหยียบ`, emphasize: true }]
+        : []),
+      ...(long ? [{ label: "แผ่นยาวมาก", value: `ยาวเกิน ${fmt(ROOF.longSheetWarn.value)} ม. ถามโรงรีดเรื่องขนส่งก่อน`, emphasize: true }] : []),
+    ],
+    tip: "แผ่นสั่งตัดไม่มีเศษจึงไม่เผื่อเสีย กลัวบุบตอนขนให้สั่งเกินเอง 1–2 แผ่น · ชายคาและสันยิงสกรูถี่กว่ากลางหลังคา",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary:
+        "แผ่นสั่งตัดยาวตามแนวลาด × จำนวนแถว · แปวางทุกระยะที่กรอกจากชายคาถึงสัน แนวละยาวเท่าแนวสัน · สกรู = แผ่น × แนวแปต่อด้าน × ตัวต่อแผ่นต่อแป",
+      steps: [
+        {
+          label: "ยาวแนวลาดต่อด้าน",
+          expr: g.lean ? "(กว้างแปลน + ชายคายื่น) × √(1 + (ชัน/100)²)" : "(กว้างแปลน ÷ 2 + ชายคายื่น) × √(1 + (ชัน/100)²)",
+          subst: `(${fmt(g.w / g.sides, 2)} + ${fmt(g.eave, 2)}) × √(1 + ${fmt(g.pitch / 100, 2)}²) = ${fmt(g.slopeLen, 2)} ม. → สั่งตัด ${fmt(g.cutLen, 2)} ม.`,
+        },
+        { label: "จำนวนแผ่น", expr: "ด้าน × ปัดขึ้น(ยาวแปลน ÷ กว้างคลุม)", subst: `${g.sides} × ปัดขึ้น(${fmtTrim(g.l, 2)} ÷ ${fmtTrim(g.coverW, 2)}) = ${g.sides} × ${g.rows} = ${fmt(sheets)} แผ่น` },
+        { label: "แนวแปต่อด้าน", expr: "ปัดขึ้น(ยาวแนวลาด ÷ ระยะแป) + 1", subst: `ปัดขึ้น(${fmt(g.slopeLen, 2)} ÷ ${fmtTrim(spacing, 2)}) + 1 = ${fmt(lines)} แนว` },
+        {
+          label: "เหล็กแป",
+          expr: `แนวรวม × ปัดขึ้น(ยาวแนว ÷ ${fmtTrim(stock, 1)} ม.)`,
+          subst: `${fmt(totalLines)} × ${fmt(sticksPerLine)} = ${fmt(purlinSticks)} เส้น`,
+          note: "ต่อแปกลางแนวต้องต่อบนจันทัน เศษข้ามแนวจึงไม่นับรวม",
+        },
+        { label: "สกรู", expr: `แผ่น × แนวแปต่อด้าน × ${fmt(perSheetLine)}`, subst: `${fmt(sheets)} × ${fmt(lines)} × ${fmt(perSheetLine)} = ${fmt(screws)} ตัว → ${fmt(boxes)} กล่อง` },
+        {
+          label: "ครอบข้าง/ปั้นลม",
+          expr: `2 ขอบจั่ว × ด้าน × ยาวแนวลาด ÷ ${fmtTrim(trimLen, 1)} ม.`,
+          subst: `2 × ${g.sides} × ${fmt(g.slopeLen, 2)} = ${fmt(sideTrimM, 1)} ม. → ${sideTrim.text}`,
+        },
+      ],
+      constants: [ROOF_KIT.coverW, ROOF_KIT.purlinSpacing, ROOF_KIT.purlinStock, ROOF_KIT.screwsPerSheetPerPurlin, ROOF_KIT.screwBox, ROOF_KIT.trimLen, ROOF.minPitchMetal],
+      assumptions: [
+        "ด้านกว้างแปลนคือด้านที่น้ำไหลลง ด้านยาวแปลนคือแนวสัน/ชายคา",
+        "แปตัวแรกที่ปลายชายคา ตัวสุดท้ายชิดสัน ระยะระหว่างแปไม่เกินที่กรอก",
+        "ความกว้างคลุมคือความกว้างใช้งานจริงหลังซ้อนลอน (ค่าตั้งต้น 0.76 ม.)",
+        "ยังไม่รวมจันทัน อะเส เชิงชาย รางน้ำ และแผ่นปิดชายคา",
+      ],
+      caveats: [
+        ...(warn ? [warn] : []),
+        "ขนาดและระยะแป/จันทันเป็นงานโครงสร้าง ให้ช่างหรือวิศวกรกำหนดตามช่วงพาดและน้ำหนักจริง ใบนี้นับจำนวนให้เท่านั้น",
+        "หลังคาปั้นหยาหรือมีตะเข้ แผ่นต้องตัดเฉียง ให้นับจากแบบ",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "คู่มือติดตั้งเมทัลชีทของผู้ผลิต (กว้างคลุม ระยะแป จำนวนสกรู ความชันต่ำสุด)" }],
+    },
+  });
+}
+
 const METAL_KINDS = ["cut", "metal"];
 
 const kindField = {
@@ -509,6 +629,28 @@ export const roofTools: ToolDef[] = [
       ...tileFields,
     ],
     calc: calcRoofMaterial,
+  },
+  {
+    id: "metal-kit",
+    name: "เมทัลชีทสั่งตัด + แป",
+    blurb: "ยาวตัด จำนวนแผ่น แป สกรู ครอบสัน ปั้นลม",
+    fields: [
+      {
+        type: "select",
+        key: "shape",
+        label: "ทรงหลังคา",
+        default: "gable",
+        options: [
+          { value: "gable", label: "หน้าจั่ว 2 ด้าน" },
+          { value: "lean", label: "เพิงหมาแหงน (ลาดทางเดียว)" },
+        ],
+      },
+      ...roof.filter((f) => f.key !== "waste"),
+      { type: "number", key: "eave", label: "ชายคายื่นเพิ่มจากแปลน (ต่อด้าน)", unit: "ม.", default: METAL_KIT_EAVE, min: 0, max: 3, step: 0.05 },
+      { type: "number", key: "coverW", label: "กว้างคลุมแผ่น", unit: "ม.", default: ROOF_KIT.coverW.value, min: 0.3, max: 1.5, step: 0.01 },
+      { type: "number", key: "spacing", label: "ระยะแป", unit: "ม.", default: ROOF_KIT.purlinSpacing.value, min: 0.5, max: 1.5, step: 0.05 },
+    ],
+    calc: calcMetalKit,
   },
   { id: "gutter", name: "ขนาดรางน้ำ + ท่อ", blurb: "ตามพื้นที่รับน้ำ", fields: roof, calc: calcGutter },
   {
