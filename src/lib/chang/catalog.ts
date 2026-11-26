@@ -114,7 +114,7 @@ export const TRADES: Trade[] = [
     name: "ช่างปูกระเบื้อง",
     short: "กระเบื้อง",
     pillarId: "finish",
-    blurb: "แผ่น ยาแนว ปูนกาว คิ้ว",
+    blurb: "แผ่น ยาแนว ปูนกาว บัวเชิงผนัง",
     tools: tileTools,
     job: tileJob,
   },
@@ -177,7 +177,7 @@ export const TRADES: Trade[] = [
     name: "ช่างผนังและงานสี",
     short: "สี",
     pillarId: "shell",
-    blurb: "พื้นที่สุทธิ สี ฉาบบาง วอลเปเปอร์",
+    blurb: "พื้นที่สุทธิ สี สกิมโค้ท วอลเปเปอร์",
     tools: paintTools,
     job: paintJob,
   },
@@ -263,7 +263,11 @@ const TRADE_ALIASES: Record<string, string[]> = {
   roof: ["หลังคา", "เมทัลชีท", "กระเบื้องลอน"],
   tile: ["กระเบื้อง", "ยาแนว", "ปูนกาว"],
   glass: ["กระจก", "อลูมิเนียม", "ซิลิโคน"],
-  handyman: ["บิ้วอิน", "พุก", "บันได", "ลามิเนต"],
+  handyman: ["บิ้วอิน", "พุก", "บันได", "ลามิเนต", "ไม้อัด"],
+  // คำช่างที่ชื่อสายงานไม่มี (รอบ 2): สะกดแบบที่ช่างพิมพ์จริง รวมตัวสะกดเพี้ยนที่เจอบ่อย
+  ceiling: ["ฝ้า", "ยิปซัม", "ยิปซั่ม", "ทีบาร์", "ซีลาย", "c-line", "โครงคร่าว", "โครงเคร่า"],
+  vinyl: ["กระเบื้องยาง", "spc", "lvt", "พื้นไม้", "ลามิเนตปูพื้น"],
+  paint: ["ทาสี", "สกิมโค้ท", "โป๊ว", "วอลเปเปอร์"],
 };
 
 const TOOL_ALIASES: Record<string, string[]> = {
@@ -276,6 +280,20 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "steel/weld": ["ลวดเชื่อม", "fillet"],
   "handyman/screw": ["พุก", "สกรู", "ทีวี"],
   "handyman/stair": ["บันได", "ลูกตั้ง", "ลูกนอน"],
+  // รอบ 2: คำช่างที่ค้นแล้วไม่เจอ ชี้ไปเครื่องมือที่ใกล้ที่สุด
+  "paint/skim": ["สกิมโค้ท", "สกิม", "โป๊ว", "โป้ว", "ฉาบบาง"],
+  "masonry/plaster": ["สกิมโค้ท", "ฉาบบาง"],
+  "ceiling/gypsum": ["ยิปซั่ม", "ซีลาย", "c-line", "cline", "โครงคร่าว", "โครงเคร่า"],
+  "ceiling/tbar": ["โครงคร่าว", "โครงเคร่า", "t-bar", "tbar"],
+  "ceiling/hardware": ["ยิปซั่ม", "โป๊วรอยต่อ"],
+  "vinyl/qty": ["พื้นไม้", "ไม้ลามิเนต", "spc", "lvt"],
+  "tile/grout": ["อีพ็อกซี่", "อีพอกซี", "epoxy"],
+  "handyman/laminate": ["ไม้อัด", "แผ่น 4x8"],
+  "glass/sealant": ["กันซึม", "กันรั่ว", "ซีลแลนท์"],
+  "general/unit-length": ["หุน", "ฟุต-นิ้ว"],
+  "hvac/pipe": ["หุน", "ท่อแอร์"],
+  "general/unit-area-vol": ["คิว", "ลบ.ม."],
+  "masonry/mix": ["คิว", "ทราย", "หิน"],
 };
 
 export function toolCount(): number {

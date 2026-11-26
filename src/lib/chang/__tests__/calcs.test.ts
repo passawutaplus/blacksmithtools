@@ -110,9 +110,11 @@ describe("เลือกขนาดสายไฟ", () => {
     expect(numberIn(rowOf(r.rows, "กระแสโหลด IL"))).toBeCloseTo(19.7, 1);
   });
 
-  it("เตือนเมื่ออุณหภูมิหลุดช่วงตาราง ไม่หนีบค่าเงียบ ๆ", () => {
+  it("อุณหภูมิหลุดช่วงตารางต้องไม่ให้ขนาดสาย ไม่หนีบค่าเงียบ ๆ", () => {
     const r = calcCable({ ...base, temp: 70 });
-    expect(r.explain?.caveats?.some((t) => t.includes("เกินช่วงตาราง"))).toBe(true);
+    expect(r.invalid).toBe(true);
+    expect(r.headline).toMatch(/อุณหภูมิ/);
+    expect(r.rows).toHaveLength(0);
   });
 
   it("เป็นความเสี่ยงชั้น C และต้องมีข้อความสงวนสิทธิ์", () => {
@@ -170,9 +172,12 @@ describe("คำนวณ BTU แอร์", () => {
 describe("กระเบื้อง", () => {
   const room: Values = { w: 4, l: 5, deduct: 0 };
 
-  it("ห้อง 20 ตร.ม. กระเบื้อง 60×60 ลายตรง ได้ 59 แผ่น 15 กล่อง", () => {
+  it("ห้อง 4×5 ม. กระเบื้อง 60×60 ลายตรง: วิธีพื้นที่ 59 แผ่น แต่นับตามแถวได้ 60 แผ่น 15 กล่อง", () => {
+    // วิธีพื้นที่: 20 ÷ 0.36 × 1.05 = 58.3 → 59
+    // วางแถว: เต็ม 6 × 8 = 48 · ริมด้านกว้างเศษ 40 ซม. (เกินครึ่งแผ่น) 9 ชิ้น = 9 แผ่น · ริมด้านยาวเศษ 20 ซม. 6 ชิ้น ÷ 2 = 3 แผ่น → 60
     const r = calcTileQty({ ...room, size: "60", perBox: 4, pattern: "straight" });
-    expect(numberIn(rowOf(r.rows, "จำนวนแผ่น"))).toBe(59);
+    expect(numberIn(rowOf(r.rows, "นับแบบพื้นที่ + เผื่อ"))).toBe(59);
+    expect(numberIn(rowOf(r.rows, "จำนวนแผ่น"))).toBe(60);
     expect(numberIn(rowOf(r.rows, "จำนวนกล่อง"))).toBe(15);
   });
 
@@ -225,7 +230,7 @@ describe("ก่อฉาบ", () => {
     const r = calcMortar({ ...wall, kind: "aac75", joint: "auto" });
     expect(r.headline).toContain("ปูนกาว");
     // 12 ตร.ม. × 1.7 กก. = 20.4 กก. → 1 ถุง
-    expect(numberIn(rowOf(r.rows, "ถุง 50 กก."))).toBe(1);
+    expect(numberIn(rowOf(r.rows, "ปูนกาวก่อ (ถุง 50 กก.)"))).toBe(1);
   });
 
   it("อิฐมอญคิดปูนก่อจากสัดส่วนแนวปูนจริง", () => {
@@ -236,8 +241,8 @@ describe("ก่อฉาบ", () => {
 
   it("ฉาบ 15 มม. สองด้าน ได้ 720 กก. → 15 ถุง", () => {
     const r = calcPlaster({ ...wall, pkind: "normal", sides: 2 });
-    expect(numberIn(rowOf(r.rows, "ปูนฉาบ"))).toBeCloseTo(720, 0);
-    expect(numberIn(rowOf(r.rows, "ถุง 50 กก."))).toBe(15);
+    expect(numberIn(rowOf(r.rows, "ปูนฉาบ รวม"))).toBeCloseTo(720, 0);
+    expect(numberIn(rowOf(r.rows, "ปูนฉาบ (ถุง 50 กก.)"))).toBe(15);
   });
 
   it("ถุงปูนฉาบ 50 กก. ที่ 10 มม. ต้องได้ 2.2–2.8 ตร.ม. ตาม TDS", () => {
@@ -277,9 +282,9 @@ describe("ซิลิโคนยาแนวรอยต่อ", () => {
     expect(numberIn(rowOf(r.rows, "หลอด 280 มล."))).toBe(2);
   });
 
-  it("ยาว 1 ม. ร่อง 1×1 มม. ต้องได้ 1 มล. ตามนิยามหน่วย", () => {
-    const r = calcSealant({ peri: 1, gap: 1, depth: 1 });
-    expect(numberIn(rowOf(r.rows, "เนื้อซิลิโคน"))).toBe(1);
+  it("ยาว 1 ม. ร่อง 5×5 มม. ต้องได้ 25 มล. ตามนิยามหน่วย (1 ม. × 1 ตร.มม. = 1 มล.)", () => {
+    const r = calcSealant({ peri: 1, gap: 5, depth: 5 });
+    expect(numberIn(rowOf(r.rows, "เนื้อซิลิโคน"))).toBe(25);
   });
 
   it("ร่องกว้างขึ้นสองเท่า ใช้ซิลิโคนเพิ่มสองเท่า", () => {
