@@ -288,7 +288,7 @@ const blindFields: Field[] = [
   { type: "number", key: "outSide", label: "ทับขอบต่อข้าง", unit: "ซม.", default: BLIND.outsideSide.value, min: 0, max: 30, when: { key: "mount", is: "outside" } },
   { type: "number", key: "outTop", label: "เผื่อด้านบน", unit: "ซม.", default: BLIND.outsideTop.value, min: 0, max: 30, when: { key: "mount", is: "outside" } },
   { type: "number", key: "outBot", label: "เลยขอบล่าง", unit: "ซม.", default: BLIND.outsideBottom.value, min: 0, max: 30, when: { key: "mount", is: "outside" } },
-  { type: "number", key: "qty", label: "จำนวนผืน (ขนาดเดียวกัน)", unit: "ผืน", default: 1, min: 1, max: 100 },
+  { type: "number", integer: true, key: "qty", label: "จำนวนผืน (ขนาดเดียวกัน)", unit: "ผืน", default: 1, min: 1, max: 100 },
   {
     type: "select",
     key: "unit",

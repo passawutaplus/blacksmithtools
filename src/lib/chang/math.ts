@@ -117,7 +117,7 @@ export function visibleFields(fields: Field[], values: Values): Field[] {
   return fields.filter((f) => fieldVisible(f, values));
 }
 
-/** ตรวจค่าตัวเลขที่ผู้ใช้กรอก — ช่องว่าง / หลุด min-max ต้องหยุดคิด */
+/** ตรวจค่าตัวเลขที่ผู้ใช้กรอก — ช่องว่าง / หลุด min-max / ช่องนับจำนวนมีเศษ ต้องหยุดคิด */
 export function validateFields(fields: Field[], values: Values): Record<string, string> {
   const errors: Record<string, string> = {};
   for (const field of visibleFields(fields, values)) {
@@ -127,18 +127,29 @@ export function validateFields(fields: Field[], values: Values): Record<string, 
       errors[field.key] = "กรอกช่องนี้ก่อน";
       continue;
     }
-    const n = typeof raw === "number" ? raw : Number(raw);
-    if (!Number.isFinite(n)) {
-      errors[field.key] = "ใส่เป็นตัวเลข";
-      continue;
-    }
-    if (field.min !== undefined && n < field.min) {
-      errors[field.key] = `ต้องไม่ต่ำกว่า ${field.min}${field.unit ? ` ${field.unit}` : ""}`;
-    } else if (field.max !== undefined && n > field.max) {
-      errors[field.key] = `ต้องไม่เกิน ${field.max}${field.unit ? ` ${field.unit}` : ""}`;
-    }
+    const message = numberFieldError(field, raw);
+    if (message) errors[field.key] = message;
   }
   return errors;
+}
+
+/** ข้อความเตือนของช่องนับจำนวนที่ใส่เลขมีเศษ */
+export const INTEGER_FIELD_MESSAGE = "ใส่เป็นจำนวนเต็ม";
+
+/**
+ * กติกาเดียวของช่องตัวเลขที่มีค่าแล้ว (ไม่ว่าง): ต้องเป็นตัวเลขจริง อยู่ในช่วง min–max
+ * และถ้าเป็นช่องนับจำนวน (`integer`) ต้องไม่มีเศษ — คืนข้อความผิด หรือ null ถ้าผ่าน
+ */
+function numberFieldError(field: Extract<Field, { type: "number" }>, raw: unknown): string | null {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  const unit = field.unit ? ` ${field.unit}` : "";
+  if (!Number.isFinite(n)) return "ใส่เป็นตัวเลข";
+  if (field.min !== undefined && n < field.min) return `ต้องไม่ต่ำกว่า ${field.min}${unit}`;
+  if (field.max !== undefined && n > field.max) return `ต้องไม่เกิน ${field.max}${unit}`;
+  if (field.integer && !Number.isInteger(n)) {
+    return `${INTEGER_FIELD_MESSAGE}${field.unit ? ` (นับเป็น${field.unit} ไม่มีเศษ)` : " ไม่มีเศษ"}`;
+  }
+  return null;
 }
 
 export function invalidResult(
@@ -201,14 +212,11 @@ export function guardInputs(fields: Field[] | undefined, v: Values): CalcResult 
       fail(field, "กรอกช่องนี้ก่อน");
       continue;
     }
-    const n = typeof raw === "number" ? raw : Number(raw);
-    const unit = field.unit ? ` ${field.unit}` : "";
-    if (!Number.isFinite(n)) fail(field, "ใส่เป็นตัวเลข");
-    else if (field.min !== undefined && n < field.min) fail(field, `ต้องไม่ต่ำกว่า ${field.min}${unit}`);
-    else if (field.max !== undefined && n > field.max) fail(field, `ต้องไม่เกิน ${field.max}${unit}`);
+    const message = numberFieldError(field, raw);
+    if (message) fail(field, message);
   }
   if (!first) return null;
-  return invalidResult(`ค่าที่กรอกอยู่นอกช่วงที่คิดได้ — ${first}`, errors);
+  return invalidResult(`ค่าที่กรอกยังคิดไม่ได้ — ${first}`, errors);
 }
 
 /**

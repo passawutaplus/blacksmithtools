@@ -723,11 +723,21 @@ export function raiNganWa(m2: number) {
   return { wa, rai, ngan, restWa };
 }
 
+/**
+ * พิมพ์ตารางวา: ปกติทศนิยม 2 ตำแหน่ง แต่พื้นที่เล็กกว่า 1 ตร.วา ให้ละเอียดขึ้น (ไม่เกิน 4 ตำแหน่ง)
+ * กัน 0.01 ตร.ม. = 0.0025 ตร.วา ขึ้นเป็น "0 ตร.วา"
+ */
+export function waText(wa: number): string {
+  return `${fmtTrim(wa, Math.abs(wa) < 1 ? 4 : 2)} ตร.วา`;
+}
+
 export function raiText(m2: number): string {
   const r = raiNganWa(m2);
   const parts = [] as string[];
   if (r.rai > 0) parts.push(`${fmt(r.rai)} ไร่`);
   if (r.ngan > 0) parts.push(`${fmt(r.ngan)} งาน`);
+  // ไม่ถึง 1 ตร.วา และไม่มีไร่/งาน: ใช้ค่าตารางวาเต็มความละเอียด (ไม่ใช้ค่าที่ปัดเป็นสตางค์ของตารางวาแล้ว)
+  if (parts.length === 0 && r.wa < 1) return waText(r.wa);
   if (r.restWa > 0 || parts.length === 0) parts.push(`${fmtTrim(r.restWa, 2)} ตร.วา`);
   return parts.join(" ");
 }
@@ -759,14 +769,18 @@ export function calcRai(v: Values) {
   const r = raiNganWa(m2);
   const price = num(v, "price", 0);
   const text = raiText(m2);
+  const m2Text = `${fmtTrim(m2, 2)} ตร.ม.`;
+  // กรอกเป็นไร่-งาน-วาอยู่แล้ว หัวเรื่องต้องบอกตารางเมตร ไม่ใช่ทวนค่าเดิม · ถ้ากรอกเกินหลัก (5 งาน) ค่อยต่อด้วยค่าที่ทดหลักแล้ว
+  const thaiNormalized = mode === "thai" && given === `${fmtTrim(r.rai, 4)} ไร่ ${fmtTrim(r.ngan, 4)} งาน ${fmtTrim(r.restWa, 2)} ตร.วา`;
+  const headline = mode === "thai" ? `${given} = ${m2Text}${thaiNormalized ? "" : ` (${text})`}` : `${given} = ${text}`;
   return resultX({
     title: "ไร่-งาน-ตารางวา",
-    headline: `${given} = ${text}`,
+    headline,
     rows: [
       { label: "ไร่ งาน ตารางวา", value: text, emphasize: true },
-      { label: "ตารางเมตร", value: `${fmtTrim(m2, 2)} ตร.ม.`, emphasize: true },
-      { label: "ตารางวารวม", value: `${fmtTrim(r.wa, 2)} ตร.วา` },
-      { label: "ไร่ (ทศนิยม)", value: `${fmtTrim(m2 / UNIT.rai.value, 4)} ไร่` },
+      { label: "ตารางเมตร", value: m2Text, emphasize: true },
+      { label: "ตารางวารวม", value: waText(r.wa) },
+      { label: "ไร่ (ทศนิยม)", value: `${fmtTrim(m2 / UNIT.rai.value, m2 < UNIT.rai.value / 100 ? 8 : 4)} ไร่` },
       ...(price > 0 ? [{ label: `ราคา ${fmt(price)} บาท/ตร.วา`, value: `${fmt(r.wa * price)} บาท`, emphasize: true }] : []),
     ],
     tip: "ขนาดตามโฉนดคือค่าที่ใช้ซื้อขาย ที่วัดเองเป็นค่าประมาณ ที่ดินไม่ใช่สี่เหลี่ยมให้แบ่งเป็นรูปย่อยแล้วรวม",
@@ -788,7 +802,7 @@ export function calcRai(v: Values) {
         },
       ],
       constants: [UNIT.rai, UNIT.ngan, UNIT.sqWa],
-      assumptions: ["ตารางวาแสดงทศนิยม 2 ตำแหน่ง"],
+      assumptions: ["ตารางวาแสดงทศนิยม 2 ตำแหน่ง (พื้นที่ไม่ถึง 1 ตร.วา แสดงถึง 4 ตำแหน่ง)"],
       caveats: [DISCLAIMER_AB],
       refs: [{ label: "หน่วยวัดพื้นที่ไทย (ไร่ งาน ตารางวา) — ใช้ในโฉนดที่ดิน" }],
     },
@@ -907,10 +921,11 @@ export function calcTankVolume(v: Values) {
 
 const UNIT_PRICE_UNITS: Record<string, string> = { L: "ลิตร", kg: "กก.", m2: "ตร.ม.", m: "ม.", pc: "ชิ้น" };
 const UNIT_PRICE_MAX = 3;
+/** ค่าตั้งต้นใช้ลิตรตามฉลากถังสี (UNIT.gallon = 3.785 ล. ปัดตามฉลาก ไม่ใช่ 3.785411784 ตามนิยาม — ดูหมายเหตุในค่าคงที่) */
 const UNIT_PRICE_DEFAULTS = [
-  { name: "ถังเล็ก 1 แกลลอน", p: 450, c: 1, s: 3.785 },
-  { name: "ถังใหญ่ 5 แกลลอน", p: 1890, c: 1, s: 18.925 },
-  { name: "แพ็ก 4 แกลลอน", p: 1700, c: 4, s: 3.785 },
+  { name: "ถังเล็ก 1 แกลลอน", p: 450, c: 1, s: UNIT.gallon.value },
+  { name: "ถังใหญ่ 5 แกลลอน", p: 1890, c: 1, s: UNIT.gallon.value * UNIT.paintPail.value },
+  { name: "แพ็ก 4 แกลลอน", p: 1700, c: 4, s: UNIT.gallon.value },
 ];
 
 export function calcUnitPrice(v: Values) {
@@ -929,25 +944,40 @@ export function calcUnitPrice(v: Values) {
     items.push({ name, price, qty, per: price / qty, packs, cost: packs * price, extra: packs * qty - need });
   }
   const best = items.reduce((a, b) => (b.per < a.per - 1e-12 ? b : a), items[0]);
-  const allSame = items.every((x) => Math.abs(x.per - best.per) <= 1e-9 * best.per);
-  const buyBest = need > 0 ? items.reduce((a, b) => (b.cost < a.cost - 1e-9 ? b : a), items[0]) : null;
+  // ราคาต่อหน่วยเท่ากัน = ต่างกันแค่ระดับเศษทศนิยมของเครื่อง · ทุกตัวที่เท่าตัวถูกสุดได้ป้าย "ถูกสุด" ด้วยกัน ไม่เลือกตัวแรก
+  const cheapest = items.filter((x) => Math.abs(x.per - best.per) <= 1e-9 * best.per);
+  const allSame = cheapest.length === items.length;
+  // ยอดจ่ายจริงเทียบเป็นสตางค์ ยอดเท่ากันต้องบอกว่าเท่ากัน
+  const satang = (b: number) => Math.round(b * 100);
+  const minCost = Math.min(...items.map((x) => satang(x.cost)));
+  const payLeast = need > 0 ? items.filter((x) => satang(x.cost) === minCost) : [];
+  const payTie = payLeast.length > 1;
+  const payAll = payLeast.length === items.length;
+  const payText =
+    need <= 0 || (payLeast.length === 1 && payLeast[0] === best && cheapest.length === 1)
+      ? ""
+      : payAll
+        ? ` · ซื้อ ${fmtTrim(need, 2)} ${unit} จ่ายเท่ากันทุกตัว`
+        : payTie
+          ? ` · ซื้อ ${fmtTrim(need, 2)} ${unit} จ่ายน้อยสุดเท่ากัน: ${payLeast.map((x) => x.name).join(", ")}`
+          : ` · ซื้อ ${fmtTrim(need, 2)} ${unit} จ่ายน้อยสุด: ${payLeast[0].name}`;
   const pctMore = (x: (typeof items)[number]) => (x.per / best.per - 1) * 100;
   return resultX({
     title: "เทียบราคาต่อหน่วย",
     headline: allSame
-      ? `ราคาต่อ${unit}เท่ากันทุกตัว (${fmt(best.per, 2)} บาท/${unit})`
-      : `ถูกสุดต่อ${unit}: ${best.name} ${fmt(best.per, 2)} บาท/${unit}${buyBest && buyBest !== best ? ` · ซื้อ ${fmtTrim(need, 2)} ${unit} จ่ายน้อยสุด: ${buyBest.name}` : ""}`,
+      ? `ราคาต่อ${unit}เท่ากันทุกตัว (${fmt(best.per, 2)} บาท/${unit})${payText}`
+      : `ถูกสุดต่อ${unit}${cheapest.length > 1 ? " (เท่ากัน)" : ""}: ${cheapest.map((x) => x.name).join(", ")} ${fmt(best.per, 2)} บาท/${unit}${payText}`,
     rows: [
       ...items.map((x) => ({
         label: `${x.name} (${fmtTrim(x.price, 2)} บาท / ${fmtTrim(x.qty, 4)} ${unit})`,
-        value: `${fmt(x.per, 2)} บาท/${unit}${x === best || allSame ? (allSame ? "" : " · ถูกสุด") : ` · แพงกว่า ${fmt(pctMore(x), 1)}%`}`,
-        emphasize: x === best && !allSame,
+        value: `${fmt(x.per, 2)} บาท/${unit}${allSame ? "" : cheapest.includes(x) ? (cheapest.length > 1 ? " · ถูกสุด (เท่ากัน)" : " · ถูกสุด") : ` · แพงกว่า ${fmt(pctMore(x), 1)}%`}`,
+        emphasize: cheapest.includes(x) && !allSame,
       })),
       ...(need > 0
         ? items.map((x) => ({
             label: `ต้องใช้ ${fmtTrim(need, 2)} ${unit}: ${x.name}`,
-            value: `ซื้อ ${fmt(x.packs)} แพ็ก = ${fmtTrim(x.cost, 2)} บาท (เหลือ ${fmtTrim(x.extra, 3)} ${unit})${x === buyBest ? " · จ่ายน้อยสุด" : ""}`,
-            emphasize: x === buyBest,
+            value: `ซื้อ ${fmt(x.packs)} แพ็ก = ${fmtTrim(x.cost, 2)} บาท (เหลือ ${fmtTrim(x.extra, 3)} ${unit})${payAll ? " · จ่ายเท่ากัน" : payLeast.includes(x) ? (payTie ? " · จ่ายน้อยสุด (เท่ากัน)" : " · จ่ายน้อยสุด") : ""}`,
+            emphasize: payLeast.includes(x) && !payAll,
           }))
         : []),
     ],
@@ -959,13 +989,18 @@ export function calcUnitPrice(v: Values) {
       steps: [
         ...items.map((x) => ({ label: x.name, expr: "บาท/หน่วย = ราคา ÷ ปริมาณในแพ็ก", subst: `${fmtTrim(x.price, 2)} ÷ ${fmtTrim(x.qty, 4)} = ${fmt(x.per, 4)} บาท/${unit}` })),
         ...items
-          .filter((x) => x !== best && !allSame)
+          .filter((x) => !cheapest.includes(x))
           .map((x) => ({ label: `${x.name} เทียบตัวถูกสุด`, expr: "(ตัวนี้ ÷ ถูกสุด − 1) × 100", subst: `(${fmt(x.per, 4)} ÷ ${fmt(best.per, 4)} − 1) × 100 = ${fmt(pctMore(x), 2)}%` })),
         ...(need > 0
           ? items.map((x) => ({ label: `ซื้อจริง: ${x.name}`, expr: "แพ็ก = ปัดขึ้น(ที่ต้องใช้ ÷ ปริมาณในแพ็ก)", subst: `${fmtTrim(need, 2)} ÷ ${fmtTrim(x.qty, 4)} → ${fmt(x.packs)} แพ็ก × ${fmtTrim(x.price, 2)} = ${fmtTrim(x.cost, 2)} บาท` }))
           : []),
       ],
-      assumptions: ["ของทุกตัวคุณภาพเท่ากัน ใช้แทนกันได้", "ปริมาณในแพ็กใช้หน่วยเดียวกันทุกตัว (เช่น ลิตรทั้งหมด)"],
+      constants: unit === UNIT_PRICE_UNITS.L ? [UNIT.gallon] : undefined,
+      assumptions: [
+        "ของทุกตัวคุณภาพเท่ากัน ใช้แทนกันได้",
+        "ปริมาณในแพ็กใช้หน่วยเดียวกันทุกตัว (เช่น ลิตรทั้งหมด)",
+        ...(unit === UNIT_PRICE_UNITS.L ? ["ค่าตั้งต้นใช้ลิตรตามฉลากถังสี (1 แกลลอน = 3.785 ล. ปัดตามฉลาก) — ถ้าคิดด้วยแกลลอนตามนิยาม 3.785411784 ล. บาท/ลิตรต่างได้ที่ทศนิยมตำแหน่งที่ 2"] : []),
+      ],
       caveats: ["ใส่ปริมาณให้เป็นหน่วยเดียวกัน — เทียบกระเบื้องให้แปลงเป็น ตร.ม. ต่อแผ่น/กล่องก่อน", DISCLAIMER_AB],
       refs: [{ label: "เลขคณิตราคาต่อหน่วย" }],
     },
@@ -980,7 +1015,7 @@ function unitPriceFields(): Field[] {
     out.push(
       { type: "text", key: `name${i}`, label: `ตัวที่ ${i}: ชื่อ`, default: d.name, placeholder: "เช่น ถังใหญ่", ...(when ? { when } : {}) },
       { type: "number", key: `p${i}`, label: `ตัวที่ ${i}: ราคา`, unit: "บาท", default: d.p, min: 0.01, max: 10000000, step: 0.01, ...(when ? { when } : {}) },
-      { type: "number", key: `c${i}`, label: `ตัวที่ ${i}: จำนวนในแพ็ก`, unit: "ชิ้น", default: d.c, min: 1, max: 100000, ...(when ? { when } : {}) },
+      { type: "number", integer: true, key: `c${i}`, label: `ตัวที่ ${i}: จำนวนในแพ็ก`, unit: "ชิ้น", default: d.c, min: 1, max: 100000, ...(when ? { when } : {}) },
       { type: "number", key: `s${i}`, label: `ตัวที่ ${i}: ขนาดต่อชิ้น (หน่วยที่เลือก)`, default: d.s, min: 0.0001, max: 1000000, step: 0.0001, ...(when ? { when } : {}) },
     );
   }
@@ -1139,7 +1174,7 @@ export const generalTools: ToolDef[] = [
           { value: "maxgap", label: "รู้ช่องห่างไม่เกิน" },
         ],
       },
-      { type: "number", key: "n", label: "จำนวนชิ้น", unit: "ชิ้น", default: 9, min: 1, max: 500, when: { key: "mode", is: "count" } },
+      { type: "number", integer: true, key: "n", label: "จำนวนชิ้น", unit: "ชิ้น", default: 9, min: 1, max: 500, when: { key: "mode", is: "count" } },
       { type: "number", key: "maxGap", label: "ช่องห่างไม่เกิน", unit: "มม.", default: 100, min: 1, max: 100000, when: { key: "mode", is: "maxgap" } },
       {
         type: "select",

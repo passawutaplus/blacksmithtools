@@ -524,8 +524,8 @@ const REBAR_FIELDS: ToolDef["fields"] = [
   },
   { type: "number", key: "total", label: "ยาวรวม (รวมทาบแล้ว)", unit: "ม.", default: 100, min: 1, max: 100000, step: 0.5, when: { key: "mode", is: "total" } },
   { type: "number", key: "L", label: "ยาวคาน/เสา ตัวละ", unit: "ม.", default: 4, min: 0.5, max: 30, step: 0.1, when: { key: "mode", is: "beam" } },
-  { type: "number", key: "count", label: "จำนวน", unit: "ตัว", default: 4, min: 1, max: 500, when: { key: "mode", is: "beam" } },
-  { type: "number", key: "nbar", label: "เหล็กยืนต่อตัว", unit: "เส้น", default: 4, min: 2, max: 24, when: { key: "mode", is: "beam" } },
+  { type: "number", integer: true, key: "count", label: "จำนวน", unit: "ตัว", default: 4, min: 1, max: 500, when: { key: "mode", is: "beam" } },
+  { type: "number", integer: true, key: "nbar", label: "เหล็กยืนต่อตัว", unit: "เส้น", default: 4, min: 2, max: 24, when: { key: "mode", is: "beam" } },
   { type: "number", key: "lapD", label: "ระยะทาบ (เท่าของ Ø)", unit: "เท่า", default: REBAR_WORK.lapD.value, min: 20, max: 80, when: { key: "mode", is: "beam" } },
   {
     type: "select",
@@ -791,19 +791,19 @@ export function calcFormwork(v: Values): CalcResult {
 }
 
 const MEMBER_FIELDS: Field[] = [
-  { type: "number", key: "colN", label: "เสา: จำนวน (0 = ไม่มี)", unit: "ต้น", default: 8, min: 0, max: 500 },
+  { type: "number", integer: true, key: "colN", label: "เสา: จำนวน (0 = ไม่มี)", unit: "ต้น", default: 8, min: 0, max: 500 },
   { type: "number", key: "colB", label: "เสา: กว้าง", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
   { type: "number", key: "colD", label: "เสา: ลึก", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
   { type: "number", key: "colH", label: "เสา: สูง", unit: "ม.", default: 3, min: 0.3, max: 20, step: 0.05 },
-  { type: "number", key: "beamN", label: "คาน: จำนวน (0 = ไม่มี)", unit: "ตัว", default: 10, min: 0, max: 500 },
+  { type: "number", integer: true, key: "beamN", label: "คาน: จำนวน (0 = ไม่มี)", unit: "ตัว", default: 10, min: 0, max: 500 },
   { type: "number", key: "beamB", label: "คาน: กว้าง", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
   { type: "number", key: "beamD", label: "คาน: ลึก", unit: "ซม.", default: 40, min: 10, max: 300, step: 0.5 },
   { type: "number", key: "beamL", label: "คาน: ยาว (ระหว่างหน้าเสา)", unit: "ม.", default: 4, min: 0.3, max: 30, step: 0.05 },
-  { type: "number", key: "ftgN", label: "ฐานแผ่: จำนวน (0 = ไม่มี)", unit: "ฐาน", default: 8, min: 0, max: 500 },
+  { type: "number", integer: true, key: "ftgN", label: "ฐานแผ่: จำนวน (0 = ไม่มี)", unit: "ฐาน", default: 8, min: 0, max: 500 },
   { type: "number", key: "ftgW", label: "ฐานแผ่: กว้าง", unit: "ม.", default: 1, min: 0.3, max: 10, step: 0.05 },
   { type: "number", key: "ftgL", label: "ฐานแผ่: ยาว", unit: "ม.", default: 1, min: 0.3, max: 10, step: 0.05 },
   { type: "number", key: "ftgT", label: "ฐานแผ่: หนา", unit: "ซม.", default: 30, min: 10, max: 200, step: 0.5 },
-  { type: "number", key: "pedN", label: "ตอม่อ: จำนวน (0 = ไม่มี)", unit: "ต้น", default: 8, min: 0, max: 500 },
+  { type: "number", integer: true, key: "pedN", label: "ตอม่อ: จำนวน (0 = ไม่มี)", unit: "ต้น", default: 8, min: 0, max: 500 },
   { type: "number", key: "pedB", label: "ตอม่อ: กว้าง", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
   { type: "number", key: "pedD", label: "ตอม่อ: ลึก", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
   { type: "number", key: "pedH", label: "ตอม่อ: สูง", unit: "ม.", default: 1.2, min: 0.1, max: 10, step: 0.05 },
@@ -830,7 +830,7 @@ const round4Tools: ToolDef[] = [
     fields: [
       ...MEMBER_FIELDS,
       { type: "bool", key: "beamBottom", label: "คานมีแบบท้องคาน (ไม่ได้วางบนดิน)", default: true },
-      { type: "number", key: "reuse", label: "ใช้ไม้แบบซ้ำ", unit: "ครั้ง", default: FORMWORK.reuse.value, min: 1, max: 20 },
+      { type: "number", integer: true, key: "reuse", label: "ใช้ไม้แบบซ้ำ", unit: "ครั้ง", default: FORMWORK.reuse.value, min: 1, max: 20 },
       { type: "number", key: "waste", label: "เผื่อตัด", unit: "%", default: FORMWORK.wastePct.value, min: 0, max: 30, step: 0.5 },
       { type: "number", key: "batten", label: "ไม้เคร่าต่อพื้นที่แบบ (0 = ไม่คิด)", unit: "ม./ตร.ม.", default: FORMWORK.battenPerM2.value, min: 0, max: 10, step: 0.1 },
       { type: "number", key: "stock", label: "ไม้เคร่ายาวท่อนละ", unit: "ม.", default: FORMWORK.battenStock.value, min: 1, max: 6, step: 0.5 },

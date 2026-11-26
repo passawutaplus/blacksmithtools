@@ -226,8 +226,9 @@ describe("กวาดทุกเครื่องมือ: ค่าตั�
       }
     }
     expect(ran).toBeGreaterThan(500);
-    // จำนวนเคสโตตามตัวเลือก/ช่องที่เพิ่ม (รอบ 2 เกิน 5,000 เคส) จึงให้เวลามากกว่าค่าตั้งต้น 5 วินาที
-  }, 30_000);
+    // จำนวนเคสโตตามตัวเลือก/ช่องที่เพิ่ม (รอบ 2 เกิน 5,000 เคส · รอบ 4 ใช้ราว 25–27 วินาทีบนเครื่องทดสอบ)
+    // จึงให้เวลามากกว่าค่าตั้งต้น 5 วินาที และเผื่อไว้ให้พ้นเพดานเมื่อรันพร้อมไฟล์อื่น
+  }, 60_000);
 });
 
 describe("กวาดทุกเครื่องมือ: ค่าขยะที่ไม่ผ่านฟอร์ม", () => {
@@ -277,6 +278,30 @@ describe("กวาดทุกเครื่องมือ: ค่าขย�
         expect(r.invalid, `${name}:${f.key}`).toBe(true);
       }
     }
+  });
+
+  it("ช่องนับจำนวน (integer): ปลายช่วงและค่าตั้งต้นเป็นจำนวนเต็ม และเลขมีเศษต้องไม่ผ่าน", () => {
+    let checked = 0;
+    for (const { name, def } of targets) {
+      const base = defaults(def.fields);
+      for (const f of def.fields) {
+        if (f.type !== "number" || !f.integer) continue;
+        const where = `${name}.${f.key}`;
+        expect(Number.isInteger(f.min) && Number.isInteger(f.max) && Number.isInteger(f.default), where).toBe(true);
+        if (f.when) {
+          const allowed = Array.isArray(f.when.is) ? f.when.is : [f.when.is];
+          if (!allowed.includes(String(base[f.when.key] ?? ""))) continue;
+        }
+        // เศษครึ่งหนึ่งที่ยังอยู่ในช่วง min–max: ต้องถูกปฏิเสธเพราะมีเศษ ไม่ใช่เพราะหลุดช่วง
+        const half = f.default + 0.5 <= (f.max as number) ? f.default + 0.5 : f.default - 0.5;
+        const r = def.calc({ ...base, [f.key]: half });
+        expect(r.invalid, where).toBe(true);
+        expect(r.fieldErrors?.[f.key], where).toContain("จำนวนเต็ม");
+        expect(problems(r), where).toEqual([]);
+        checked += 1;
+      }
+    }
+    expect(checked).toBeGreaterThan(100);
   });
 
   it("เลขต่ำกว่า min หรือสูงกว่า max นิดเดียวก็ต้องไม่ผ่าน", () => {

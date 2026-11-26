@@ -45,8 +45,13 @@ const WHT_RATES: Record<string, { label: string; ref?: typeof TAX.whtService }> 
   "5": { label: "5% ค่าเช่า", ref: TAX.whtRent },
 };
 
+/** ยอดจ่ายครั้งนี้ต่ำกว่าเกณฑ์ที่ปกติต้องหัก ณ ที่จ่าย */
+function whtBelowMin(baseSatang: number, rate: number): boolean {
+  return rate > 0 && baseSatang < TAX.whtMinPayment.value * SATANG;
+}
+
 function whtNote(baseSatang: number, rate: number) {
-  return rate > 0 && baseSatang < TAX.whtMinPayment.value * SATANG
+  return whtBelowMin(baseSatang, rate)
     ? [{ label: "หมายเหตุหัก ณ ที่จ่าย", value: `ยอดต่ำกว่า ${fmt(TAX.whtMinPayment.value)} บาท ปกติไม่ต้องหัก (เว้นแต่จ่ายตามสัญญาที่รวมแล้วถึง)` }]
     : [];
 }
@@ -78,7 +83,7 @@ export function calcQuote(v: Values): CalcResult {
   const f = priceFactor(kind, pct);
   const vatMode = str(v, "vat", "excl");
   const whtMode = str(v, "wht", "none");
-  const vatPct = TAX.vat.value;
+  const vatPct = num(v, "vatRate", TAX.vat.value);
   const whtPct = TAX.whtService.value;
 
   const lines: Array<{ i: number; d: string; q: number; sellUnit: number; total: number; cost: number }> = [];
@@ -117,18 +122,22 @@ export function calcQuote(v: Values): CalcResult {
   const whtBase = whtMode === "all" ? base : whtMode === "labour" ? (vatMode === "incl" ? splitVatIncluded(labour, vatPct).base : labour) : 0;
   const wht = whtMode === "none" ? 0 : pctOf(whtBase, whtPct);
   const net = gross - wht;
+  const whtSmall = whtMode !== "none" && whtBelowMin(whtBase, whtPct);
+  const vatText = fmtTrim(vatPct, 2);
   const kindText = kind === "margin" ? `กำไร ${fmtTrim(pct, 2)}% ของราคาขาย` : `บวก ${fmtTrim(pct, 2)}% จากทุน`;
 
   return resultX({
     title: "ใบเสนอราคา",
-    headline: `ยอดรวมทั้งสิ้น ${baht(gross)}${wht > 0 ? ` · รับเงินจริง ${baht(net)}` : ""}`,
+    headline: whtSmall
+      ? `ยอดรวมทั้งสิ้น ${baht(gross)} · ฐานหักต่ำกว่า ${fmt(TAX.whtMinPayment.value)} บาท ปกติไม่ต้องหัก ณ ที่จ่าย (ถ้าหัก รับจริง ${baht(net)})`
+      : `ยอดรวมทั้งสิ้น ${baht(gross)}${wht > 0 ? ` · รับเงินจริง ${baht(net)}` : ""}`,
     chart:
       vat > 0
         ? {
             kind: "stack",
             parts: [
               { label: "ราคาก่อน VAT", value: base / SATANG, display: baht(base), tone: "accent" },
-              { label: `VAT ${vatPct}%`, value: vat / SATANG, display: baht(vat), tone: "mute" },
+              { label: `VAT ${vatText}%`, value: vat / SATANG, display: baht(vat), tone: "mute" },
             ],
             totalLabel: "ยอดรวมทั้งสิ้น",
             totalDisplay: baht(gross),
@@ -138,8 +147,8 @@ export function calcQuote(v: Values): CalcResult {
       ...lines.map((l) => ({ label: `${l.i}. ${l.d}`, value: `${fmtTrim(l.q, 3)} × ${baht(l.sellUnit)} = ${baht(l.total)}` })),
       { label: `${n + 1}. ค่าแรง`, value: baht(labour) },
       { label: vatMode === "incl" ? "รวมเป็นเงิน (รวม VAT แล้ว)" : "รวมเป็นเงิน", value: baht(sub) },
-      ...(vatMode === "excl" ? [{ label: `ภาษีมูลค่าเพิ่ม ${vatPct}%`, value: baht(vat) }] : []),
-      ...(vatMode === "incl" ? [{ label: "ราคาก่อน VAT", value: baht(base) }, { label: `ภาษีมูลค่าเพิ่ม ${vatPct}% (อยู่ในราคา)`, value: baht(vat) }] : []),
+      ...(vatMode === "excl" ? [{ label: `ภาษีมูลค่าเพิ่ม ${vatText}%`, value: baht(vat) }] : []),
+      ...(vatMode === "incl" ? [{ label: "ราคาก่อน VAT", value: baht(base) }, { label: `ภาษีมูลค่าเพิ่ม ${vatText}% (อยู่ในราคา)`, value: baht(vat) }] : []),
       { label: "ยอดรวมทั้งสิ้น", value: baht(gross), emphasize: true },
       ...(whtMode !== "none"
         ? [
@@ -153,7 +162,7 @@ export function calcQuote(v: Values): CalcResult {
     explain: {
       risk: "A",
       updatedAt: UPDATED,
-      summary: "ราคาต่อหน่วย = ทุน × ตัวคูณกำไร ปัดเป็นสตางค์ · บรรทัด = จำนวน × ราคาต่อหน่วย ปัดสตางค์ · VAT 7% คิดจากยอดรวม · หัก ณ ที่จ่าย 3% คิดจากยอดก่อน VAT",
+      summary: `ราคาต่อหน่วย = ทุน × ตัวคูณกำไร ปัดเป็นสตางค์ · บรรทัด = จำนวน × ราคาต่อหน่วย ปัดสตางค์ · VAT ${vatText}% คิดจากยอดรวม · หัก ณ ที่จ่าย ${whtPct}% คิดจากยอดก่อน VAT`,
       steps: [
         { label: "ตัวคูณกำไร", expr: kind === "margin" ? "1 ÷ (1 − กำไร%)" : "1 + บวก%", subst: `${fmtTrim(f, 6)}` },
         ...lines.map((l) => ({
@@ -164,9 +173,9 @@ export function calcQuote(v: Values): CalcResult {
         { label: "ค่าแรง", expr: "ค่าแรงทุน × ตัวคูณ", subst: `${fmt(labourCost / SATANG, 2)} × ${fmtTrim(f, 6)} = ${fmt(labour / SATANG, 2)} บาท` },
         { label: "กำไรที่บวกเข้าไป (ของเราเอง)", expr: `รวมเป็นเงิน − ต้นทุนที่กรอก (${kindText})`, subst: `${fmt(sub / SATANG, 2)} − ${fmt(costSum / SATANG, 2)} = ${fmt(profit / SATANG, 2)} บาท` },
         vatMode === "excl"
-          ? { label: "VAT", expr: `รวม × ${vatPct}% ปัดครึ่งขึ้น`, subst: `${fmt(sub / SATANG, 2)} × ${vatPct}% = ${fmt(vat / SATANG, 2)} บาท` }
+          ? { label: "VAT", expr: `รวม × ${vatText}% ปัดครึ่งขึ้น`, subst: `${fmt(sub / SATANG, 2)} × ${vatText}% = ${fmt(vat / SATANG, 2)} บาท` }
           : vatMode === "incl"
-            ? { label: "VAT ในราคา", expr: `ฐาน = รวม × 100 ÷ ${100 + vatPct} · VAT = รวม − ฐาน`, subst: `${fmt(sub / SATANG, 2)} × 100 ÷ ${100 + vatPct} = ${fmt(base / SATANG, 2)} · VAT ${fmt(vat / SATANG, 2)} บาท` }
+            ? { label: "VAT ในราคา", expr: `ฐาน = รวม × 100 ÷ ${fmtTrim(100 + vatPct, 2)} · VAT = รวม − ฐาน`, subst: `${fmt(sub / SATANG, 2)} × 100 ÷ ${fmtTrim(100 + vatPct, 2)} = ${fmt(base / SATANG, 2)} · VAT ${fmt(vat / SATANG, 2)} บาท` }
             : { label: "VAT", expr: "ไม่จดทะเบียน VAT ไม่คิดภาษี", subst: "0 บาท" },
         ...(whtMode !== "none"
           ? [{ label: "หัก ณ ที่จ่าย", expr: `ฐานก่อน VAT × ${whtPct}% · รับจริง = ยอดรวม − หัก`, subst: `${fmt(whtBase / SATANG, 2)} × ${whtPct}% = ${fmt(wht / SATANG, 2)} · ${fmt(gross / SATANG, 2)} − ${fmt(wht / SATANG, 2)} = ${fmt(net / SATANG, 2)} บาท` }]
@@ -178,6 +187,7 @@ export function calcQuote(v: Values): CalcResult {
         "ปัดเป็นสตางค์แบบครึ่งขึ้น (0.005 ขึ้นเป็น 0.01) ทีละบรรทัด ยอดรวม = ผลบวกของบรรทัดที่ปัดแล้ว",
       ],
       caveats: [
+        "อัตรา VAT ในช่องเป็นค่าเริ่มต้น 7% — ตรวจพระราชกฤษฎีกาลดอัตรา VAT ฉบับที่ใช้อยู่ ณ วันออกใบกำกับ",
         "ออกใบกำกับภาษีได้เฉพาะผู้จดทะเบียน VAT",
         "หัก ณ ที่จ่ายเฉพาะค่าแรงได้เมื่อสัญญาแยกค่าของกับค่าแรงชัด — ยึดตามที่ฝ่ายบัญชีผู้ว่าจ้างกำหนด",
         DISCLAIMER_AB,
@@ -260,7 +270,8 @@ export function calcVatWht(v: Values): CalcResult {
   const mode = str(v, "mode", "excl");
   const rateKey = str(v, "wht", "3");
   const rate = Number(rateKey);
-  const vatPct = TAX.vat.value;
+  const vatPct = num(v, "vatRate", TAX.vat.value);
+  const vatText = fmtTrim(vatPct, 2);
   let base: number;
   let vat: number;
   let total: number;
@@ -279,10 +290,13 @@ export function calcVatWht(v: Values): CalcResult {
   const wht = pctOf(base, rate);
   const net = total - wht;
   const r = WHT_RATES[rateKey];
+  const whtSmall = whtBelowMin(base, rate);
 
   return resultX({
     title: "VAT / หัก ณ ที่จ่าย",
-    headline: `ยอดรวม ${baht(total)}${rate > 0 ? ` · หัก ${rate}% ${baht(wht)} · รับจริง ${baht(net)}` : ""}`,
+    headline: whtSmall
+      ? `ยอดรวม ${baht(total)} · ต่ำกว่า ${fmt(TAX.whtMinPayment.value)} บาท ปกติไม่ต้องหัก ณ ที่จ่าย (ถ้าหัก ${rate}% รับจริง ${baht(net)})`
+      : `ยอดรวม ${baht(total)}${rate > 0 ? ` · หัก ${rate}% ${baht(wht)} · รับจริง ${baht(net)}` : ""}`,
     chart:
       rate > 0
         ? {
@@ -297,7 +311,7 @@ export function calcVatWht(v: Values): CalcResult {
         : undefined,
     rows: [
       { label: "ราคาก่อน VAT (ฐานภาษี)", value: baht(base), emphasize: true },
-      { label: mode === "none" ? "VAT" : `VAT ${vatPct}%`, value: mode === "none" ? "ไม่คิด (ไม่จด VAT)" : baht(vat) },
+      { label: mode === "none" ? "VAT" : `VAT ${vatText}%`, value: mode === "none" ? "ไม่คิด (ไม่จด VAT)" : baht(vat) },
       { label: "ยอดรวมในใบ", value: baht(total), emphasize: true },
       { label: `หัก ณ ที่จ่าย (${r.label})`, value: rate > 0 ? `${baht(wht)} จากฐานก่อน VAT` : "ไม่หัก" },
       { label: "รับเงินจริง", value: baht(net), emphasize: true },
@@ -307,19 +321,19 @@ export function calcVatWht(v: Values): CalcResult {
     explain: {
       risk: "A",
       updatedAt: UPDATED,
-      summary: `แยก VAT: ฐาน = รวม × 100 ÷ ${100 + vatPct} · บวก VAT: VAT = ฐาน × ${vatPct}% · หัก ณ ที่จ่าย = ฐานก่อน VAT × อัตรา · รับจริง = ยอดรวม − หัก`,
+      summary: `แยก VAT: ฐาน = รวม × 100 ÷ ${fmtTrim(100 + vatPct, 2)} · บวก VAT: VAT = ฐาน × ${vatText}% · หัก ณ ที่จ่าย = ฐานก่อน VAT × อัตรา · รับจริง = ยอดรวม − หัก`,
       steps: [
         mode === "excl"
-          ? { label: "VAT", expr: `ฐาน × ${vatPct}%`, subst: `${fmt(base / SATANG, 2)} × ${vatPct}% = ${fmt(vat / SATANG, 2)} บาท` }
+          ? { label: "VAT", expr: `ฐาน × ${vatText}%`, subst: `${fmt(base / SATANG, 2)} × ${vatText}% = ${fmt(vat / SATANG, 2)} บาท` }
           : mode === "incl"
-            ? { label: "แยก VAT", expr: `ฐาน = รวม × 100 ÷ ${100 + vatPct} · VAT = รวม − ฐาน`, subst: `${fmt(amt / SATANG, 2)} × 100 ÷ ${100 + vatPct} = ${fmt(base / SATANG, 2)} · VAT ${fmt(vat / SATANG, 2)} บาท` }
+            ? { label: "แยก VAT", expr: `ฐาน = รวม × 100 ÷ ${fmtTrim(100 + vatPct, 2)} · VAT = รวม − ฐาน`, subst: `${fmt(amt / SATANG, 2)} × 100 ÷ ${fmtTrim(100 + vatPct, 2)} = ${fmt(base / SATANG, 2)} · VAT ${fmt(vat / SATANG, 2)} บาท` }
             : { label: "VAT", expr: "ไม่จด VAT", subst: "0 บาท" },
         { label: "หัก ณ ที่จ่าย", expr: "ฐานก่อน VAT × อัตรา", subst: `${fmt(base / SATANG, 2)} × ${rate}% = ${fmt(wht / SATANG, 2)} บาท` },
         { label: "รับจริง", expr: "ยอดรวม − หัก ณ ที่จ่าย", subst: `${fmt(total / SATANG, 2)} − ${fmt(wht / SATANG, 2)} = ${fmt(net / SATANG, 2)} บาท` },
       ],
       constants: [TAX.vat, ...(r.ref ? [r.ref, TAX.whtMinPayment] : []), TAX.satangPerBaht],
       assumptions: ["ปัดเป็นสตางค์แบบครึ่งขึ้น", "ผู้จ่ายเป็นนิติบุคคล (บุคคลธรรมดาทั่วไปไม่มีหน้าที่หัก ณ ที่จ่ายค่าจ้าง)"],
-      caveats: ["อัตรา VAT 7% เป็นอัตราลดที่ต่ออายุเป็นช่วง ตรวจอัตรา ณ วันออกใบกำกับ", "อัตราหัก ณ ที่จ่ายขึ้นกับประเภทเงินได้ ถามฝ่ายบัญชีผู้จ่ายถ้าไม่แน่ใจ", DISCLAIMER_AB],
+      caveats: ["อัตรา VAT ในช่องเป็นค่าเริ่มต้น 7% (อัตราลดที่ต่ออายุเป็นช่วง) — ตรวจพระราชกฤษฎีกาลดอัตรา VAT ฉบับที่ใช้อยู่ ณ วันออกใบกำกับ", "อัตราหัก ณ ที่จ่ายขึ้นกับประเภทเงินได้ ถามฝ่ายบัญชีผู้จ่ายถ้าไม่แน่ใจ", DISCLAIMER_AB],
       refs: [{ label: "ประมวลรัษฎากร ม.80 (VAT)" }, { label: "คำสั่งกรมสรรพากร ท.ป.4/2528 (อัตราหัก ณ ที่จ่าย)" }],
     },
   });
@@ -527,16 +541,31 @@ const kindField: Field = {
 };
 
 const vatModeOptions = [
-  { value: "excl", label: "ราคายังไม่รวม VAT (บวก 7%)" },
-  { value: "incl", label: "ราคารวม VAT แล้ว (แยก 7% ออก)" },
+  { value: "excl", label: "ราคายังไม่รวม VAT (บวก VAT)" },
+  { value: "incl", label: "ราคารวม VAT แล้ว (แยก VAT ออก)" },
   { value: "none", label: "ไม่จด VAT" },
 ];
+
+/** อัตรา VAT แก้ได้ — ค่าเริ่มต้น 7% เป็นอัตราลดตามพระราชกฤษฎีกาที่ต่ออายุเป็นช่วง ไม่ใช่ค่าตายตัว */
+function vatRateField(modeKey: string): Field {
+  return {
+    type: "number",
+    key: "vatRate",
+    label: "อัตรา VAT (ตรวจพระราชกฤษฎีกาลดอัตรา VAT ฉบับที่ใช้อยู่)",
+    unit: "%",
+    default: TAX.vat.value,
+    min: 1,
+    max: 10,
+    step: 0.01,
+    when: { key: modeKey, is: ["excl", "incl"] },
+  };
+}
 
 export const estimateTools: ToolDef[] = [
   {
     id: "quote",
     name: "ใบเสนอราคาเร็ว",
-    blurb: "รายการ ค่าแรง กำไร VAT 7% หัก ณ ที่จ่าย 3%",
+    blurb: "รายการ ค่าแรง กำไร VAT หัก ณ ที่จ่าย 3%",
     keywords: ["ใบเสนอราคา", "quotation", "ใบเสนอ", "vat", "หัก ณ ที่จ่าย", "ราคางาน"],
     fields: [
       {
@@ -551,6 +580,7 @@ export const estimateTools: ToolDef[] = [
       kindField,
       { type: "number", key: "pct", label: "กำไร", unit: "%", default: 10, min: 0, max: 90, step: 0.1 },
       { type: "select", key: "vat", label: "VAT", default: "excl", options: vatModeOptions },
+      vatRateField("vat"),
       {
         type: "select",
         key: "wht",
@@ -581,11 +611,12 @@ export const estimateTools: ToolDef[] = [
   {
     id: "vat",
     name: "VAT / หัก ณ ที่จ่าย",
-    blurb: "รวม-แยก VAT 7% หัก 1/2/3/5% รับจริง",
+    blurb: "รวม-แยก VAT หัก 1/2/3/5% รับจริง",
     keywords: ["vat", "ภาษีมูลค่าเพิ่ม", "7%", "หัก ณ ที่จ่าย", "50 ทวิ", "ถอด vat"],
     fields: [
       { type: "number", key: "amt", label: "จำนวนเงิน", unit: "บาท", default: 10000, min: 0.01, max: 1000000000, step: 0.01 },
       { type: "select", key: "mode", label: "จำนวนเงินนี้", default: "excl", options: vatModeOptions },
+      vatRateField("mode"),
       { type: "select", key: "wht", label: "หัก ณ ที่จ่าย", default: "3", options: Object.entries(WHT_RATES).map(([value, r]) => ({ value, label: r.label })) },
     ],
     calc: calcVatWht,
@@ -608,7 +639,7 @@ export const estimateTools: ToolDef[] = [
           { value: "custom", label: "กำหนด % เอง" },
         ],
       },
-      { type: "number", key: "n", label: "จำนวนงวด (ไม่นับมัดจำ)", unit: "งวด", default: 3, min: 1, max: 12, when: { key: "mode", is: "equal" } },
+      { type: "number", integer: true, key: "n", label: "จำนวนงวด (ไม่นับมัดจำ)", unit: "งวด", default: 3, min: 1, max: 12, when: { key: "mode", is: "equal" } },
       { type: "text", key: "list", label: "% ของสัญญาแต่ละงวด (มัดจำ + ทุกงวด = 100)", placeholder: "40, 30", default: "40, 30", when: { key: "mode", is: "custom" } },
       { type: "number", key: "ret", label: "เงินประกันผลงาน (หักจากค่างวด)", unit: "%", default: 5, min: 0, max: 20, step: 0.5 },
     ],
@@ -632,8 +663,8 @@ export const estimateTools: ToolDef[] = [
         ],
       },
       { type: "number", key: "rate", label: "อัตรางานต่อทีม", unit: "ตร.ม./วัน", default: 15, min: 0.5, max: 1000, step: 0.5, when: { key: "job", is: "custom" } },
-      { type: "number", key: "crew", label: "คนต่อทีม", unit: "คน", default: LABOUR.crew.value, min: 1, max: 50 },
-      { type: "number", key: "teams", label: "จำนวนทีม", unit: "ทีม", default: 1, min: 1, max: 20 },
+      { type: "number", integer: true, key: "crew", label: "คนต่อทีม", unit: "คน", default: LABOUR.crew.value, min: 1, max: 50 },
+      { type: "number", integer: true, key: "teams", label: "จำนวนทีม", unit: "ทีม", default: 1, min: 1, max: 20 },
       { type: "number", key: "wage", label: "ค่าแรงต่อคนต่อวัน", unit: "บาท", default: LABOUR.wage.value, min: 100, max: 10000 },
       {
         type: "select",

@@ -362,8 +362,8 @@ export const vinylTools: ToolDef[] = [
     fields: [
       { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
       { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 5, min: 0.5, max: 100, step: 0.1 },
-      { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
-      { type: "number", key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0, max: 50 },
+      { type: "number", integer: true, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+      { type: "number", integer: true, key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0, max: 50 },
     ],
     calc: calcSkirting,
   },
@@ -399,8 +399,8 @@ export const vinylJob: JobDef = {
       ],
     },
     gluePackField,
-    { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
-    { type: "number", key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0, max: 50 },
+    { type: "number", integer: true, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 10 },
+    { type: "number", integer: true, key: "tmold", label: "รอยต่อต่างวัสดุ", unit: "เส้น", default: 1, min: 0, max: 50 },
   ],
   calc: (input) => {
     const bad = guardInputs(vinylJob.fields, input);

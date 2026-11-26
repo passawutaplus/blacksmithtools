@@ -299,7 +299,7 @@ const digFields: Field[] = [
   { type: "number", key: "pd", label: "ลึกหลุม", unit: "ม.", default: 1.5, min: 0.1, max: 10, step: 0.05, when: { key: "shape", is: "pit" } },
   { type: "number", key: "rd", label: "เส้นผ่านศูนย์กลางหลุม", unit: "ซม.", default: 80, min: 10, max: 300, when: { key: "shape", is: "round" } },
   { type: "number", key: "rdepth", label: "ลึกหลุม", unit: "ม.", default: 1.2, min: 0.1, max: 30, step: 0.05, when: { key: "shape", is: "round" } },
-  { type: "number", key: "count", label: "จำนวน", unit: "หลุม/ร่อง", default: 1, min: 1, max: 1000 },
+  { type: "number", integer: true, key: "count", label: "จำนวน", unit: "หลุม/ร่อง", default: 1, min: 1, max: 1000 },
   {
     type: "select",
     key: "soil",

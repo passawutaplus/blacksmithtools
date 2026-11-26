@@ -1,5 +1,5 @@
 import type { CalcResult, ChartSpec, ConstRef, Field, ToolDef, Values } from "../types";
-import { blockedResult, ceil, fmt, fmtTrim, guardTool, num, resultX, str } from "../math";
+import { blockedResult, ceil, fmt, fmtTrim, guardTool, num, resultX, round, str } from "../math";
 import {
   CCTV_BITRATES,
   CCTV_HDD_TB,
@@ -10,6 +10,7 @@ import {
   DISCLAIMER_AB,
   LAN,
   POE,
+  POE_CLASS0,
   POE_CLASS_SOURCE,
   POE_CLASSES,
   POE_TYPES,
@@ -62,11 +63,13 @@ export function calcHdd(v: Values): CalcResult {
   const tbRaw = (gbDay * days) / DATA_UNIT.gbPerTB.value;
   const needTb = tbRaw * (1 + headroom / 100);
   const largest = CCTV_HDD_TB[CCTV_HDD_TB.length - 1];
-  const perDriveNeed = needTb / bays;
-  const fitSize = pickHdd(perDriveNeed);
+  // ซื้อดิสก์น้อยลูกที่สุดที่จุพอ: ลูกเดียวไม่พอค่อยเพิ่มลูก (ไม่เกินจำนวนช่องที่มี) — ห้ามเติมทุกช่องด้วยใบเล็ก
+  const drives = Math.max(1, ceil(needTb / largest));
+  const fits = drives <= bays;
+  const perDriveNeed = needTb / drives;
+  const fitSize = fits ? pickHdd(perDriveNeed) : undefined;
   // ใส่ไม่พอในจำนวนช่องที่มี: ใช้ใบใหญ่สุดหลายลูก แล้วบอกว่าต้องมีช่องเท่าไหร่ (ไม่หนีบเงียบ)
   const size = fitSize ?? largest;
-  const drives = fitSize !== undefined ? bays : ceil(needTb / largest);
   const totalTb = size * drives;
   const tbPerDay = gbDay / DATA_UNIT.gbPerTB.value;
   const daysHeld = totalTb / tbPerDay;
@@ -89,7 +92,9 @@ export function calcHdd(v: Values): CalcResult {
       { label: "ฮาร์ดดิสก์ที่ต้องซื้อ", value: `${size} TB × ${fmt(drives)} ลูก (รวม ${fmt(totalTb)} TB)`, emphasize: true },
       ...(fitSize === undefined
         ? [{ label: "ช่องใส่ดิสก์", value: `NVR ต้องมีอย่างน้อย ${fmt(drives)} ช่อง (ตอนนี้ ${fmt(bays)} ช่อง)`, emphasize: true }]
-        : []),
+        : bays > drives
+          ? [{ label: "ช่องใส่ดิสก์", value: `ใช้ ${fmt(drives)} จาก ${fmt(bays)} ช่อง — ช่องที่เหลือไว้เพิ่มดิสก์ทีหลัง` }]
+          : []),
       { label: "เก็บได้จริงกับดิสก์ที่ซื้อ", value: `ราว ${fmt(daysHeld, 1)} วัน`, emphasize: true },
       { label: "NVR จะแสดงความจุต่อลูก", value: `ราว ${fmt(shownTib, 2)} TB (หน่วย TiB)` },
     ],
@@ -114,12 +119,13 @@ export function calcHdd(v: Values): CalcResult {
           subst: `${fmt(gbDay, 1)} × ${fmt(days)} ÷ 1,000 × ${fmtTrim(1 + headroom / 100, 3)} = ${fmt(needTb, 2)} TB`,
         },
         {
-          label: "เลือกขนาดดิสก์",
-          expr: "ต่อช่อง = TB ÷ จำนวนช่อง แล้วปัดขึ้นเป็นขนาดที่ขาย",
+          label: "เลือกดิสก์",
+          expr: `ลูก = ปัดขึ้น(TB ÷ ใบใหญ่สุด ${largest} TB) · ต่อลูก = TB ÷ ลูก แล้วปัดขึ้นเป็นขนาดที่ขาย`,
           subst:
             fitSize !== undefined
-              ? `${fmt(needTb, 2)} ÷ ${fmt(bays)} = ${fmt(perDriveNeed, 2)} TB → ${size} TB`
-              : `${fmt(needTb, 2)} ÷ ${fmt(bays)} = ${fmt(perDriveNeed, 2)} TB เกินใบใหญ่สุด ${largest} TB → ${fmt(needTb, 2)} ÷ ${largest} = ${fmt(drives)} ลูก`,
+              ? `ปัดขึ้น(${fmt(needTb, 2)} ÷ ${largest}) = ${fmt(drives)} ลูก · ${fmt(needTb, 2)} ÷ ${fmt(drives)} = ${fmt(perDriveNeed, 2)} TB → ${size} TB`
+              : `ปัดขึ้น(${fmt(needTb, 2)} ÷ ${largest}) = ${fmt(drives)} ลูก เกินช่องที่มี ${fmt(bays)} ช่อง`,
+          note: "ซื้อลูกน้อยที่สุดที่จุพอ ไม่เกินจำนวนช่องของ NVR",
         },
         { label: "เก็บได้จริง", expr: "วัน = TB ที่ซื้อ ÷ TB/วัน", subst: `${fmt(totalTb)} ÷ ${fmt(tbPerDay, 4)} = ${fmt(daysHeld, 1)} วัน`, note: "ยังไม่หักส่วนเผื่อ — NVR จะเขียนทับของเก่าเองเมื่อเต็ม" },
       ],
@@ -137,6 +143,7 @@ export function calcHdd(v: Values): CalcResult {
         "บิตเรตคงที่ตามที่กรอก (สตรีมหลัก) กล้องทุกตัวตั้งเท่ากัน",
         "TB คิดฐาน 10 แบบเดียวกับฉลากดิสก์ (1 TB = 1,000 GB)",
         "ไม่รวมสตรีมรอง (sub stream) ถ้า NVR อัดสตรีมรองด้วยให้บวกบิตเรตเพิ่ม",
+        "เลือกดิสก์ลูกน้อยที่สุดที่จุพอ — ถ้าใบเล็กหลายลูกถูกกว่าใบใหญ่ลูกเดียว ให้เทียบราคาเองได้ (NVR ส่วนมากไม่ทำ RAID ข้อมูลไม่ได้สำรองซ้ำ)",
       ],
       caveats: [
         "บิตเรตแบบ VBR กลางคืน/ฝนตก/ต้นไม้ไหวพุ่งได้เกินค่าที่ตั้ง จึงควรเผื่อ",
@@ -153,6 +160,9 @@ export function calcHdd(v: Values): CalcResult {
 
 type PoeGroup = { n: number; cls: number; deviceW: number; pse: number; label: string };
 
+/** คลาสที่เลือกเองได้ในฟอร์ม: คลาส 0 (ไม่บอกคลาส) + คลาส 1–8 */
+const POE_PICKABLE = [POE_CLASS0, ...POE_CLASSES];
+
 /** คลาสเล็กสุดที่จ่ายถึงอุปกรณ์ได้ไม่น้อยกว่า watts */
 export function poeClassFor(watts: number) {
   return POE_CLASSES.find((c) => c.pd >= watts - 1e-9);
@@ -167,8 +177,9 @@ function poeGroup(v: Values, i: number, fallbackN: number, fallbackW: number): P
     return { n, cls: c.cls, deviceW, pse: c.pse, label: `${fmtTrim(deviceW, 2)} W (คลาส ${c.cls})` };
   }
   const cls = Number(spec.slice(1));
-  const c = POE_CLASSES.find((x) => x.cls === cls) ?? POE_CLASSES[0];
-  return { n, cls: c.cls, deviceW: c.pd, pse: c.pse, label: `คลาส ${c.cls} (ไม่เกิน ${fmtTrim(c.pd, 2)} W)` };
+  const c = POE_PICKABLE.find((x) => x.cls === cls) ?? POE_CLASSES[0];
+  const label = c.cls === 0 ? `คลาส 0 ไม่บอกคลาส (จองเท่าคลาส 3 ไม่เกิน ${fmtTrim(c.pd, 2)} W)` : `คลาส ${c.cls} (ไม่เกิน ${fmtTrim(c.pd, 2)} W)`;
+  return { n, cls: c.cls, deviceW: c.pd, pse: c.pse, label };
 }
 
 export function calcPoe(v: Values): CalcResult {
@@ -265,7 +276,7 @@ export function calcPoe(v: Values): CalcResult {
       assumptions: [
         "จองตามคลาส = สวิตช์กันไฟไว้เต็มคลาสของพอร์ตนั้น (แบบระมัดระวัง สวิตช์ส่วนมากทำแบบนี้)",
         "คิดตามไฟที่อุปกรณ์ใช้ = รวมวัตต์สูงสุดตามสเปก ยังไม่รวมไฟที่หายในสาย (สาย 100 ม. หายได้ถึงราว 16% ของที่พอร์ตจ่าย)",
-        `ตารางคลาส PoE: ${POE_CLASSES.map((c) => `คลาส ${c.cls} ${fmtTrim(c.pse, 1)}/${fmtTrim(c.pd, 2)} W`).join(" · ")}`,
+        `ตารางคลาส PoE: ${POE_PICKABLE.map((c) => `คลาส ${c.cls} ${fmtTrim(c.pse, 1)}/${fmtTrim(c.pd, 2)} W`).join(" · ")} (คลาส 0 = ไม่บอกคลาส สวิตช์จองเท่าคลาส 3)`,
       ],
       caveats: [
         "สวิตช์ราคาถูกบางรุ่นจ่ายครบงบรวมไม่ได้ทุกพอร์ตพร้อมกัน ดูสเปก PoE budget จริง",
@@ -304,6 +315,11 @@ export function calcLan(v: Values): CalcResult {
   const boxes = ceil(runs / perBox);
   const lastRuns = runs - (boxes - 1) * perBox;
   const leftover = boxes * box - total;
+  // เศษท้ายกล่องที่น้อยที่สุด: กล่องเต็มตัดได้ perBox เส้น กล่องสุดท้ายตัด lastRuns เส้น
+  const fullTail = boxes > 1 ? box - perBox * run : Infinity;
+  const lastTail = box - lastRuns * run;
+  const tightTail = Math.min(fullTail, lastTail);
+  const tailShort = tightTail < LAN.minTail.value - 1e-9;
   const plugsPerRun = ends === "both" ? 2 : 1;
   const plugs = ceil(runs * plugsPerRun * (1 + spare / 100));
   const jacks = ends === "panel" ? runs : 0;
@@ -313,7 +329,7 @@ export function calcLan(v: Values): CalcResult {
 
   return resultX({
     title: "สาย LAN กี่กล่อง",
-    headline: `สาย LAN ${fmt(boxes)} กล่อง · หัว RJ45 ${fmt(plugs)} ตัว${overChannel ? " · เส้นยาวเกิน 100 ม." : overPerm ? " · เส้นยาวเกิน 90 ม." : ""}`,
+    headline: `สาย LAN ${fmt(boxes)} กล่อง · หัว RJ45 ${fmt(plugs)} ตัว${overChannel ? " · เส้นยาวเกิน 100 ม." : overPerm ? " · เส้นยาวเกิน 90 ม." : ""}${tailShort ? " · เศษท้ายกล่องเหลือน้อย" : ""}`,
     chart: { kind: "packs", unitLabel: `กล่อง ${fmt(LAN.boxFt.value)} ฟุต`, count: boxes, lastUsed: (lastRuns * run) / box, note: `${fmt(runs)} เส้น เส้นละ ${fmtTrim(run, 2)} ม.` },
     rows: [
       { label: "ยาวต่อเส้น (รวมเผื่อปลาย)", value: `${fmtTrim(avg, 1)} + ${fmtTrim(s1, 2)} + ${fmtTrim(s2, 2)} = ${fmt(run, 2)} ม.` },
@@ -324,6 +340,15 @@ export function calcLan(v: Values): CalcResult {
         ? [{ label: "ทำไมไม่ใช่ตามเมตรรวม", value: `เมตรรวมใช้ ${fmt(boxesByMetre)} กล่อง แต่ต่อสายกลางเส้นไม่ได้ เศษปลายกล่องสั้นกว่า 1 เส้น` }]
         : []),
       { label: "เหลือสายโดยรวม", value: `${fmt(leftover, 1)} ม. (เป็นเศษท้ายกล่อง)` },
+      ...(tailShort
+        ? [
+            {
+              label: "เศษท้ายกล่องน้อยเกินไป",
+              value: `กล่องหนึ่งเหลือแค่ ${fmt(tightTail, 2)} ม. (ควรเหลือ ≥ ${fmtTrim(LAN.minTail.value, 1)} ม.) วัดคลาดนิดเดียวเส้นสุดท้ายไม่พอ — ซื้อเพิ่ม 1 กล่อง หรือลดเผื่อปลาย`,
+              emphasize: true,
+            },
+          ]
+        : []),
       {
         label: `หัว RJ45 (เผื่อ ${fmtTrim(spare, 1)}%)`,
         value: `${fmt(plugs)} ตัว ≈ ${fmt(bags)} ถุง (ถุงละ ${fmt(LAN.rj45Bag.value)})`,
@@ -353,7 +378,7 @@ export function calcLan(v: Values): CalcResult {
         { label: "หัว RJ45", expr: "เส้น × หัวต่อเส้น × (1 + เผื่อ) ปัดขึ้น", subst: `${fmt(runs)} × ${plugsPerRun} × ${fmtTrim(1 + spare / 100, 3)} = ${fmt(plugs)} ตัว` },
         { label: "เช็กความยาว", expr: `เส้นยาวสุด + เผื่อ ≤ ${LAN.permanentLink.value} ม. (รวมสายแพตช์ ≤ ${LAN.channel.value} ม.)`, subst: `${fmtTrim(longest, 1)} + ${fmtTrim(s1 + s2, 2)} = ${fmt(longRun, 1)} ม.` },
       ],
-      constants: [LAN.boxFt, LAN.boxM, LAN.permanentLink, LAN.channel, LAN.slackOutlet, LAN.slackRack, LAN.rj45Spare, LAN.rj45Bag],
+      constants: [LAN.boxFt, LAN.boxM, LAN.permanentLink, LAN.channel, LAN.slackOutlet, LAN.slackRack, LAN.minTail, LAN.rj45Spare, LAN.rj45Bag],
       assumptions: [
         "ทุกเส้นยาวราวค่าเฉลี่ย — ถ้ายาวต่างกันมาก ให้แยกคิดกลุ่มเส้นยาวกับเส้นสั้น",
         "หนึ่งเส้นต้องมาจากกล่องเดียว ห้ามต่อกลางเส้น",
@@ -373,6 +398,9 @@ export function calcLan(v: Values): CalcResult {
 
 const RAD = Math.PI / 180;
 
+/** ค่าตั้งต้นช่องกรอกความกว้างเซนเซอร์เอง = กว้างภาพ 16:9 ของ 1/2.7" ปัด 2 ตำแหน่ง (ค่าเริ่มกรอก ไม่ใช่ค่าที่ใช้คิดของตัวเลือกในตาราง) */
+const CUSTOM_SENSOR_DEFAULT = round(CCTV_SENSORS["1/2.7"].width.value, 2);
+
 /** มุมรับภาพแนวนอน (องศา) จากความกว้างเซนเซอร์และเลนส์ — แบบเลนส์ไม่บิดภาพ */
 export function hfovDeg(sensorWmm: number, focalMm: number): number {
   return (2 * Math.atan(sensorWmm / (2 * focalMm))) / RAD;
@@ -391,7 +419,7 @@ export function calcFov(v: Values): CalcResult {
   if (mode === "lens") {
     const f = num(v, "f", 2.8);
     const sensorKey = str(v, "sensor", "1/2.7");
-    const sw = sensorKey === "custom" ? num(v, "sw", 5.37) : CCTV_SENSORS[sensorKey].width.value;
+    const sw = sensorKey === "custom" ? num(v, "sw", CUSTOM_SENSOR_DEFAULT) : CCTV_SENSORS[sensorKey].width.value;
     if (sensorKey !== "custom") constants.push(CCTV_SENSORS[sensorKey].width);
     fov = hfovDeg(sw, f);
     widthFactor = sw / f;
@@ -459,7 +487,7 @@ export function calcFov(v: Values): CalcResult {
       assumptions: [
         "เลนส์ไม่บิดภาพ (pinhole) — เลนส์มุมกว้าง 2.8 มม. ของจริงบิดขอบภาพ มุมในสเปกจึงกว้างกว่าที่คิดได้ ถ้ามีสเปกให้ใช้โหมดมุมจากสเปก",
         "วัดที่กึ่งกลางภาพ คนยืนตั้งฉากกับกล้อง ไม่คิดมุมก้มของกล้อง",
-        "ภาพใช้เต็มความกว้างเซนเซอร์ (ไม่ crop)",
+        "ความกว้างเซนเซอร์ในตารางคิดเป็นภาพ 16:9 จากเส้นทแยงตามขนาดเรียก (ทแยง × 16 ÷ √337) — กล้องที่ตั้งภาพ 4:3 ความกว้างจริงต่างจากนี้ ให้ใช้โหมดมุมจากสเปก",
       ],
       caveats: [
         "ระดับ px/ม. เป็นค่าอ้างอิง ภาพจริงยังขึ้นกับแสง โฟกัส การบีบอัด และกลางคืนที่เปิด IR",
@@ -480,13 +508,17 @@ const bitrateOptions = [
 
 function poeGroupFields(i: number, n: number, w: number, nMin: number): Field[] {
   return [
-    { type: "number", key: `n${i}`, label: `กลุ่ม ${i}: จำนวน${i === 1 ? "กล้อง" : "อุปกรณ์"}`, unit: "ตัว", default: n, min: nMin, max: 48 },
+    { type: "number", integer: true, key: `n${i}`, label: `กลุ่ม ${i}: จำนวน${i === 1 ? "กล้อง" : "อุปกรณ์"}`, unit: "ตัว", default: n, min: nMin, max: 48 },
     {
       type: "select",
       key: `s${i}`,
       label: `กลุ่ม ${i}: ไฟต่อตัว`,
       default: "w",
-      options: [{ value: "w", label: "กรอกวัตต์จากสเปก" }, ...POE_CLASSES.map((c) => ({ value: `c${c.cls}`, label: `คลาส ${c.cls} (≤ ${fmtTrim(c.pd, 2)} W)` }))],
+      options: [
+        { value: "w", label: "กรอกวัตต์จากสเปก" },
+        { value: "c0", label: `คลาส 0 / ไม่ระบุคลาส (จองเท่าคลาส 3 ≤ ${fmtTrim(POE_CLASS0.pd, 2)} W)` },
+        ...POE_CLASSES.map((c) => ({ value: `c${c.cls}`, label: `คลาส ${c.cls} (≤ ${fmtTrim(c.pd, 2)} W)` })),
+      ],
     },
     { type: "number", key: `w${i}`, label: `กลุ่ม ${i}: วัตต์สูงสุดต่อตัว`, unit: "W", default: w, min: 0.5, max: 71.3, step: 0.1, when: { key: `s${i}`, is: "w" } },
   ];
@@ -499,14 +531,14 @@ export const lowvoltTools: ToolDef[] = [
     blurb: "บิตเรต ชั่วโมงอัด วันเก็บ → TB",
     keywords: ["ฮาร์ดดิสก์", "hdd", "nvr", "dvr", "เก็บย้อนหลัง", "บิตเรต", "tb"],
     fields: [
-      { type: "number", key: "cams", label: "จำนวนกล้อง", unit: "ตัว", default: 8, min: 1, max: 128 },
+      { type: "number", integer: true, key: "cams", label: "จำนวนกล้อง", unit: "ตัว", default: 8, min: 1, max: 128 },
       { type: "select", key: "preset", label: "ความละเอียด/การบีบอัด", default: "4mp-h265", options: bitrateOptions },
       { type: "number", key: "mbps", label: "บิตเรตต่อกล้อง", unit: "Mbps", default: 4, min: 0.1, max: 50, step: 0.1, when: { key: "preset", is: "custom" } },
       { type: "number", key: "hours", label: "อัดวันละ", unit: "ชม.", default: 24, min: 1, max: 24 },
       { type: "number", key: "record", label: "สัดส่วนเวลาที่อัดจริง (อัดเฉพาะเคลื่อนไหว < 100)", unit: "%", default: 100, min: 1, max: 100 },
       { type: "number", key: "days", label: "เก็บย้อนหลัง", unit: "วัน", default: 30, min: 1, max: 365 },
       { type: "number", key: "headroom", label: "เผื่อ", unit: "%", default: CCTV_STORAGE.headroomPct.value, min: 0, max: 50 },
-      { type: "number", key: "bays", label: "ช่องใส่ดิสก์ใน NVR", unit: "ช่อง", default: 1, min: 1, max: 16 },
+      { type: "number", integer: true, key: "bays", label: "ช่องใส่ดิสก์ใน NVR", unit: "ช่อง", default: 1, min: 1, max: 16 },
     ],
     calc: calcHdd,
   },
@@ -520,7 +552,7 @@ export const lowvoltTools: ToolDef[] = [
       ...poeGroupFields(2, 0, 12, 0),
       ...poeGroupFields(3, 0, 25.5, 0),
       { type: "number", key: "budget", label: "งบ PoE ของสวิตช์ (PoE budget)", unit: "W", default: 65, min: 5, max: 2000 },
-      { type: "number", key: "ports", label: "จำนวนพอร์ต PoE", unit: "พอร์ต", default: 8, min: 1, max: 96 },
+      { type: "number", integer: true, key: "ports", label: "จำนวนพอร์ต PoE", unit: "พอร์ต", default: 8, min: 1, max: 96 },
       { type: "select", key: "type", label: "ชนิดพอร์ต", default: "at", options: Object.entries(POE_TYPES).map(([value, t]) => ({ value, label: t.label })) },
       {
         type: "select",
@@ -541,7 +573,7 @@ export const lowvoltTools: ToolDef[] = [
     blurb: "กล่อง 305 ม. หัว RJ45 เช็ก 90/100 ม.",
     keywords: ["สายแลน", "lan", "cat6", "cat5e", "utp", "rj45", "หัวแลน", "กล่อง 305"],
     fields: [
-      { type: "number", key: "runs", label: "จำนวนเส้น", unit: "เส้น", default: 8, min: 1, max: 500 },
+      { type: "number", integer: true, key: "runs", label: "จำนวนเส้น", unit: "เส้น", default: 8, min: 1, max: 500 },
       { type: "number", key: "avg", label: "ยาวเฉลี่ยต่อเส้น", unit: "ม.", default: 30, min: 1, max: 250, step: 0.5 },
       { type: "number", key: "longest", label: "เส้นที่ยาวที่สุด", unit: "ม.", default: 45, min: 1, max: 290, step: 0.5 },
       { type: "number", key: "slackA", label: "เผื่อปลายฝั่งกล้อง/เต้ารับ", unit: "ม.", default: LAN.slackOutlet.value, min: 0, max: 5, step: 0.1 },
@@ -588,7 +620,7 @@ export const lowvoltTools: ToolDef[] = [
         ],
         when: { key: "mode", is: "lens" },
       },
-      { type: "number", key: "sw", label: "กว้างเซนเซอร์", unit: "มม.", default: 5.37, min: 1, max: 20, step: 0.01, when: { key: "sensor", is: "custom", and: { key: "mode", is: "lens" } } },
+      { type: "number", key: "sw", label: "กว้างเซนเซอร์ (ภาพ 16:9)", unit: "มม.", default: CUSTOM_SENSOR_DEFAULT, min: 1, max: 20, step: 0.01, when: { key: "sensor", is: "custom", and: { key: "mode", is: "lens" } } },
       { type: "number", key: "hfov", label: "มุมแนวนอนจากสเปก", unit: "องศา", default: 100, min: 5, max: 170, step: 0.1, when: { key: "mode", is: "spec" } },
       { type: "number", key: "hres", label: "ภาพกว้าง (พิกเซลแนวนอน)", unit: "px", default: 2560, min: 320, max: 8192 },
       { type: "number", key: "d", label: "ระยะถึงจุดที่ต้องการดู", unit: "ม.", default: 5, min: 0.5, max: 300, step: 0.1 },

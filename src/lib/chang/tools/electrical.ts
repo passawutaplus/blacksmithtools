@@ -966,7 +966,7 @@ export function calcAppliance(v: Values): CalcResult {
         value: `${fmt(x.kwh, 1)} หน่วย · ${fmt(x.baht)} บาท`,
       })),
       { label: "รวมหน่วยไฟต่อเดือน", value: `${fmt(kwh, 1)} หน่วย (kWh)` },
-      { label: `ค่าไฟต่อเดือน (${fmtTrim(unitPrice, 2)} บาท/หน่วย)`, value: `${fmt(baht)} บาท`, emphasize: true },
+      { label: `ค่าไฟต่อเดือน (${fmtTrim(unitPrice, 4)} บาท/หน่วย)`, value: `${fmt(baht)} บาท`, emphasize: true },
       { label: "ค่าไฟต่อปี", value: `${fmt(baht * 12)} บาท` },
       ...(lines.length > 1 && baht > 0 ? [{ label: "กินไฟมากสุด", value: `${top.name} ${fmt((top.baht / baht) * 100)}% ของทั้งหมด` }] : []),
     ],
@@ -984,7 +984,7 @@ export function calcAppliance(v: Values): CalcResult {
         {
           label: "ค่าไฟ",
           expr: "บาท = หน่วยรวม × (ค่าไฟต่อหน่วย + Ft ที่บวกเพิ่ม)",
-          subst: `${fmt(kwh, 2)} × ${fmtTrim(unitPrice, 2)} = ${fmt(baht, 2)} บาท`,
+          subst: `${fmt(kwh, 2)} × ${fmtTrim(unitPrice, 4)} = ${fmt(baht, 2)} บาท`,
         },
       ],
       constants: [POWER_BILL.rate, POWER_BILL.daysPerMonth],
@@ -1012,7 +1012,7 @@ function applianceFields(): Field[] {
       { type: "text", key: `name${i}`, label: `เครื่องที่ ${i}: ชื่อ`, default: d.name, placeholder: "เช่น ตู้เย็น", ...(when ? { when } : {}) },
       { type: "number", key: `w${i}`, label: `เครื่องที่ ${i}: กำลังไฟ`, unit: "W", default: d.w, min: 0.5, max: 20000, step: 0.5, ...(when ? { when } : {}) },
       { type: "number", key: `h${i}`, label: `เครื่องที่ ${i}: ใช้วันละ`, unit: "ชม.", default: d.h, min: 0, max: 24, step: 0.25, ...(when ? { when } : {}) },
-      { type: "number", key: `q${i}`, label: `เครื่องที่ ${i}: จำนวน`, unit: "เครื่อง", default: d.q, min: 1, max: 500, ...(when ? { when } : {}) },
+      { type: "number", integer: true, key: `q${i}`, label: `เครื่องที่ ${i}: จำนวน`, unit: "เครื่อง", default: d.q, min: 1, max: 500, ...(when ? { when } : {}) },
     );
   }
   return out;
@@ -1045,7 +1045,25 @@ export function fixtureGrid(n: number, w: number, l: number) {
     if (!closest || ratio < closest.ratio - 1e-9 || (Math.abs(ratio - closest.ratio) <= 1e-9 && cand.total < closest.total)) closest = cand;
   }
   const g = best ?? closest ?? { rows: 1, cols: 1, total: 1, ratio: 1 };
-  return { ...g, spacingW: w / g.rows, spacingL: l / g.cols };
+  return { ...g, even: g.ratio <= limit + 1e-9, spacingW: w / g.rows, spacingL: l / g.cols };
+}
+
+/**
+ * ผังที่ระยะสองทิศต่างกันไม่เกินเกณฑ์ และใช้โคมน้อยสุดโดยไม่น้อยกว่า n ดวง — ใช้แนะนำเมื่อจำนวนโคมตามแสงจัดผังให้สม่ำเสมอไม่ได้
+ * (เช่น ทางเดินแคบยาว) · ต่อแถว r: ดวงต่อแถว c ต้องได้ ยาว ÷ c ≤ เกณฑ์ × (กว้าง ÷ r) และ ≥ (กว้าง ÷ r) ÷ เกณฑ์
+ */
+export function evenGrid(n: number, w: number, l: number): { rows: number; cols: number; total: number } | undefined {
+  const limit = LIGHTING.maxSpacingRatio.value;
+  let best: { rows: number; cols: number; total: number } | undefined;
+  for (let r = 1; r <= LIGHTING.maxFixtures.value; r++) {
+    if (best && r > best.total) break;
+    const sw = w / r;
+    const c = Math.max(ceil(n / r), ceil(l / (limit * sw)));
+    if (l / c < sw / limit - 1e-9) continue;
+    const total = r * c;
+    if (total <= LIGHTING.maxFixtures.value && (!best || total < best.total)) best = { rows: r, cols: c, total };
+  }
+  return best;
 }
 
 export function calcLux(v: Values): CalcResult {
@@ -1071,6 +1089,12 @@ export function calcLux(v: Values): CalcResult {
   const g = fixtureGrid(n, w, l);
   const got = (g.total * lm * uf * mf) / area;
   const name = preset ? preset.label : "กำหนดเอง";
+  const limit = LIGHTING.maxSpacingRatio.value;
+  const even = g.even ? undefined : evenGrid(n, w, l);
+  const unevenText = g.even
+    ? ""
+    : `ระยะสองทิศต่างกัน ${fmt(g.ratio, 1)} เท่า (เกิน ${fmtTrim(limit, 1)}) แสงจะเป็นดวง ๆ` +
+      (even ? ` — ให้ใช้ ${fmt(even.total)} ดวง (${fmt(even.rows)} × ${fmt(even.cols)} ห่าง ${fmt(w / even.rows, 2)} × ${fmt(l / even.cols, 2)} ม.) หรือโคมเส้นยาวตามทาง` : " — ใช้โคมเส้นยาวตามทาง");
   return resultX({
     title: "จำนวนโคมตามความสว่าง",
     headline: `โคม ${fmt(g.total)} ดวง · จัด ${fmt(g.rows)} แถว × ${fmt(g.cols)} ดวง`,
@@ -1089,8 +1113,13 @@ export function calcLux(v: Values): CalcResult {
         emphasize: true,
       },
       { label: "ความสว่างเฉลี่ยที่ได้", value: `ราว ${fmt(got)} lux` },
+      ...(unevenText ? [{ label: "แสงไม่สม่ำเสมอ", value: unevenText, emphasize: true }] : []),
     ],
-    tip: "ระยะห่างโคมไม่ควรเกินที่ผู้ผลิตกำหนด (มักราว 1–1.5 เท่าของความสูงโคมเหนือโต๊ะ) ไม่งั้นแสงเป็นดวง ๆ",
+    tip: g.even
+      ? "ระยะห่างโคมไม่ควรเกินที่ผู้ผลิตกำหนด (มักราว 1–1.5 เท่าของความสูงโคมเหนือโต๊ะ) ไม่งั้นแสงเป็นดวง ๆ"
+      : even
+        ? `ห้องแคบยาว: จำนวนโคมตามแสง ${fmt(g.total)} ดวงจัดให้ระยะใกล้กันไม่ได้ ใช้ ${fmt(even.total)} ดวงรุ่นแสงน้อยลง หรือโคมเส้นยาวตามทางแทน`
+        : "ห้องแคบยาว: จัดโคมดวงให้ระยะใกล้กันไม่ได้ ใช้โคมเส้นยาวตามทางแทน",
     explain: {
       risk: "B",
       updatedAt: "2026-11-26",
@@ -1222,35 +1251,64 @@ export function calcEv(v: Values): CalcResult {
   const chargerKey = str(v, "charger", "7.4");
   const preset = EV_CHARGERS[chargerKey];
   const chargerKw = preset ? preset.kw : num(v, "kw", 7.4);
+  const chargerPh = preset ? preset.phases : str(v, "cph", "1") === "3" ? 3 : 1;
   const carKw = num(v, "car", 11);
+  const carPh = str(v, "carPh", "3") === "1" ? 1 : 3;
   const eff = num(v, "eff", EV.efficiency.value);
   const rate = num(v, "rate", POWER_BILL.rate.value);
+  const onePhMax = EV.onePhaseMaxKw.value;
   if (to <= from) {
     return blockedResult({
       headline: `ชาร์จถึง (${fmtTrim(to, 1)}%) ต้องมากกว่าแบตที่เหลือ (${fmtTrim(from, 1)}%)`,
       tip: "ใส่ % แบตตอนเริ่มชาร์จ กับ % ที่อยากชาร์จถึง",
     });
   }
-  const powerKw = Math.min(chargerKw, carKw);
+  if (chargerPh === 1 && chargerKw > onePhMax + 1e-9) {
+    return blockedResult({
+      headline: `หัวชาร์จ 1 เฟสจ่ายเกิน ${fmtTrim(onePhMax, 1)} kW ไม่ได้ (ใส่ ${fmtTrim(chargerKw, 2)} kW) — เลือกหัวชาร์จ 3 เฟส หรือแก้กำลัง`,
+      tip: "1 เฟส 32 A × 230 V = 7.36 kW เป็นหัวชาร์จบ้าน 1 เฟสใหญ่สุด",
+    });
+  }
+  if (carPh === 1 && carKw > onePhMax + 1e-9) {
+    return blockedResult({
+      headline: `รถที่ชาร์จ AC ได้ 1 เฟส รับเกิน ${fmtTrim(onePhMax, 1)} kW ไม่ได้ (ใส่ ${fmtTrim(carKw, 2)} kW) — ดูสเปกรถอีกครั้ง`,
+      tip: "สเปกรถมักเขียนว่า AC 7 kW / 7.4 kW (1 เฟส) หรือ 11 kW / 22 kW (3 เฟส)",
+    });
+  }
+  // ไฟเข้ารถได้เท่าจำนวนเฟสที่ทั้งหัวชาร์จและเครื่องชาร์จในรถมีร่วมกัน: รถ 1 เฟสบนหัว 3 เฟสใช้ได้แค่เฟสเดียว = กำลังหัว ÷ 3
+  const phasesUsed = Math.min(carPh, chargerPh);
+  const supplyKw = (chargerKw / chargerPh) * phasesUsed;
+  const powerKw = Math.min(supplyKw, carKw);
   const battKwh = (cap * (to - from)) / 100;
   const gridKwh = battKwh / (eff / 100);
   const hours = gridKwh / powerKw;
   const baht = gridKwh * rate;
-  const threePhase = chargerKw > EV.onePhaseMaxKw.value + 1e-9;
-  const carLimited = carKw < chargerKw - 1e-9;
+  const threePhase = chargerPh === 3;
+  const phaseLimited = phasesUsed < chargerPh;
+  const carLimited = carKw < supplyKw - 1e-9;
+  const powerText = phaseLimited
+    ? `${fmtTrim(powerKw, 2)} kW (รถชาร์จ 1 เฟส ใช้ได้เฟสเดียวจากหัว 3 เฟส ${fmtTrim(chargerKw, 2)} kW)`
+    : carLimited
+      ? `${fmtTrim(powerKw, 2)} kW (รถรับได้แค่นี้ แม้หัวชาร์จ ${fmtTrim(chargerKw, 2)} kW)`
+      : `${fmtTrim(powerKw, 2)} kW`;
+  const supplyStep = phaseLimited
+    ? { label: "ไฟที่หัวชาร์จจ่ายให้รถได้", expr: "kW = กำลังหัว ÷ เฟสหัว × เฟสที่รถใช้ได้", subst: `${fmtTrim(chargerKw, 2)} ÷ ${chargerPh} × ${phasesUsed} = ${fmtTrim(supplyKw, 3)} kW` }
+    : null;
   return resultX({
     title: "ชาร์จรถ EV",
     headline: `ชาร์จ ${fmtTrim(from, 1)}→${fmtTrim(to, 1)}% ราว ${hoursText(hours)} · ${fmt(baht)} บาท`,
     rows: [
       { label: "ไฟเข้าแบต", value: `${fmt(battKwh, 2)} kWh (${fmtTrim(to - from, 1)}% ของ ${fmtTrim(cap, 1)} kWh)` },
       { label: `ไฟจากมิเตอร์ (ประสิทธิภาพ ${fmtTrim(eff, 1)}%)`, value: `${fmt(gridKwh, 2)} หน่วย (kWh)` },
-      {
-        label: "กำลังชาร์จจริง",
-        value: carLimited ? `${fmtTrim(powerKw, 2)} kW (รถรับได้แค่นี้ แม้หัวชาร์จ ${fmtTrim(chargerKw, 2)} kW)` : `${fmtTrim(powerKw, 2)} kW`,
-      },
+      { label: "กำลังชาร์จจริง", value: powerText },
       { label: "เวลาชาร์จ", value: hoursText(hours), emphasize: true },
       { label: `ค่าไฟ (${fmtTrim(rate, 2)} บาท/หน่วย)`, value: `${fmt(baht)} บาท`, emphasize: true },
-      ...(threePhase ? [{ label: "ไฟที่บ้าน", value: `หัวชาร์จเกิน ${fmtTrim(EV.onePhaseMaxKw.value, 1)} kW ต้องใช้ไฟ 3 เฟส` }] : []),
+      ...(threePhase
+        ? [{ label: "ไฟที่บ้าน", value: chargerKw > onePhMax + 1e-9 ? `หัวชาร์จเกิน ${fmtTrim(onePhMax, 1)} kW ต้องใช้ไฟ 3 เฟส` : "หัวชาร์จ 3 เฟส ต้องใช้ไฟ 3 เฟส" }]
+        : []),
+      ...(carPh === 3 && chargerPh === 1 && powerKw > EV.carPerPhaseMinKw.value + 0.05
+        ? [{ label: "รถ 3 เฟสบนหัว 1 เฟส", value: `บางรุ่นรับได้แค่ 16 A ต่อเฟส = ราว ${fmtTrim(EV.carPerPhaseMinKw.value, 1)} kW ดูสเปก "AC 1 เฟส" ของรถ` }]
+        : []),
     ],
     tip:
       to > EV.taperFrom.value
@@ -1259,16 +1317,26 @@ export function calcEv(v: Values): CalcResult {
     explain: {
       risk: "B",
       updatedAt: "2026-11-26",
-      summary: "ไฟเข้าแบต = ความจุ × (% ถึง − % เริ่ม) · ไฟจากมิเตอร์ = ไฟเข้าแบต ÷ ประสิทธิภาพ · เวลา = ไฟจากมิเตอร์ ÷ กำลังชาร์จ (ค่าน้อยกว่าระหว่างหัวชาร์จกับที่รถรับได้)",
+      summary:
+        "ไฟเข้าแบต = ความจุ × (% ถึง − % เริ่ม) · ไฟจากมิเตอร์ = ไฟเข้าแบต ÷ ประสิทธิภาพ · เวลา = ไฟจากมิเตอร์ ÷ กำลังชาร์จ (ค่าน้อยกว่าระหว่างไฟที่หัวจ่ายให้รถได้กับที่รถรับได้ · รถ 1 เฟสบนหัว 3 เฟสได้แค่ 1 ใน 3 ของหัว)",
       steps: [
         { label: "ไฟเข้าแบต", expr: "kWh = ความจุ × (ถึง − เริ่ม) ÷ 100", subst: `${fmtTrim(cap, 1)} × (${fmtTrim(to, 1)} − ${fmtTrim(from, 1)}) ÷ 100 = ${fmt(battKwh, 2)} kWh` },
         { label: "ไฟจากมิเตอร์", expr: "หน่วย = ไฟเข้าแบต ÷ ประสิทธิภาพ", subst: `${fmt(battKwh, 2)} ÷ ${fmtTrim(eff / 100, 3)} = ${fmt(gridKwh, 2)} หน่วย` },
-        { label: "กำลังชาร์จ", expr: "kW = ค่าน้อยกว่า(หัวชาร์จ, รถรับได้)", subst: `min(${fmtTrim(chargerKw, 2)}, ${fmtTrim(carKw, 2)}) = ${fmtTrim(powerKw, 2)} kW` },
+        ...(supplyStep ? [supplyStep] : []),
+        {
+          label: "กำลังชาร์จ",
+          expr: phaseLimited ? "kW = ค่าน้อยกว่า(ไฟที่หัวจ่ายให้รถได้, รถรับได้)" : "kW = ค่าน้อยกว่า(หัวชาร์จ, รถรับได้)",
+          subst: `min(${fmtTrim(supplyKw, 3)}, ${fmtTrim(carKw, 2)}) = ${fmtTrim(powerKw, 2)} kW`,
+        },
         { label: "เวลา", expr: "ชม. = หน่วยจากมิเตอร์ ÷ kW", subst: `${fmt(gridKwh, 2)} ÷ ${fmtTrim(powerKw, 2)} = ${fmt(hours, 2)} ชม. = ${hoursText(hours)}` },
         { label: "ค่าไฟ", expr: "บาท = หน่วยจากมิเตอร์ × ค่าไฟต่อหน่วย", subst: `${fmt(gridKwh, 2)} × ${fmtTrim(rate, 2)} = ${fmt(baht, 2)} บาท` },
       ],
-      constants: [EV.efficiency, EV.onePhaseMaxKw, EV.taperFrom, POWER_BILL.rate],
-      assumptions: ["กำลังชาร์จคงที่ตลอด (ช่วงท้ายเกินราว 80% รถลดกำลังลง เวลาจริงนานขึ้น)", "ความจุแบตคือความจุใช้งานได้ (usable) ตามสเปกรถ"],
+      constants: [EV.efficiency, EV.onePhaseMaxKw, EV.carPerPhaseMinKw, EV.taperFrom, POWER_BILL.rate],
+      assumptions: [
+        "กำลังชาร์จคงที่ตลอด (ช่วงท้ายเกินราว 80% รถลดกำลังลง เวลาจริงนานขึ้น)",
+        "ความจุแบตคือความจุใช้งานได้ (usable) ตามสเปกรถ",
+        "หัวชาร์จจ่ายเท่ากันทุกเฟส: ต่อเฟส = กำลังหัว ÷ จำนวนเฟส (11 kW 3 เฟส = 16 A × 230 V ต่อเฟส)",
+      ],
       caveats: [
         "ติดตั้งเครื่องชาร์จที่บ้านต้องเดินวงจรแยก มีเครื่องตัดไฟรั่ว และมิเตอร์ต้องรับกระแสได้ — ให้ช่างไฟและการไฟฟ้าตรวจกับมาตรฐานก่อนติดตั้ง",
         DISCLAIMER_AB,
@@ -1353,7 +1421,28 @@ const round4Tools: ToolDef[] = [
         options: [...Object.entries(EV_CHARGERS).map(([value, ch]) => ({ value, label: ch.label })), { value: "custom", label: "กำหนดเอง" }],
       },
       { type: "number", key: "kw", label: "กำลังหัวชาร์จ", unit: "kW", default: 7.4, min: 1, max: 22, step: 0.1, when: { key: "charger", is: "custom" } },
+      {
+        type: "select",
+        key: "cph",
+        label: "หัวชาร์จที่กำหนดเอง เป็นไฟ",
+        default: "1",
+        options: [
+          { value: "1", label: "1 เฟส" },
+          { value: "3", label: "3 เฟส" },
+        ],
+        when: { key: "charger", is: "custom" },
+      },
       { type: "number", key: "car", label: "รถรับไฟ AC ได้สูงสุด (ดูสเปกรถ)", unit: "kW", default: 11, min: 1, max: 22, step: 0.1 },
+      {
+        type: "select",
+        key: "carPh",
+        label: "เครื่องชาร์จในรถ (ดูสเปกรถ)",
+        default: "3",
+        options: [
+          { value: "3", label: "3 เฟส (เช่น AC 11 / 22 kW)" },
+          { value: "1", label: "1 เฟส (เช่น AC 6.6 / 7 / 7.4 kW)" },
+        ],
+      },
       { type: "number", key: "eff", label: "ประสิทธิภาพการชาร์จ", unit: "%", default: EV.efficiency.value, min: 50, max: 100, step: 1 },
       { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: POWER_BILL.rate.value, min: 0.5, max: 20, step: 0.01 },
     ],
@@ -1402,7 +1491,7 @@ export const electricalTools: ToolDef[] = [
         ],
       },
       { type: "number", key: "temp", label: "อุณหภูมิรอบ", unit: "°C", default: 40, min: 15, max: 60 },
-      { type: "number", key: "circ", label: "จำนวนวงจรในท่อเดียวกัน", unit: "วงจร", default: 1, min: 1, max: 20 },
+      { type: "number", integer: true, key: "circ", label: "จำนวนวงจรในท่อเดียวกัน", unit: "วงจร", default: 1, min: 1, max: 20 },
     ],
     calc: calcCable,
   },
@@ -1470,7 +1559,7 @@ export const electricalTools: ToolDef[] = [
         default: "2.5",
         options: THW_OD.map((w) => ({ value: String(w.mm2), label: `${w.mm2} ตร.มม.` })),
       },
-      { type: "number", key: "n", label: "จำนวนสายขนาดนี้", unit: "เส้น", default: 6, min: 1, max: 60, when: { key: "mode", is: "min" } },
+      { type: "number", integer: true, key: "n", label: "จำนวนสายขนาดนี้", unit: "เส้น", default: 6, min: 1, max: 60, when: { key: "mode", is: "min" } },
       {
         type: "select",
         key: "wire2",
@@ -1479,7 +1568,7 @@ export const electricalTools: ToolDef[] = [
         options: THW_OD.map((w) => ({ value: String(w.mm2), label: `${w.mm2} ตร.มม.` })),
         when: { key: "mode", is: "min" },
       },
-      { type: "number", key: "n2", label: "จำนวนสายอีกขนาด", unit: "เส้น", default: 0, min: 0, max: 60, when: { key: "mode", is: "min" } },
+      { type: "number", integer: true, key: "n2", label: "จำนวนสายอีกขนาด", unit: "เส้น", default: 0, min: 0, max: 60, when: { key: "mode", is: "min" } },
     ],
     calc: calcConduit,
   },
@@ -1512,7 +1601,7 @@ export const electricalTools: ToolDef[] = [
     fields: [
       { type: "number", key: "voc", label: "Voc แผง", unit: "V", default: 49.5, min: 5, max: 100, step: 0.1 },
       { type: "number", key: "vmp", label: "Vmp แผง", unit: "V", default: 41.5, min: 5, max: 100, step: 0.1 },
-      { type: "number", key: "n", label: "แผงต่อสตริง", unit: "แผง", default: 10, min: 1, max: 40 },
+      { type: "number", integer: true, key: "n", label: "แผงต่อสตริง", unit: "แผง", default: 10, min: 1, max: 40 },
       { type: "number", key: "vmin", label: "แรงดัน MPPT ต่ำสุด", unit: "V", default: 200, min: 50, max: 1000 },
       { type: "number", key: "vmax", label: "แรงดันสูงสุดเครื่อง", unit: "V", default: 500, min: 100, max: 1500 },
     ],
@@ -1575,7 +1664,7 @@ export const electricalJob: JobDef = {
   fields: [
     { type: "number", key: "il", label: "กระแสโหลด", unit: "A", default: 15, min: 0.1, max: 400, step: 0.1 },
     { type: "number", key: "temp", label: "อุณหภูมิรอบ", unit: "°C", default: 40, min: 15, max: 60 },
-    { type: "number", key: "circ", label: "วงจรในท่อ", unit: "วงจร", default: 1, min: 1, max: 20 },
+    { type: "number", integer: true, key: "circ", label: "วงจรในท่อ", unit: "วงจร", default: 1, min: 1, max: 20 },
     { type: "number", key: "len", label: "ระยะเดินสาย", unit: "ม.", default: 25, min: 1, max: 1000 },
     { type: "number", key: "volts", label: "แรงดัน", unit: "V", default: 220, min: 100, max: 1000 },
     {

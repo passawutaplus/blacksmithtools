@@ -1,6 +1,7 @@
 import type { CalcResult, Field, FormulaStep, ToolDef, Values } from "../types";
 import { blockedResult, ceil, fmt, fmtTrim, guardTool, num, resultX, str } from "../math";
-import { CLADDING, DECK, DISCLAIMER_AB, DISCLAIMER_C, STEEL_STICK, UNIT, WOOD } from "../constants";
+import { CLADDING, DECK, DISCLAIMER_AB, DISCLAIMER_C, STEEL_STICK, TAX, UNIT, WOOD } from "../constants";
+import { baht, toSatang } from "./estimate";
 
 const guard = (id: string, v: Values) => guardTool(woodTools, id, v);
 
@@ -48,6 +49,19 @@ export function boardRows(S: number, bw: number, g: number): number {
   return ceil((S + g) / (bw + g));
 }
 
+/** คลิปซ่อนต้องมีร่องให้ลิ้นคลิปเสียบ — ร่องแคบกว่าที่ผู้ผลิตกำหนดใส่คลิปไม่ได้ (g เป็นเมตร) */
+function clipTooTight(fixing: string, g: number): boolean {
+  return fixing === "clip" && g < DECK.clipMinGapCm.value / 100 - 1e-9;
+}
+
+function clipGapWarning(what: string) {
+  return {
+    label: "ข้อควรระวัง",
+    value: `ร่องแคบกว่า ${fmtTrim(DECK.clipMinGapCm.value * 10, 1)} มม. ใส่คลิปซ่อนไม่ได้ — เปลี่ยนเป็นยิงสกรูหรือเว้นร่อง${what}ตามคู่มือ`,
+    emphasize: true,
+  };
+}
+
 /* ─────────── ไม้กี่ลูกบาศก์ฟุต ─────────── */
 
 export function calcTimber(v: Values): CalcResult {
@@ -67,17 +81,22 @@ export function calcTimber(v: Values): CalcResult {
   const shopCuft = ((t * w) / WOOD.sqInPerSqFt.value) * len * shopFt * pcs;
   const diff = shopCuft - cuft;
   const diffPct = (diff / cuft) * 100;
-  const cost = cuft * price;
-  const shopCost = shopCuft * price;
+  // เงินคิดเป็นสตางค์จำนวนเต็ม (ปัดครึ่งขึ้น) เหมือนเครื่องมือประมาณราคา — ราคา 0.5 บาท/ลบ.ฟ. ต้องไม่กลายเป็น "1 บาท"
+  const cost = toSatang(cuft * price);
+  const shopCost = toSatang(shopCuft * price);
+  const moneyDiff = shopCost - cost;
   const size = `${fmtTrim(t, 2)}" × ${fmtTrim(w, 2)}"`;
-  const same = Math.abs(diff) < 0.0005;
+  // เท่ากันเมื่อต่างกันแค่ระดับเศษทศนิยมของเครื่อง (เทียบสัดส่วน ไม่ใช่ค่าตายตัว 0.0005 ลบ.ฟ. ที่ผิดเมื่อไม้น้อย/มาก)
+  const same = Math.abs(diff) <= 1e-9 * cuft;
+  const diffAbsText = Math.abs(diff) < 0.0005 ? "ไม่ถึง 0.001" : fmt(Math.abs(diff), 3);
   const diffText = same
     ? "เท่ากับคิดเป๊ะ"
-    : `${diff > 0 ? "มากกว่า" : "น้อยกว่า"}คิดเป๊ะ ${fmt(Math.abs(diff), 3)} ลบ.ฟ. (${fmtTrim(Math.abs(diffPct), 2)}%)`;
+    : `${diff > 0 ? "มากกว่า" : "น้อยกว่า"}คิดเป๊ะ ${diffAbsText} ลบ.ฟ. (${fmtTrim(Math.abs(diffPct), 2)}%)`;
+  const priceText = `${fmtTrim(price, 2)} บาท/ลบ.ฟ.`;
 
   return resultX({
     title: "ไม้กี่ลูกบาศก์ฟุต",
-    headline: `ไม้ ${size} ยาว ${fmtTrim(len, 2)} ม. × ${fmt(pcs)} ท่อน = ${fmt(cuft, 2)} ลบ.ฟ.` + (price > 0 ? ` · ${fmt(cost)} บาท` : ""),
+    headline: `ไม้ ${size} ยาว ${fmtTrim(len, 2)} ม. × ${fmt(pcs)} ท่อน = ${fmt(cuft, 2)} ลบ.ฟ.` + (price > 0 ? ` · ${baht(cost)}` : ""),
     rows: [
       { label: "ยาวเป็นฟุต", value: `${fmtTrim(len, 2)} ÷ ${UNIT.foot.value} = ${fmt(lenFt, 3)} ฟุต` },
       { label: "ต่อท่อน", value: `${fmt(perPiece, 3)} ลบ.ฟ.` },
@@ -85,10 +104,10 @@ export function calcTimber(v: Values): CalcResult {
       { label: `ร้านคิด 1 ม. = ${fmtTrim(shopFt, 2)} ฟุต`, value: `${fmt(shopCuft, 3)} ลบ.ฟ. · ${diffText}` },
       ...(price > 0
         ? [
-            { label: `ค่าไม้ (${fmt(price)} บาท/ลบ.ฟ.)`, value: `${fmt(cost)} บาท`, emphasize: true },
+            { label: `ค่าไม้ (${priceText})`, value: baht(cost), emphasize: true },
             {
               label: "ถ้าร้านคิดแบบทางลัด",
-              value: same ? `${fmt(shopCost)} บาท (เท่ากัน)` : `${fmt(shopCost)} บาท · ${diff > 0 ? "แพงกว่า" : "ถูกกว่า"} ${fmt(Math.abs(shopCost - cost))} บาท`,
+              value: moneyDiff === 0 ? `${baht(shopCost)} (เท่ากัน)` : `${baht(shopCost)} · ${moneyDiff > 0 ? "แพงกว่า" : "ถูกกว่า"} ${baht(Math.abs(moneyDiff))}`,
             },
           ]
         : []),
@@ -114,9 +133,11 @@ export function calcTimber(v: Values): CalcResult {
           subst: `${fmtTrim(t, 2)} × ${fmtTrim(w, 2)} × ${fmtTrim(len, 2)} × ${fmtTrim(shopFt, 2)} ÷ 144 × ${fmt(pcs)} = ${fmt(shopCuft, 3)} ลบ.ฟ.`,
           note: "ค่าจริง 1 ม. = 3.2808 ฟุต ทางลัด 3.28 ต่างกันไม่ถึง 0.03%",
         },
-        ...(price > 0 ? [{ label: "ค่าไม้", expr: "ลบ.ฟ. × ราคา", subst: `${fmt(cuft, 3)} × ${fmt(price)} = ${fmt(cost)} บาท` }] : []),
+        ...(price > 0
+          ? [{ label: "ค่าไม้", expr: "ลบ.ฟ. × ราคา ปัดเป็นสตางค์", subst: `${fmt(cuft, 4)} × ${fmtTrim(price, 2)} = ${baht(cost)}`, note: "คิดจาก ลบ.ฟ. เต็มความละเอียด แล้วปัดสตางค์ครั้งเดียวตอนท้าย" }]
+          : []),
       ],
-      constants: [UNIT.foot, WOOD.sqInPerSqFt, WOOD.cuFtM3, WOOD.shopFtPerM],
+      constants: [UNIT.foot, WOOD.sqInPerSqFt, WOOD.cuFtM3, WOOD.shopFtPerM, ...(price > 0 ? [TAX.satangPerBaht] : [])],
       assumptions: ["คิดจากขนาดเรียก (ขนาดที่ร้านใช้คิดเงิน) ไม่ใช่ขนาดหลังไส", "ทุกท่อนขนาดและความยาวเท่ากัน — ไม้หลายขนาดให้คิดทีละขนาดแล้วรวม"],
       caveats: ["ราคาต่อ ลบ.ฟ. ต่างกันมากตามชนิดไม้ เกรด และไม้ไส/ไม้ดิบ ใส่ราคาที่ร้านแจ้ง", DISCLAIMER_AB],
       refs: [{ label: "นิยามหน่วย 1 นิ้ว = 25.4 มม. · 1 ฟุต = 12 นิ้ว = 0.3048 ม. (ISO 80000)" }],
@@ -133,7 +154,7 @@ export function calcCladding(v: Values): CalcResult {
   const dir = str(v, "dir", "horizontal");
   const W = num(v, "W", 4);
   const H = num(v, "H", 2);
-  const bw = num(v, "bw", CLADDING.boardW.value) / 100;
+  const bw = (mode === "lap" ? num(v, "bwLap", CLADDING.lapBoardW.value) : num(v, "bw", CLADDING.boardW.value)) / 100;
   const g = mode === "lap" ? -num(v, "lap", CLADDING.lap.value) / 100 : num(v, "gap", CLADDING.gap.value) / 100;
   const len = num(v, "len", CLADDING.boardLen.value);
   const bsp = num(v, "bsp", CLADDING.battenSpacing.value) / 100;
@@ -164,6 +185,7 @@ export function calcCladding(v: Values): CalcResult {
   const screws = crossings * perCross;
   const what = mode === "lap" ? "ไม้ฝา" : "ระแนง";
   const sLabel = horizontal ? "สูง" : "ยาว";
+  const tightClip = clipTooTight(fixing, g);
 
   return resultX({
     title: "ระแนง / ไม้ฝา / WPC",
@@ -181,6 +203,7 @@ export function calcCladding(v: Values): CalcResult {
       fixing === "clip"
         ? { label: "คลิปซ่อน (แถว + 1) × แนวโครง", value: `${fmt(clips)} ตัว`, emphasize: true }
         : { label: `สกรู ${fmt(perCross)} ตัว/จุด × ${fmt(crossings)} จุด`, value: `${fmt(screws)} ตัว`, emphasize: true },
+      ...(tightClip ? [clipGapWarning("ระแนง")] : []),
     ],
     tip:
       mode === "lap"
@@ -206,8 +229,9 @@ export function calcCladding(v: Values): CalcResult {
           : { label: "สกรู", expr: "สกรู = แถว × แนวโครง × ตัวต่อจุด", subst: `${fmt(n)} × ${fmt(lines)} × ${fmt(perCross)} = ${fmt(screws)} ตัว` },
       ],
       constants: [
-        CLADDING.boardW,
+        mode === "lap" ? CLADDING.lapBoardW : CLADDING.boardW,
         mode === "lap" ? CLADDING.lap : CLADDING.gap,
+        ...(fixing === "clip" ? [DECK.clipMinGapCm] : []),
         CLADDING.boardLen,
         CLADDING.battenSpacing,
         STEEL_STICK,
@@ -263,7 +287,7 @@ export function calcDeck(v: Values): CalcResult {
   const crossings = n * lines;
   const clips = (n + 1) * lines;
   const screws = crossings * perCross;
-  const tightClip = fixing === "clip" && g < 0.003;
+  const tightClip = clipTooTight(fixing, g);
 
   return resultX({
     title: "พื้นเดคระเบียง",
@@ -285,7 +309,7 @@ export function calcDeck(v: Values): CalcResult {
       fixing === "clip"
         ? { label: "คลิปซ่อน (แถว + 1) × ตง", value: `${fmt(clips)} ตัว`, emphasize: true }
         : { label: `สกรู ${fmt(perCross)} ตัว/จุด × ${fmt(crossings)} จุด`, value: `${fmt(screws)} ตัว`, emphasize: true },
-      ...(tightClip ? [{ label: "ข้อควรระวัง", value: "ร่องแคบกว่า 3 มม. ใส่คลิปซ่อนไม่ได้ — เปลี่ยนเป็นยิงสกรูหรือเว้นร่องตามคู่มือ" }] : []),
+      ...(tightClip ? [clipGapWarning("")] : []),
     ],
     tip: raised
       ? "เดคยกสูงต้องให้วิศวกรกำหนดขนาดตง คาน เสา และฐานราก ตัวเลขนี้ใช้นับของเตรียมงานเท่านั้น"
@@ -339,8 +363,8 @@ const timberFields: Field[] = [
   { type: "number", key: "t", label: "หนา", unit: "นิ้ว", default: 2, min: 0.25, max: 24, step: 0.25 },
   { type: "number", key: "w", label: "กว้าง", unit: "นิ้ว", default: 4, min: 0.5, max: 24, step: 0.25 },
   { type: "number", key: "len", label: "ยาว", unit: "ม.", default: 4, min: 0.3, max: 12, step: 0.05 },
-  { type: "number", key: "pcs", label: "จำนวน", unit: "ท่อน", default: 10, min: 1, max: 10000 },
-  { type: "number", key: "price", label: "ราคา (ไม่ใส่ก็ได้)", unit: "บาท/ลบ.ฟ.", default: 0, min: 0, max: 100000 },
+  { type: "number", integer: true, key: "pcs", label: "จำนวน", unit: "ท่อน", default: 10, min: 1, max: 10000 },
+  { type: "number", key: "price", label: "ราคา (ไม่ใส่ก็ได้)", unit: "บาท/ลบ.ฟ.", default: 0, min: 0, max: 100000, step: 0.01 },
   { type: "number", key: "shopFt", label: "ร้านคิด 1 ม. เท่ากับ", unit: "ฟุต", default: WOOD.shopFtPerM.value, min: 3, max: 3.5, step: 0.01 },
 ];
 
@@ -367,7 +391,8 @@ const claddingFields: Field[] = [
   },
   { type: "number", key: "W", label: "ยาวผนัง/รั้ว", unit: "ม.", default: 4, min: 0.3, max: 200, step: 0.05 },
   { type: "number", key: "H", label: "สูง", unit: "ม.", default: 2, min: 0.3, max: 20, step: 0.05 },
-  { type: "number", key: "bw", label: "หน้ากว้างแผ่น", unit: "ซม.", default: CLADDING.boardW.value, min: 2, max: 30, step: 0.5 },
+  { type: "number", key: "bw", label: "หน้ากว้างแผ่น", unit: "ซม.", default: CLADDING.boardW.value, min: 2, max: 30, step: 0.5, when: { key: "mode", is: "slat" } },
+  { type: "number", key: "bwLap", label: "หน้ากว้างไม้ฝา", unit: "ซม.", default: CLADDING.lapBoardW.value, min: 5, max: 30, step: 0.5, when: { key: "mode", is: "lap" } },
   { type: "number", key: "gap", label: "ร่องเว้น (0 = ชิด)", unit: "ซม.", default: CLADDING.gap.value, min: 0, max: 10, step: 0.1, when: { key: "mode", is: "slat" } },
   { type: "number", key: "lap", label: "ทับซ้อน", unit: "ซม.", default: CLADDING.lap.value, min: 1, max: 6, step: 0.5, when: { key: "mode", is: "lap" } },
   { type: "number", key: "len", label: "ยาวต่อแผ่น", unit: "ม.", default: CLADDING.boardLen.value, min: 0.5, max: 6, step: 0.1 },
@@ -384,8 +409,8 @@ const claddingFields: Field[] = [
     ],
     when: { key: "mode", is: "slat" },
   },
-  { type: "number", key: "spc", label: "สกรูต่อจุดที่พาดโครง", unit: "ตัว", default: CLADDING.screwsSlat.value, min: 1, max: 4, when: { key: "mode", is: "slat", and: { key: "fixing", is: "screw" } } },
-  { type: "number", key: "spcLap", label: "ตะปู/สกรูต่อจุดที่พาดโครง", unit: "ตัว", default: CLADDING.screwsLap.value, min: 1, max: 3, when: { key: "mode", is: "lap" } },
+  { type: "number", integer: true, key: "spc", label: "สกรูต่อจุดที่พาดโครง", unit: "ตัว", default: CLADDING.screwsSlat.value, min: 1, max: 4, when: { key: "mode", is: "slat", and: { key: "fixing", is: "screw" } } },
+  { type: "number", integer: true, key: "spcLap", label: "ตะปู/สกรูต่อจุดที่พาดโครง", unit: "ตัว", default: CLADDING.screwsLap.value, min: 1, max: 3, when: { key: "mode", is: "lap" } },
   { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: CLADDING.waste.value, min: 0, max: 30 },
 ];
 
@@ -418,7 +443,7 @@ const deckFields: Field[] = [
       { value: "screw", label: "สกรูยิงหน้า" },
     ],
   },
-  { type: "number", key: "spc", label: "สกรูต่อจุดที่พาดตง", unit: "ตัว", default: DECK.screws.value, min: 1, max: 4, when: { key: "fixing", is: "screw" } },
+  { type: "number", integer: true, key: "spc", label: "สกรูต่อจุดที่พาดตง", unit: "ตัว", default: DECK.screws.value, min: 1, max: 4, when: { key: "fixing", is: "screw" } },
   {
     type: "select",
     key: "height",

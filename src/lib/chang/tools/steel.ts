@@ -999,14 +999,14 @@ const RAILING_FIELDS: ToolDef["fields"] = [
   { type: "number", key: "L", label: "ยาวทั้งแนว", unit: "ม.", default: 4, min: 0.5, max: 100, step: 0.1 },
   { type: "number", key: "H", label: "สูง (กันสาด = ยื่นออก)", unit: "ม.", default: 1, min: 0.3, max: 3, step: 0.05 },
   { type: "number", key: "span", label: "ระยะเสา/จันทันไม่เกิน", unit: "ม.", default: 2, min: 0.5, max: 5, step: 0.1 },
-  { type: "number", key: "rails", label: "คานนอน/แป (รวมบน-ล่าง)", unit: "แถว", default: 2, min: 2, max: 8 },
+  { type: "number", integer: true, key: "rails", label: "คานนอน/แป (รวมบน-ล่าง)", unit: "แถว", default: 2, min: 2, max: 8 },
   { type: "number", key: "gap", label: "ช่องลูกกรงไม่เกิน", unit: "ซม.", default: 10, min: 3, max: 30, step: 0.5, when: { key: "kind", is: ["railing", "fence"] } },
   { type: "number", key: "bottom", label: "ช่องใต้คานล่างถึงพื้น", unit: "ซม.", default: 5, min: 0, max: 30, step: 0.5, when: { key: "kind", is: ["railing", "fence"] } },
   { type: "number", key: "postExtra", label: "เสาเผื่อฝังดิน/ตอม่อ ต้นละ", unit: "ม.", default: 0, min: 0, max: 1.5, step: 0.05, when: { key: "kind", is: ["fence", "frame"] } },
   { type: "select", key: "postSize", label: "เสา / จันทัน", default: "50x50x2.3", options: BOX_OPTIONS },
   { type: "select", key: "railSize", label: "คานนอน / แป", default: "25x50x1.5", options: BOX_OPTIONS },
   { type: "select", key: "balSize", label: "ลูกกรง", default: "25x25x1.2", options: BOX_OPTIONS, when: { key: "kind", is: ["railing", "fence"] } },
-  { type: "number", key: "coats", label: "สีทับหน้า", unit: "เที่ยว", default: 2, min: 1, max: 4 },
+  { type: "number", integer: true, key: "coats", label: "สีทับหน้า", unit: "เที่ยว", default: 2, min: 1, max: 4 },
   { type: "number", key: "price", label: "ราคาเหล็ก (ไม่ใส่ก็ได้)", unit: "บาท/กก.", default: 0, min: 0, max: 1000, step: 0.5 },
 ];
 
@@ -1118,7 +1118,7 @@ export const steelTools: ToolDef[] = [
     fields: [
       { type: "select", key: "shape", label: "รูปพรรณ", default: "box", options: SHAPE_OPTIONS },
       { type: "number", key: "len", label: "ยาว", unit: "ม.", default: 6, min: 0.1, max: 24, step: 0.1 },
-      { type: "number", key: "qty", label: "จำนวน", unit: "เส้น", default: 1, min: 1, max: 10000 },
+      { type: "number", integer: true, key: "qty", label: "จำนวน", unit: "เส้น", default: 1, min: 1, max: 10000 },
       ...SECTION_FIELDS,
     ],
     calc: calcSteelWeight,

@@ -1022,11 +1022,11 @@ export function calcVentFan(v: Values): CalcResult {
       constants: [...(preset ? [preset.ach] : []), VENT.cfm, VENT.margin, VENT.fanTableMax],
       assumptions: ["ห้องปิด ลมเข้าแทนได้จากช่องเปิดที่มี", "ขั้นลมของพัดลมเป็นค่าแบบไม่มีท่อ ⚠️ ยังไม่ยืนยันกับรุ่นจริง"],
       caveats: [
-        "อัตราเปลี่ยนอากาศตามชนิดห้องเป็นค่าอ้างอิงทั่วไป อาคารที่ต้องขออนุญาตต้องตรวจกับกฎกระทรวงฉบับที่ 39 (พ.ศ. 2537) และมาตรฐานที่ใช้จริง",
+        "อัตราเปลี่ยนอากาศตามชนิดห้องเป็นแนวปฏิบัติ (CIBSE / ASHRAE) ไม่ใช่ข้อบังคับ ⚠️ ยังไม่ได้เทียบกับกฎกระทรวงเรื่องการระบายอากาศ — อาคารที่ต้องขออนุญาตต้องตรวจกับกฎกระทรวงและมาตรฐานที่ใช้จริง",
         "ครัวที่ผัดทอดหนักต้องใช้เครื่องดูดควันเหนือเตา พัดลมระบายอากาศห้องอย่างเดียวไม่พอ",
         DISCLAIMER_AB,
       ],
-      refs: [{ label: "การระบายอากาศด้วยอัตราเปลี่ยนอากาศ (Air changes per hour)" }, { label: "กฎกระทรวงฉบับที่ 39 (พ.ศ. 2537) การระบายอากาศ" }],
+      refs: [{ label: "การระบายอากาศด้วยอัตราเปลี่ยนอากาศ (Air changes per hour)" }, { label: "แนวปฏิบัติ CIBSE Guide B / ASHRAE (อัตราเปลี่ยนอากาศตามชนิดห้อง)" }],
     },
   });
 }
@@ -1096,7 +1096,7 @@ export const hvacTools: ToolDef[] = [
         default: false,
         when: { key: "room", is: ["bed", "live", "work"] },
       },
-      { type: "number", key: "people", label: "คนใช้ห้อง", unit: "คน", default: 2, min: 1, max: 100 },
+      { type: "number", integer: true, key: "people", label: "คนใช้ห้อง", unit: "คน", default: 2, min: 1, max: 100 },
       {
         type: "select",
         key: "heat",

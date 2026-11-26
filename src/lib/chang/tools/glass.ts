@@ -527,7 +527,7 @@ export function calcFilm(v: Values) {
   const priceLabel: Record<string, string> = { sqm: "ตร.ม. กระจก", metre: "เมตรฟิล์ม", roll: "ม้วน" };
   const orientText = (x: (typeof items)[number]) => {
     const c = x.cut;
-    const base = `วางด้าน ${fmt(c.across * 100)} ซม. ขวางม้วน`;
+    const base = `วางด้าน ${fmtTrim(c.across * 100, 1)} ซม. ขวางม้วน`;
     if (c.strips > 1) return `${base} ต่อ ${fmt(c.strips)} แผ่นต่อบาน`;
     return c.perRow > 1 ? `${base} เรียง ${fmt(c.perRow)} ชิ้นต่อแถว` : base;
   };
@@ -543,7 +543,7 @@ export function calcFilm(v: Values) {
     },
     rows: [
       ...items.map((x) => ({
-        label: `ขนาด ${x.i}: ${fmt(x.w * 100)}×${fmt(x.h * 100)} ซม. × ${fmt(x.n)} บาน`,
+        label: `ขนาด ${x.i}: ${fmtTrim(x.w * 100, 1)}×${fmtTrim(x.h * 100, 1)} ซม. × ${fmt(x.n)} บาน`,
         value: `ใช้ม้วน ${fmt(x.cut.len, 2)} ม. (${orientText(x)})`,
       })),
       { label: "พื้นที่กระจกสุทธิ", value: `${fmt(glass, 2)} ตร.ม.` },
@@ -561,7 +561,7 @@ export function calcFilm(v: Values) {
         ...items.map((x) => ({
           label: `ขนาด ${x.i}`,
           expr: "ยาวที่ใช้ = ปัดขึ้น(จำนวน ÷ ชิ้นต่อแถว) × ด้านตามม้วน · กว้างกว่าม้วน = จำนวน × แผ่นต่อบาน × ด้านตามม้วน",
-          subst: `ชิ้นตัด ${fmt((x.w + 2 * trim) * 100)}×${fmt((x.h + 2 * trim) * 100)} ซม. · ${orientText(x)} → ${fmt(x.cut.len, 2)} ม.`,
+          subst: `ชิ้นตัด ${fmtTrim((x.w + 2 * trim) * 100, 1)}×${fmtTrim((x.h + 2 * trim) * 100, 1)} ซม. · ${orientText(x)} → ${fmt(x.cut.len, 2)} ม.`,
         })),
         { label: "รวมเผื่อ", expr: "ยาวรวม × (1 + เผื่อ%)", subst: `${fmt(runNet, 2)} × ${fmtTrim(1 + wastePct / 100, 3)} = ${fmt(run, 2)} ม.` },
         { label: "จำนวนม้วน", expr: "ปัดขึ้น(ยาวรวม ÷ ยาวม้วน)", subst: `${fmt(run, 2)} ÷ ${fmtTrim(rollL, 2)} = ${fmt(rolls)} ม้วน` },
@@ -584,9 +584,9 @@ function filmSizeFields(): Field[] {
     const shown = Array.from({ length: FILM_SIZES_MAX - i + 1 }, (_, k) => String(i + k));
     const when = i === 1 ? undefined : { key: "sizes", is: shown };
     out.push(
-      { type: "number", key: `w${i}`, label: `ขนาด ${i}: กว้างกระจก`, unit: "ซม.", default: d.w, min: 5, max: 1000, ...(when ? { when } : {}) },
-      { type: "number", key: `h${i}`, label: `ขนาด ${i}: สูงกระจก`, unit: "ซม.", default: d.h, min: 5, max: 1000, ...(when ? { when } : {}) },
-      { type: "number", key: `n${i}`, label: `ขนาด ${i}: จำนวน`, unit: "บาน", default: d.n, min: 1, max: 500, ...(when ? { when } : {}) },
+      { type: "number", key: `w${i}`, label: `ขนาด ${i}: กว้างกระจก`, unit: "ซม.", default: d.w, min: 5, max: 1000, step: 0.1, ...(when ? { when } : {}) },
+      { type: "number", key: `h${i}`, label: `ขนาด ${i}: สูงกระจก`, unit: "ซม.", default: d.h, min: 5, max: 1000, step: 0.1, ...(when ? { when } : {}) },
+      { type: "number", integer: true, key: `n${i}`, label: `ขนาด ${i}: จำนวน`, unit: "บาน", default: d.n, min: 1, max: 500, ...(when ? { when } : {}) },
     );
   }
   return out;
@@ -635,7 +635,7 @@ export const glassTools: ToolDef[] = [
     fields: [
       { type: "number", key: "w", label: "กว้างช่อง", unit: "มม.", default: 1200, min: 200, max: 5800 },
       { type: "number", key: "h", label: "สูงช่อง", unit: "มม.", default: 1500, min: 200, max: 5800 },
-      { type: "number", key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 2, min: 1, max: 200 },
+      { type: "number", integer: true, key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 2, min: 1, max: 200 },
       { type: "number", key: "profile", label: "หน้าตัดเฟรม", unit: "มม.", default: 45, min: 20, max: 100 },
       {
         type: "select",
@@ -658,7 +658,7 @@ export const glassTools: ToolDef[] = [
       { type: "number", key: "w", label: "กว้าง", unit: "มม.", default: 1200, min: 100, max: 6000 },
       { type: "number", key: "h", label: "สูง", unit: "มม.", default: 1500, min: 100, max: 6000 },
       thicknessField,
-      { type: "number", key: "n", label: "จำนวนช่อง/แผ่น", unit: "ชุด", default: 1, min: 1, max: 500 },
+      { type: "number", integer: true, key: "n", label: "จำนวนช่อง/แผ่น", unit: "ชุด", default: 1, min: 1, max: 500 },
       sashField("1"),
     ],
     calc: calcGlassWeight,
@@ -714,7 +714,7 @@ export const glassJob: JobDef = {
   fields: [
     { type: "number", key: "w", label: "กว้างช่อง", unit: "มม.", default: 1200, min: 200, max: 5800 },
     { type: "number", key: "h", label: "สูงช่อง", unit: "มม.", default: 1500, min: 200, max: 5800 },
-    { type: "number", key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 1, min: 1, max: 200 },
+    { type: "number", integer: true, key: "n", label: "จำนวนช่อง", unit: "ช่อง", default: 1, min: 1, max: 200 },
     { type: "number", key: "profile", label: "หน้าตัดเฟรม", unit: "มม.", default: 45, min: 20, max: 100 },
     thicknessField,
     sashField("2"),

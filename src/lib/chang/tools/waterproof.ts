@@ -426,7 +426,7 @@ const sheetFields: Field[] = [
   { type: "number", key: "w", label: "กว้างพื้นที่", unit: "ม.", default: 6, min: 0.5, max: 200, step: 0.05 },
   { type: "number", key: "l", label: "ยาวพื้นที่", unit: "ม.", default: 8, min: 0.5, max: 200, step: 0.05 },
   { type: "number", key: "up", label: "ปูขึ้นขอบผนัง (0 = ไม่มีขอบ)", unit: "ซม.", default: WATERPROOF.parapetUp.value, min: 0, max: 100 },
-  { type: "number", key: "layers", label: "จำนวนชั้น", unit: "ชั้น", default: 1, min: 1, max: 2 },
+  { type: "number", integer: true, key: "layers", label: "จำนวนชั้น", unit: "ชั้น", default: 1, min: 1, max: 2 },
   { type: "number", key: "rw", label: "กว้างม้วน", unit: "ม.", default: MEMBRANE_ROLL.width.value, min: 0.5, max: 2, step: 0.01 },
   { type: "number", key: "rl", label: "ยาวม้วน", unit: "ม.", default: MEMBRANE_ROLL.length.value, min: 5, max: 50, step: 0.5 },
   { type: "number", key: "side", label: "ทับด้านข้าง", unit: "ซม.", default: MEMBRANE_ROLL.sideLap.value, min: 5, max: 20 },
@@ -437,7 +437,7 @@ const sheetFields: Field[] = [
 
 /* ─────────── ฟอร์ม ─────────── */
 
-const coatsField: Field = { type: "number", key: "coats", label: "จำนวนเที่ยว", unit: "เที่ยว", default: 2, min: 1, max: 4 };
+const coatsField: Field = { type: "number", integer: true, key: "coats", label: "จำนวนเที่ยว", unit: "เที่ยว", default: 2, min: 1, max: 4 };
 const wasteField: Field = { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: WATERPROOF.waste.value, min: 0, max: 30 };
 
 function productField(keys: string[], def: string): Field {
@@ -453,12 +453,12 @@ function productField(keys: string[], def: string): Field {
 export const wpBathroomFields: Field[] = [
   { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 2, min: 0.8, max: 10, step: 0.05 },
   { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 2.5, min: 0.8, max: 10, step: 0.05 },
-  { type: "number", key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 2 },
+  { type: "number", integer: true, key: "doors", label: "ประตู", unit: "บาน", default: 1, min: 0, max: 2 },
   { type: "number", key: "up", label: "ขึ้นผนังรอบห้อง", unit: "ซม.", default: WATERPROOF.upturn.value, min: 10, max: 60 },
   { type: "number", key: "showerRun", label: "ผนังโซนอาบน้ำยาวรวม (0 = ไม่มี)", unit: "ม.", default: WATERPROOF.showerRun.value, min: 0, max: 20, step: 0.1 },
   { type: "number", key: "showerH", label: "สูงกันซึมโซนอาบน้ำ", unit: "ซม.", default: WATERPROOF.showerH.value, min: 100, max: 250 },
-  { type: "number", key: "corners", label: "มุมผนังในโซนอาบน้ำ", unit: "มุม", default: 1, min: 0, max: 4 },
-  { type: "number", key: "pipes", label: "ท่อ/รูระบายที่ทะลุพื้น", unit: "จุด", default: 3, min: 0, max: 20 },
+  { type: "number", integer: true, key: "corners", label: "มุมผนังในโซนอาบน้ำ", unit: "มุม", default: 1, min: 0, max: 4 },
+  { type: "number", integer: true, key: "pipes", label: "ท่อ/รูระบายที่ทะลุพื้น", unit: "จุด", default: 3, min: 0, max: 20 },
 ];
 
 const roofFields: Field[] = [
@@ -477,7 +477,7 @@ const roofFields: Field[] = [
       { value: "full", label: "ปูผ้าใยเต็มพื้นที่" },
     ],
   },
-  { type: "number", key: "drains", label: "ท่อระบายน้ำ", unit: "จุด", default: 2, min: 0, max: 30 },
+  { type: "number", integer: true, key: "drains", label: "ท่อระบายน้ำ", unit: "จุด", default: 2, min: 0, max: 30 },
   wasteField,
 ];
 
