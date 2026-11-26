@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ArrowLeftRight, Check, CircleAlert } from "lucide-react";
+import { ArrowLeftRight, Check, CircleAlert, Minus, Plus } from "lucide-react";
 import type { Field, Values } from "@/lib/chang/types";
 import { visibleFields } from "@/lib/chang/math";
 import {
@@ -189,6 +189,8 @@ function isDesktopCompact(field: Field): boolean {
 
 /** ฟิลด์ที่แคบพอจะจับคู่ครึ่งบรรทัดบนมือถือได้ ต้องเป็นตัวเลข ชื่อไม่ยาว และหน่วยสั้นพอที่จะไม่เบียดตัวเลข */
 function isMobileCompact(field: Field): boolean {
+  // ช่องนับจำนวนมีปุ่ม − / + ข้างช่อง ต้องได้เต็มบรรทัดบนมือถือ ปุ่มถึงจะใหญ่พอกดด้วยนิ้ว
+  if (field.type === "number" && field.integer) return false;
   return field.type === "number" && field.label.length <= 16 && (field.unit?.length ?? 0) <= 6;
 }
 
@@ -374,11 +376,20 @@ function NumberControl({
       <label className="label" htmlFor={fieldDomId(field.key)}>
         {field.label}
       </label>
-      <div className="chang-field" data-invalid={error ? "true" : undefined}>
+      <div
+        className={`chang-field ${field.integer ? "chang-field-stepper" : ""}`}
+        data-invalid={error ? "true" : undefined}
+      >
+        {field.integer ? (
+          <StepButton field={field} value={value} dir={-1} onStep={(n) => {
+            setDraft(null);
+            onChange(n);
+          }} />
+        ) : null}
         <input
           id={fieldDomId(field.key)}
           type="text"
-          inputMode="decimal"
+          inputMode={field.integer ? "numeric" : "decimal"}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -400,6 +411,12 @@ function NumberControl({
             {field.unit}
           </span>
         ) : null}
+        {field.integer ? (
+          <StepButton field={field} value={value} dir={1} onStep={(n) => {
+            setDraft(null);
+            onChange(n);
+          }} />
+        ) : null}
       </div>
       {error ? (
         <p id={errorId} className="mt-1.5 flex items-start gap-1.5 text-sm font-medium leading-snug text-forge">
@@ -408,5 +425,40 @@ function NumberControl({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * ปุ่ม − / + ของช่องนับจำนวน (ชิ้น บาน กล้อง …) — กดทีละ 1 (หรือ step ของช่อง) ไม่ต้องเปิดคีย์บอร์ด
+ * ค่าที่ไม่ใช่ตัวเลขเริ่มนับจากค่าตั้งต้น · กดเลยขอบ min/max ไม่ได้ (ปุ่มจาง)
+ */
+function StepButton({
+  field,
+  value,
+  dir,
+  onStep,
+}: {
+  field: NumberField;
+  value: string | number | boolean | undefined;
+  dir: 1 | -1;
+  onStep: (next: number) => void;
+}) {
+  const step = field.step && field.step >= 1 ? Math.round(field.step) : 1;
+  const current = typeof value === "number" && Number.isFinite(value) ? Math.round(value) : field.default;
+  const raw = current + dir * step;
+  const next = Math.min(field.max ?? Infinity, Math.max(field.min ?? -Infinity, raw));
+  const disabled = next === current;
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={`${dir > 0 ? "เพิ่ม" : "ลด"}${field.label}`}
+      aria-controls={fieldDomId(field.key)}
+      disabled={disabled}
+      className="chang-step"
+      onClick={() => onStep(next)}
+    >
+      {dir > 0 ? <Plus className="h-5 w-5" aria-hidden /> : <Minus className="h-5 w-5" aria-hidden />}
+    </button>
   );
 }

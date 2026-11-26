@@ -107,13 +107,16 @@ export function CalcScreen({
           <button
             type="button"
             aria-pressed={starred}
-            className={`mt-1 inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-[2px] border px-3 text-sm font-semibold transition-colors ${
+            aria-label="ปักหมุดเครื่องมือนี้"
+            title={starred ? "ปักหมุดแล้ว" : "ปักหมุด"}
+            className={`mt-1 inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-[2px] border text-sm font-semibold transition-colors sm:px-3 ${
               starred ? "border-navy bg-navy text-white" : "border-navy/30 bg-white text-navy hover:border-navy"
             }`}
             onClick={() => toggleFavorite(favPath)}
           >
             <Star className={`h-4 w-4 shrink-0 ${starred ? "fill-white" : ""}`} aria-hidden />
-            {starred ? "ปักหมุดแล้ว" : "ปักหมุด"}
+            {/* มือถือเหลือแค่ไอคอน ให้ชื่อทางซ้ายได้ที่ */}
+            <span className="hidden sm:inline">{starred ? "ปักหมุดแล้ว" : "ปักหมุด"}</span>
           </button>
         ) : null}
       </div>
