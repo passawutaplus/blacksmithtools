@@ -1,23 +1,18 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { Gauge, Ruler, Search, Share2, Sigma } from "lucide-react";
-import {
-  PILLARS,
-  TRADES,
-  getTool,
-  parseToolPath,
-  searchCatalog,
-  toolCount,
-  TRADE_COVERS,
-  TRADE_ICONS,
-} from "@/lib/chang/catalog";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowRight, History, ListTree, Pin, Search } from "lucide-react";
+import { TRADES, getTool, parseToolPath, toolCount, TRADE_COVERS, TRADE_ICONS } from "@/lib/chang/catalog";
+import { CatalogList, CatalogTile } from "@/components/chang/CatalogTile";
+import { PillarHeading, TocSidebar, TocTabs, useTocActive } from "@/components/chang/ChangToc";
 import { UnitConverter } from "@/components/chang/UnitConverter";
-import { loadFavorites, loadRecent } from "@/lib/chang/favorites";
-import type { Trade } from "@/lib/chang/types";
+import { InfoButton, InfoList } from "@/components/chang/InfoButton";
+import { useStoredRaw } from "@/components/chang/useStored";
+import { FAV_KEY, RECENT_KEY, clearRecent, parseFavorites, parseRecent } from "@/lib/chang/favorites";
+import { searchTools } from "@/lib/chang/search";
+import { buildToc, type TocPillar } from "@/lib/chang/toc";
 
 const TASKS = [
   { href: "/assistant/hvac/job", label: "คิดขนาดแอร์ทั้งห้อง" },
@@ -25,93 +20,160 @@ const TASKS = [
   { href: "/assistant/tile/job", label: "สั่งกระเบื้องทั้งห้อง" },
   { href: "/assistant/masonry/job", label: "ก่อฉาบผนัง" },
   { href: "/assistant/paint/job", label: "ปริมาณสีทั้งห้อง" },
-  { href: "/assistant/map", label: "แผนผังเครื่องมือ" },
+  { href: "/assistant/map", label: "สารบัญเครื่องมือทั้งหมด" },
   { href: "/assistant/tables", label: "เปิดตารางอ้างอิง" },
 ];
 
 const HERO_POINTS = [
   {
-    icon: Gauge,
     title: "คิดจบในหน้าเดียว",
     text: "กรอกเลขแล้วคำตอบขยับตามทันที ไม่ต้องกดปุ่มคำนวณ",
   },
   {
-    icon: Sigma,
     title: "กางสูตรดูได้ทุกบรรทัด",
     text: "เปิดดูได้ว่าตัวเลขมาจากไหน ใช้ค่าคงที่อะไร อ้างอิงจากไหน",
   },
   {
-    icon: Ruler,
     title: "เผื่อเศษแบบหน้างานจริง",
     text: "บวกเผื่อตัดเผื่อเสีย แล้วปัดขึ้นเป็นหน่วยที่ร้านขายจริง",
   },
   {
-    icon: Share2,
     title: "ส่งต่อให้ทีมได้",
     text: "คัดลอก แชร์ หรือบันทึกเป็นรูปส่งเข้าไลน์กลุ่มงาน",
   },
 ];
 
-function TradeCard({ trade }: { trade: Trade }) {
-  const Icon = TRADE_ICONS[trade.id];
-  const cover = TRADE_COVERS[trade.id];
+type SavedTool = { path: string; href: string; name: string };
+
+/** path ที่จำไว้ในเครื่อง → เครื่องมือที่ยังมีอยู่จริงในทะเบียน (ของเก่า/ของแปลกปลอมถูกทิ้ง) */
+function resolveSaved(paths: string[]): SavedTool[] {
+  const out: SavedTool[] = [];
+  for (const path of paths) {
+    const parsed = parseToolPath(path);
+    const found = parsed ? getTool(parsed.tradeId, parsed.toolId) : undefined;
+    if (found) out.push({ path, href: `/assistant/${found.trade.id}/${found.tool.id}`, name: found.tool.name });
+  }
+  return out;
+}
+
+const NO_TOC: TocPillar[] = [];
+
+/**
+ * รายการสายงานแบ่งตามหมวด + สารบัญติดจอ
+ * withToc = false ตอนกำลังค้นหา (ผลสั้นอยู่แล้ว ไม่ต้องมีแถบนำทาง)
+ */
+function CatalogSections({ toc, withToc }: { toc: TocPillar[]; withToc: boolean }) {
+  const { activeId, pillarId } = useTocActive(withToc ? toc : NO_TOC);
   return (
-    <Link
-      href={`/assistant/${trade.id}`}
-      className="card group overflow-hidden transition hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(35,50,61,0.16)]"
-    >
-      <span className="relative block aspect-[4/3] overflow-hidden bg-steel">
-        {cover ? (
-          <Image
-            src={cover}
-            alt=""
-            fill
-            sizes="(min-width: 1024px) 22rem, 50vw"
-            className="object-cover transition duration-500 group-hover:scale-[1.04]"
+    <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8">
+      {withToc ? (
+        <>
+          <a
+            href="#chang-catalog-body"
+            className="sr-only focus:not-sr-only focus:mb-2 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-[2px] focus:bg-navy focus:px-3 focus:text-sm focus:font-semibold focus:text-white lg:col-span-2"
+          >
+            ข้ามสารบัญ ไปที่รายการสายงาน
+          </a>
+          <TocSidebar
+            toc={toc}
+            activeId={activeId}
+            activePillarId={pillarId}
+            label="สารบัญหมวดงาน"
+            title="หมวดงาน"
+            footer={
+              <Link
+                href="/assistant/map"
+                className="flex min-h-11 items-center gap-2 px-2 text-sm font-semibold text-navy underline decoration-forge decoration-2 underline-offset-4"
+              >
+                <ListTree className="h-4 w-4 shrink-0" aria-hidden />
+                ดูสารบัญเครื่องมือทั้งหมด
+              </Link>
+            }
           />
-        ) : (
-          <span className="flex h-full items-center justify-center text-navy/25">
-            {Icon ? <Icon className="h-10 w-10 sm:h-12 sm:w-12" aria-hidden /> : null}
-          </span>
-        )}
-        <span className="badge absolute left-2 top-2 bg-navy/80 px-2 py-0.5 text-[11px] text-white backdrop-blur sm:left-3 sm:top-3 sm:text-xs">
-          {trade.short}
-        </span>
-        <span className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-white text-navy shadow-md sm:right-3 sm:top-3 sm:h-10 sm:w-10">
-          {Icon ? <Icon className="h-4 w-4 sm:h-5 sm:w-5" aria-hidden /> : null}
-        </span>
-      </span>
-      <span className="block p-2.5 sm:p-4">
-        <span className="block text-sm font-bold leading-snug text-navy sm:text-base">{trade.name}</span>
-        <span className="mt-0.5 block text-[11px] text-muted sm:text-xs">{trade.tools.length} เครื่องมือ</span>
-        <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-muted sm:text-sm">{trade.blurb}</span>
-      </span>
-    </Link>
+        </>
+      ) : null}
+      <div id="chang-catalog-body" className={withToc ? "min-w-0" : "min-w-0 lg:col-span-2"}>
+        {withToc ? (
+          <TocTabs
+            toc={toc}
+            activePillarId={pillarId}
+            lead={
+              <Link
+                href="/assistant/map"
+                className="-ml-1 mr-1 flex min-h-11 shrink-0 items-center gap-1.5 border-r border-navy/15 pl-1 pr-3 text-sm font-semibold text-navy"
+              >
+                <ListTree className="h-4 w-4 shrink-0" aria-hidden />
+                สารบัญ
+              </Link>
+            }
+          />
+        ) : null}
+        <div className="grid grid-cols-1 gap-8">
+          {toc.map((pillar) => (
+            <section
+              key={pillar.id}
+              id={pillar.anchor}
+              aria-labelledby={`${pillar.anchor}-h`}
+              className="chang-anchor"
+            >
+              <PillarHeading pillar={pillar} headingId={`${pillar.anchor}-h`} as="h3" />
+              <CatalogList>
+                {pillar.trades.map(({ trade, anchor }) => (
+                  <CatalogTile
+                    key={trade.id}
+                    id={withToc ? anchor : undefined}
+                    href={`/assistant/${trade.id}`}
+                    title={trade.name}
+                    meta={`${trade.tools.length} เครื่องมือ`}
+                    blurb={trade.blurb}
+                    cover={TRADE_COVERS[trade.id]}
+                    icon={TRADE_ICONS[trade.id]}
+                    badge={trade.short}
+                  />
+                ))}
+              </CatalogList>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
 export function AssistantHome() {
   const router = useRouter();
+  const listId = useId();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const searchRef = useRef<HTMLDivElement>(null);
-  const [favs] = useState(() => loadFavorites().map(parseToolPath).filter(Boolean));
-  const [recent] = useState(() => loadRecent().map(parseToolPath).filter(Boolean));
-  const found = useMemo(() => searchCatalog(q), [q]);
-  const grouped = PILLARS.map((p) => ({
-    pillar: p,
-    trades: found.trades.filter((t) => t.pillarId === p.id),
-  })).filter((g) => g.trades.length);
 
+  // อ่านผ่าน useSyncExternalStore: รอบ hydrate ว่างเหมือนฝั่งเซิร์ฟเวอร์ แล้วค่อยเติมจากเครื่อง — ไม่มี hydration error
+  const favRaw = useStoredRaw(FAV_KEY);
+  const recentRaw = useStoredRaw(RECENT_KEY);
+  const favs = useMemo(() => resolveSaved(parseFavorites(favRaw)), [favRaw]);
+  const recent = useMemo(() => resolveSaved(parseRecent(recentRaw)), [recentRaw]);
+
+  const found = useMemo(() => searchTools(q), [q]);
+  const toc = useMemo(() => buildToc(), []);
   const suggestTools = useMemo(() => found.tools.slice(0, 6), [found.tools]);
   const suggestTrades = useMemo(
     () => (suggestTools.length < 6 ? found.trades.slice(0, 6 - suggestTools.length) : []),
     [found.trades, suggestTools.length],
   );
-  const hasQuery = q.trim().length > 0;
+  const query = q.trim();
+  const hasQuery = query.length > 0;
   const showDropdown = open && hasQuery;
   const suggestionCount = suggestTools.length + suggestTrades.length;
+  const noResults = hasQuery && found.tools.length === 0 && found.trades.length === 0;
+  // ค้นหาอยู่: เหลือเฉพาะสายงานที่ตรง (เลขข้อเดิมไม่เปลี่ยน) · ไม่เจออะไรเลย: โชว์ทั้งหมดให้เลือกต่อ
+  const filtering = hasQuery && !noResults;
+  const catalog = useMemo(() => {
+    if (!filtering) return toc;
+    const shown = new Set(found.trades.map((t) => t.id));
+    return toc.map((p) => ({ ...p, trades: p.trades.filter((t) => shown.has(t.id)) })).filter((p) => p.trades.length);
+  }, [filtering, found.trades, toc]);
+  const optionId = (i: number) => `${listId}-opt-${i}`;
 
   useEffect(() => {
     function onOutside(e: MouseEvent) {
@@ -121,118 +183,151 @@ export function AssistantHome() {
     return () => document.removeEventListener("mousedown", onOutside);
   }, []);
 
-  function goToTool(tradeId: string, toolId: string) {
+  function go(href: string) {
     setOpen(false);
     setQ("");
-    router.push(`/assistant/${tradeId}/${toolId}`);
+    router.push(href);
   }
 
-  function goToTrade(tradeId: string) {
-    setOpen(false);
-    setQ("");
-    router.push(`/assistant/${tradeId}`);
+  function hrefAt(index: number): string | undefined {
+    if (index < suggestTools.length) {
+      const t = suggestTools[index];
+      return t ? `/assistant/${t.tradeId}/${t.id}` : undefined;
+    }
+    const trade = suggestTrades[index - suggestTools.length];
+    return trade ? `/assistant/${trade.id}` : undefined;
   }
 
   function onSearchKeyDown(e: KeyboardEvent<HTMLInputElement>) {
-    if (!showDropdown || suggestionCount === 0) return;
+    if (e.key === "Escape") {
+      if (open) setOpen(false);
+      else setQ("");
+      return;
+    }
+    if (!hasQuery || suggestionCount === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      setOpen(true);
       setActiveIndex((i) => (i + 1) % suggestionCount);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
+      setOpen(true);
       setActiveIndex((i) => (i - 1 + suggestionCount) % suggestionCount);
     } else if (e.key === "Enter") {
-      if (activeIndex < 0) return;
+      // Enter โดยยังไม่ได้เลือกแถวไหน = ไปผลแรก (ผลที่ตรงที่สุด)
+      const href = hrefAt(activeIndex < 0 ? 0 : activeIndex);
+      if (!href) return;
       e.preventDefault();
-      if (activeIndex < suggestTools.length) {
-        const t = suggestTools[activeIndex];
-        goToTool(t.tradeId, t.id);
-      } else {
-        const trade = suggestTrades[activeIndex - suggestTools.length];
-        goToTrade(trade.id);
-      }
-    } else if (e.key === "Escape") {
-      setOpen(false);
+      go(href);
     }
   }
 
+  const optionClass = (active: boolean) =>
+    `flex min-h-12 w-full items-center gap-2.5 border-l-[3px] px-3 py-2 text-left ${
+      active ? "border-forge bg-[#f1f3f5]" : "border-transparent"
+    }`;
+
   return (
-    <div className="grid gap-6">
-      <section className="overflow-hidden rounded-[1.5rem] bg-navy text-white">
-        <div className="grid gap-7 p-6 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:items-center md:gap-9 md:p-9">
-          <div className="min-w-0">
-            <p className="badge bg-white/10 text-white">ผู้ช่วยงานช่าง · ใช้ฟรี ไม่ต้องสมัคร</p>
-            <h1 className="mt-3 text-2xl font-bold leading-tight md:text-[2rem]">
-              บอกขนาดหน้างาน แล้วได้ของที่ต้องซื้อ
-            </h1>
-            <p className="mt-3 text-sm leading-relaxed text-white/75">
-              เครื่องคิดเลขที่รู้จักงานช่างไทย — กรอกขนาดห้อง ความยาวสาย หรือพื้นที่ผนัง แล้วได้จำนวนของพร้อมเผื่อเศษ
-              เปิดดูสูตรได้ว่าคิดมาจากไหน อ้างอิง มอก. วสท. และมาตรฐานสากล
+    <div className="grid grid-cols-1 gap-6">
+      <section className="chang-on-navy rounded-[3px] border-b-[3px] border-forge bg-navy text-white">
+        <div className="p-4 md:p-8">
+          <div className="min-w-0 max-w-2xl">
+            <p className="flex items-center gap-2 text-[0.8125rem] font-medium text-white/80">
+              <span className="h-0.5 w-5 shrink-0 bg-forge" aria-hidden />
+              ผู้ช่วยงานช่าง · ใช้ฟรี ไม่ต้องสมัคร
             </p>
-            <div ref={searchRef} className="relative mt-5">
-              <label className="block">
-                <span className="sr-only">ค้นหาเครื่องมือ</span>
-                <input
-                  type="search"
-                  className="input"
-                  placeholder="ค้นหา เช่น กระเบื้อง, BTU, สายไฟ"
-                  value={q}
-                  autoComplete="off"
-                  role="combobox"
-                  aria-expanded={showDropdown}
-                  aria-controls="assistant-search-suggestions"
-                  onChange={(e) => {
-                    setQ(e.target.value);
-                    setOpen(true);
-                    setActiveIndex(-1);
-                  }}
-                  onFocus={() => {
-                    if (hasQuery) setOpen(true);
-                  }}
-                  onKeyDown={onSearchKeyDown}
+            <div className="mt-1 flex items-start gap-1 md:mt-2">
+              <h1 className="min-w-0 pt-1.5 text-balance text-[1.375rem] font-bold leading-snug md:text-[2rem] md:leading-tight">
+                บอกขนาดหน้างาน แล้วได้ของที่ต้องซื้อ
+              </h1>
+              {/* คำแนะนำการใช้ย้ายเข้าปุ่ม i — หัวหน้าเหลือหัวข้อกับช่องค้นหา */}
+              <InfoButton title="ผู้ช่วยงานช่างใช้ยังไง" tone="navy" className="md:mt-1">
+                <p>
+                  เครื่องคิดเลขที่รู้จักงานช่างไทย กรอกขนาดห้อง ความยาวสาย หรือพื้นที่ผนัง แล้วได้จำนวนของพร้อมเผื่อเศษ
+                  อ้างอิง มอก. วสท. และมาตรฐานสากล
+                </p>
+                <InfoList
+                  items={HERO_POINTS.map(({ title, text }) => (
+                    <>
+                      <span className="font-semibold text-navy">{title}</span> · {text}
+                    </>
+                  ))}
                 />
+              </InfoButton>
+            </div>
+            <div ref={searchRef} className="relative mt-3.5 md:mt-5">
+              <label className="sr-only" htmlFor={`${listId}-input`}>
+                ค้นหาเครื่องมือ
               </label>
+              <Search className="pointer-events-none absolute left-3 top-3.5 h-5 w-5 text-navy/55" aria-hidden />
+              <input
+                id={`${listId}-input`}
+                type="search"
+                className="input chang-search"
+                placeholder="ค้นหา เช่น กระเบื้อง, BTU, สายไฟ"
+                value={q}
+                autoComplete="off"
+                enterKeyHint="search"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={showDropdown && suggestionCount > 0}
+                aria-controls={`${listId}-list`}
+                aria-activedescendant={showDropdown && activeIndex >= 0 ? optionId(activeIndex) : undefined}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  setOpen(true);
+                  setActiveIndex(-1);
+                }}
+                onFocus={() => {
+                  if (hasQuery) setOpen(true);
+                }}
+                onKeyDown={onSearchKeyDown}
+              />
 
               {showDropdown ? (
-                <div
-                  id="assistant-search-suggestions"
-                  role="listbox"
-                  className="absolute inset-x-0 top-full z-20 mt-2 max-h-80 overflow-auto rounded-[3px] bg-white p-2 text-navy shadow-[0_18px_45px_rgba(15,23,32,0.35)]"
-                >
+                <div className="absolute inset-x-0 top-full z-20 mt-1 max-h-[22rem] overflow-auto rounded-[2px] border border-navy bg-white text-navy">
                   {suggestionCount === 0 ? (
-                    <p className="px-3 py-2.5 text-sm text-muted">
-                      ไม่เจอคำนี้ ลองพิมพ์ชื่อสายงานหรือของที่อยากคิด เช่น สี, แอร์, อิฐ
-                    </p>
+                    <div className="px-3 py-3">
+                      <p className="text-sm font-semibold text-navy">ไม่เจอเครื่องมือที่ตรงกับ “{query}”</p>
+                      <p className="mt-1 text-sm text-navy/75">ลองพิมพ์ให้สั้นลง เช่น สี, แอร์, อิฐ หรือเลือกจากสายงาน</p>
+                      <div className="mt-2.5 flex flex-wrap gap-2">
+                        {TRADES.map((trade) => (
+                          <Link key={trade.id} href={`/assistant/${trade.id}`} className="chang-chip">
+                            {trade.short}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
                   ) : (
-                    <>
+                    <div id={`${listId}-list`} role="listbox" aria-label="ผลการค้นหา">
                       {suggestTools.length > 0 ? (
-                        <p className="px-3 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">
-                          เครื่องมือ
+                        <p className="border-b border-navy/10 px-3 pb-1.5 pt-2 text-xs font-semibold text-navy/70" role="presentation">
+                          เครื่องมือ · กด Enter เพื่อเปิดอันแรก
                         </p>
                       ) : null}
                       {suggestTools.map((tool, i) => (
                         <button
                           key={`${tool.tradeId}/${tool.id}`}
+                          id={optionId(i)}
                           type="button"
                           role="option"
+                          tabIndex={-1}
                           aria-selected={activeIndex === i}
-                          className={`flex w-full items-center gap-2 rounded-[3px] px-3 py-2 text-left transition ${
-                            activeIndex === i ? "bg-navy/10" : "hover:bg-navy/5"
-                          }`}
+                          className={optionClass(activeIndex === i)}
                           onMouseEnter={() => setActiveIndex(i)}
-                          onClick={() => goToTool(tool.tradeId, tool.id)}
+                          onClick={() => go(`/assistant/${tool.tradeId}/${tool.id}`)}
                         >
-                          <Search className="h-4 w-4 shrink-0 text-muted" aria-hidden />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-sm font-semibold text-navy">{tool.name}</span>
-                            <span className="block truncate text-xs text-muted">
+                            <span className="block truncate text-[0.8125rem] text-navy/75">
                               {tool.tradeName} · {tool.blurb}
                             </span>
                           </span>
+                          <ArrowRight className="h-4 w-4 shrink-0 text-navy/45" aria-hidden />
                         </button>
                       ))}
                       {suggestTrades.length > 0 ? (
-                        <p className="px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                        <p className="border-y border-navy/10 px-3 pb-1.5 pt-2 text-xs font-semibold text-navy/70" role="presentation">
                           สายงาน
                         </p>
                       ) : null}
@@ -241,143 +336,163 @@ export function AssistantHome() {
                         return (
                           <button
                             key={trade.id}
+                            id={optionId(idx)}
                             type="button"
                             role="option"
+                            tabIndex={-1}
                             aria-selected={activeIndex === idx}
-                            className={`flex w-full items-center gap-2 rounded-[3px] px-3 py-2 text-left transition ${
-                              activeIndex === idx ? "bg-navy/10" : "hover:bg-navy/5"
-                            }`}
+                            className={optionClass(activeIndex === idx)}
                             onMouseEnter={() => setActiveIndex(idx)}
-                            onClick={() => goToTrade(trade.id)}
+                            onClick={() => go(`/assistant/${trade.id}`)}
                           >
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm font-semibold text-navy">{trade.name}</span>
-                              <span className="block truncate text-xs text-muted">{trade.blurb}</span>
+                              <span className="block truncate text-[0.8125rem] text-navy/75">{trade.blurb}</span>
                             </span>
+                            <ArrowRight className="h-4 w-4 shrink-0 text-navy/45" aria-hidden />
                           </button>
                         );
                       })}
-                    </>
+                    </div>
                   )}
                 </div>
               ) : null}
             </div>
-            <p className="mt-2.5 text-xs text-white/60">
-              รวม {toolCount()} เครื่องมือ จาก {TRADES.length} สายงาน
+            <p className="mt-2.5 text-[0.8125rem] text-white/75">
+              <span className="font-latin font-semibold text-white">{toolCount()}</span> เครื่องมือ ·{" "}
+              <span className="font-latin font-semibold text-white">{TRADES.length}</span> สายงาน · เปิดดูสูตรได้ทุกตัว
             </p>
           </div>
-          <ul className="grid gap-2.5">
-            {HERO_POINTS.map(({ icon: Icon, title, text }) => (
-              <li key={title} className="flex items-start gap-3 rounded-[3px] bg-white/[0.07] px-4 py-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-forge/90">
-                  <Icon className="h-4 w-4" aria-hidden />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold">{title}</span>
-                  <span className="mt-0.5 block text-xs leading-relaxed text-white/65">{text}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
         </div>
       </section>
 
-      <UnitConverter />
+      {/* สถานะผลค้นหา ให้โปรแกรมอ่านจอประกาศ */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {hasQuery ? (noResults ? `ไม่เจอเครื่องมือที่ตรงกับ ${query}` : `เจอ ${found.tools.length} เครื่องมือ`) : ""}
+      </p>
 
-      <section>
-        <h2 className="mb-2 text-sm font-bold text-navy">วันนี้จะทำอะไร</h2>
-        <div className="flex flex-wrap gap-2">
-          {TASKS.map((t) => (
-            <Link
-              key={t.href}
-              href={t.href}
-              className="rounded-[2px] border border-steel bg-white px-3 py-1.5 text-sm font-medium text-navy hover:border-navy/30"
-            >
-              {t.label}
-            </Link>
-          ))}
-        </div>
-      </section>
-
-      {recent.length > 0 && !q ? (
-        <section>
-          <h2 className="mb-2 text-sm font-bold text-navy">ใช้ล่าสุด</h2>
+      {!hasQuery && favs.length > 0 ? (
+        <section aria-labelledby="chang-pinned">
+          <h2 id="chang-pinned" className="chang-kicker mb-2">
+            ปักหมุดไว้
+          </h2>
           <div className="flex flex-wrap gap-2">
-            {recent.map((item) => {
-              if (!item) return null;
-              const foundTool = getTool(item.tradeId, item.toolId);
-              if (!foundTool) return null;
-              return (
-                <Link
-                  key={`${item.tradeId}/${item.toolId}`}
-                  href={`/assistant/${item.tradeId}/${item.toolId}`}
-                  className="rounded-[2px] border border-steel bg-white px-3 py-1.5 text-sm"
-                >
-                  {foundTool.tool.name}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {favs.length > 0 && !q ? (
-        <section>
-          <h2 className="mb-2 text-sm font-bold text-navy">ปักหมุดไว้</h2>
-          <div className="flex flex-wrap gap-2">
-            {favs.map((item) => {
-              if (!item) return null;
-              const foundTool = getTool(item.tradeId, item.toolId);
-              if (!foundTool) return null;
-              return (
-                <Link
-                  key={`${item.tradeId}/${item.toolId}`}
-                  href={`/assistant/${item.tradeId}/${item.toolId}`}
-                  className="rounded-[2px] bg-navy px-3 py-1.5 text-sm text-white"
-                >
-                  {foundTool.tool.name}
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {found.tools.length > 0 ? (
-        <section>
-          <h2 className="mb-2 text-sm font-bold text-navy">เครื่องมือที่เจอ</h2>
-          <div className="grid gap-2">
-            {found.tools.map((tool) => (
-              <Link
-                key={`${tool.tradeId}/${tool.id}`}
-                href={`/assistant/${tool.tradeId}/${tool.id}`}
-                className="card px-4 py-3 hover:border-navy"
-              >
-                <p className="font-bold text-navy">{tool.name}</p>
-                <p className="text-sm text-muted">
-                  {tool.tradeName} · {tool.blurb}
-                </p>
+            {favs.map((item) => (
+              <Link key={item.path} href={item.href} className="chang-chip chang-chip-solid">
+                <Pin className="h-4 w-4 shrink-0" aria-hidden />
+                {item.name}
               </Link>
             ))}
           </div>
         </section>
       ) : null}
 
-      {grouped.map(({ pillar, trades }) => (
-        <section key={pillar.id}>
-          <h2 className="text-base font-bold text-navy">{pillar.name}</h2>
-          <p className="mb-3 text-sm text-muted">{pillar.blurb}</p>
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3">
-            {trades.map((trade) => (
-              <TradeCard key={trade.id} trade={trade} />
+      {!hasQuery && recent.length > 0 ? (
+        <section aria-labelledby="chang-recent">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 id="chang-recent" className="chang-kicker">
+              ใช้ล่าสุด
+            </h2>
+            <button
+              type="button"
+              className="-my-2 inline-flex min-h-11 items-center px-1 text-[0.8125rem] font-medium text-navy/75 underline underline-offset-4 hover:text-navy"
+              onClick={clearRecent}
+            >
+              ล้างรายการ
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {recent.map((item) => (
+              <Link key={item.path} href={item.href} className="chang-chip">
+                <History className="h-4 w-4 shrink-0 text-navy/55" aria-hidden />
+                {item.name}
+              </Link>
             ))}
           </div>
         </section>
-      ))}
-
-      {grouped.length === 0 && found.tools.length === 0 ? (
-        <p className="text-sm text-muted">ไม่เจอคำนี้ ลองพิมพ์ชื่อสายงานหรือของที่อยากคิด เช่น สี, แอร์, อิฐ</p>
       ) : null}
+
+      {!hasQuery ? (
+        <section aria-labelledby="chang-tasks">
+          <h2 id="chang-tasks" className="chang-kicker mb-2">
+            วันนี้จะทำอะไร
+          </h2>
+          {/* มือถือ: แถวเดียวเลื่อนข้าง ไม่กินความสูงจอ · จอกว้าง: ตัดบรรทัดตามปกติ */}
+          <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0">
+            {TASKS.map((t) => (
+              <Link key={t.href} href={t.href} className="chang-chip shrink-0 whitespace-nowrap">
+                {t.label}
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {found.tools.length > 0 ? (
+        <section aria-labelledby="chang-found">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h2 id="chang-found" className="chang-kicker">
+              เครื่องมือที่เจอ
+            </h2>
+            <p className="text-[0.8125rem] text-navy/70">{found.tools.length} รายการ · เรียงตามความตรง</p>
+          </div>
+          <ul className="divide-y divide-navy/10 rounded-[3px] border border-navy/15 bg-white">
+            {found.tools.map((tool) => (
+              <li key={`${tool.tradeId}/${tool.id}`}>
+                <Link
+                  href={`/assistant/${tool.tradeId}/${tool.id}`}
+                  className="flex min-h-14 items-center gap-3 px-3 py-2.5 hover:bg-[#f7f8f9]"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[0.9375rem] font-semibold leading-snug text-navy">{tool.name}</span>
+                    <span className="block text-[0.8125rem] leading-snug text-navy/75">
+                      {tool.tradeName} · {tool.blurb}
+                    </span>
+                  </span>
+                  <ArrowRight className="h-4 w-4 shrink-0 text-navy/45" aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {noResults ? (
+        <section className="border border-navy/25 bg-white px-4 py-3.5">
+          <p className="text-sm font-semibold text-navy">ไม่เจอเครื่องมือที่ตรงกับ “{query}”</p>
+          <p className="mt-1 text-sm leading-relaxed text-navy/75">
+            ลองพิมพ์ให้สั้นลง เช่น สี, แอร์, อิฐ — หรือเลือกจากสายงานด้านล่าง / เปิด{" "}
+            <Link href="/assistant/map" className="inline-flex min-h-11 items-center font-semibold text-navy underline decoration-forge decoration-2 underline-offset-4">
+              สารบัญเครื่องมือทั้งหมด
+            </Link>
+          </p>
+        </section>
+      ) : null}
+
+      {catalog.length ? (
+          <section aria-labelledby="chang-catalog" className="grid grid-cols-1 gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+              <div className="min-w-0">
+                <h2 id="chang-catalog" className="text-xl font-bold leading-snug text-navy">
+                  {filtering ? "สายงานที่เกี่ยวข้อง" : "เลือกตามหมวดงาน"}
+                </h2>
+                <p className="text-[0.8125rem] text-navy/75">
+                  <span className="font-latin font-semibold text-navy">{toc.length}</span> หมวด ·{" "}
+                  <span className="font-latin font-semibold text-navy">{TRADES.length}</span> สายงาน ·{" "}
+                  <span className="font-latin font-semibold text-navy">{toolCount()}</span> เครื่องมือ
+                </p>
+              </div>
+              <Link href="/assistant/map" className="chang-chip hidden shrink-0 font-semibold lg:inline-flex">
+                <ListTree className="h-4 w-4 shrink-0" aria-hidden />
+                ดูสารบัญทั้งหมด
+                <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
+              </Link>
+            </div>
+            <CatalogSections toc={catalog} withToc={!filtering} />
+          </section>
+      ) : null}
+
+      {!hasQuery ? <UnitConverter /> : null}
     </div>
   );
 }

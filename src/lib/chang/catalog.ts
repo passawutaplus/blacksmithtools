@@ -536,7 +536,7 @@ export type AssistantHref = { href: string; title: string; blurb?: string };
 export function assistantPages(): AssistantHref[] {
   const pages: AssistantHref[] = [
     { href: "/assistant", title: "ผู้ช่วยงานช่าง", blurb: "เลือกสายงานและเครื่องมือ" },
-    { href: "/assistant/map", title: "แผนผังเครื่องมือ", blurb: "ดูครบทุกสายงาน" },
+    { href: "/assistant/map", title: "สารบัญเครื่องมือทั้งหมด", blurb: "ทุกหมวด ทุกสายงาน ทุกเครื่องมือ" },
     { href: "/assistant/tables", title: "ตารางอ้างอิง", blurb: "สายไฟ ท่อ PVC ตาราง P–T" },
   ];
   for (const trade of TRADES) {

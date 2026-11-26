@@ -1,111 +1,76 @@
+/**
+ * คัดลอก / แชร์ข้อความผลคำนวณ
+ * ทุกฟังก์ชันคืนผลลัพธ์ให้หน้าจอบอกผู้ใช้ได้ว่าสำเร็จหรือไม่ — ห้ามล้มเหลวเงียบ
+ *
+ * ส่วนส่งออกเป็นไฟล์แยกไปอยู่ที่: canvas-text.ts (วาดข้อความ) · sheet.ts (เลย์เอาต์ผลคำนวณ/ใบสั่งของ)
+ * · export-file.ts (PNG / PDF / ส่งรูปเข้าแชต) — ท้ายไฟล์นี้ส่งชื่อเดิมต่อให้โค้ดที่เรียกอยู่
+ */
+import { buildSheet, paintSheet, type ResultDoc } from "./sheet";
+import type { Painter } from "./canvas-text";
+
+/** คัดลอกข้อความ: ลอง Clipboard API ก่อน ถ้าไม่ได้ (http, เบราว์เซอร์ในแอป) ลองวิธีเก่าผ่าน textarea */
 export async function copyText(text: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(text);
-    return true;
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    /* ลองวิธีสำรองต่อ */
+  }
+  return legacyCopy(text);
+}
+
+function legacyCopy(text: string): boolean {
+  if (typeof document === "undefined") return false;
+  const area = document.createElement("textarea");
+  try {
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "0";
+    area.style.left = "-9999px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    area.setSelectionRange(0, text.length);
+    return document.execCommand("copy");
   } catch {
     return false;
+  } finally {
+    area.remove();
   }
 }
 
-export async function shareText(title: string, text: string): Promise<boolean> {
-  if (typeof navigator !== "undefined" && navigator.share) {
+/**
+ * shared    = เปิดหน้าต่างแชร์ของเครื่องแล้วส่งสำเร็จ
+ * copied    = เครื่องนี้แชร์ตรงไม่ได้ จึงคัดลอกข้อความให้แทน
+ * cancelled = ผู้ใช้ปิดหน้าต่างแชร์เอง (ไม่ต้องแจ้งอะไร)
+ * failed    = ทั้งแชร์และคัดลอกไม่ได้ ต้องให้ผู้ใช้เลือกข้อความเอง
+ */
+export type ShareOutcome = "shared" | "copied" | "cancelled" | "failed";
+
+export async function shareText(title: string, text: string): Promise<ShareOutcome> {
+  if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
     try {
       await navigator.share({ title, text });
-      return true;
-    } catch {
-      return false;
+      return "shared";
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return "cancelled";
+      /* แชร์ไม่ได้ด้วยเหตุอื่น → คัดลอกแทน */
     }
   }
-  return copyText(text);
+  return (await copyText(text)) ? "copied" : "failed";
 }
 
-export function downloadResultPng(opts: {
-  title: string;
-  headline?: string;
-  rows: { label: string; value: string }[];
-  tip: string;
-  disclaimer?: string;
-}): void {
-  const pad = 28;
-  const lineH = 36;
-  const width = 720;
-  const extra = opts.headline ? 48 : 0;
-  const discLines = opts.disclaimer ? Math.ceil(opts.disclaimer.length / 42) : 0;
-  const height = pad * 2 + 72 + extra + opts.rows.length * lineH + 88 + discLines * 20;
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+/* ───────── รูปผลคำนวณ ───────── */
 
-  ctx.fillStyle = "#F3EEE4";
-  ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#1A1612";
-  ctx.fillRect(0, 0, 10, height);
+export type ResultImageOptions = ResultDoc;
+export type { Painter, TextMeasurer } from "./canvas-text";
+export { formatThaiDate, wrapLines } from "./canvas-text";
+export { resultFileName } from "./export-file";
 
-  ctx.fillStyle = "#1A1612";
-  ctx.font = "700 28px Prompt, sans-serif";
-  ctx.fillText(opts.title, pad + 8, pad + 32);
-
-  ctx.fillStyle = "#C45C26";
-  ctx.font = "500 16px Prompt, sans-serif";
-  ctx.fillText("Blacksmith · ผู้ช่วยงานช่าง", pad + 8, pad + 58);
-
-  let y = pad + 88;
-  if (opts.disclaimer) {
-    ctx.fillStyle = "#C45C26";
-    ctx.font = "400 13px Prompt, sans-serif";
-    y = wrapText(ctx, opts.disclaimer, pad + 8, y, width - pad * 2, 18) + 16;
-  }
-  if (opts.headline) {
-    ctx.fillStyle = "#1A1612";
-    ctx.font = "600 22px Prompt, sans-serif";
-    wrapText(ctx, opts.headline, pad + 8, y, width - pad * 2, 28);
-    y += 48;
-  }
-
-  ctx.font = "500 18px Prompt, sans-serif";
-  for (const row of opts.rows) {
-    ctx.fillStyle = "#5C5348";
-    ctx.fillText(row.label, pad + 8, y);
-    ctx.fillStyle = "#1A1612";
-    ctx.textAlign = "right";
-    ctx.fillText(row.value, width - pad, y);
-    ctx.textAlign = "left";
-    y += lineH;
-  }
-
-  y += 12;
-  ctx.fillStyle = "#5C5348";
-  ctx.font = "400 14px Prompt, sans-serif";
-  wrapText(ctx, opts.tip, pad + 8, y, width - pad * 2, 20);
-
-  const a = document.createElement("a");
-  a.download = "blacksmith-ผู้ช่วยงานช่าง.png";
-  a.href = canvas.toDataURL("image/png");
-  a.click();
-}
-
-function wrapText(
-  ctx: CanvasRenderingContext2D,
-  text: string,
-  x: number,
-  y: number,
-  maxWidth: number,
-  lineHeight: number,
-): number {
-  const chars = [...text];
-  let line = "";
-  for (const ch of chars) {
-    const test = line + ch;
-    if (ctx.measureText(test).width > maxWidth && line) {
-      ctx.fillText(line, x, y);
-      line = ch;
-      y += lineHeight;
-    } else {
-      line = test;
-    }
-  }
-  if (line) ctx.fillText(line, x, y);
-  return y;
+/** วาด (หรือแค่วัด เมื่อ p.ctx เป็น null) รูปผลคำนวณ คืนความสูงทั้งหมด */
+export function paintResultImage(p: Painter, opts: ResultImageOptions): number {
+  return paintSheet(p, buildSheet(p, opts));
 }
