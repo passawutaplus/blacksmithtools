@@ -166,6 +166,9 @@ const EXPECTED_BLOCKED = [
   // ปริมาตรถัง: ระดับน้ำสูงกว่าถัง (3,000 ซม. > Ø 100 · Ø 10 ซม. < ระดับ 30)
   "general/tank:level@max",
   "general/tank:d@min",
+  // สาย LAN: เส้นยาวสุดสั้นกว่าค่าเฉลี่ย (1 < 30 ม. · 45 < 250 ม.) เป็นไปไม่ได้
+  "lowvolt/lan:longest@min",
+  "lowvolt/lan:avg@max",
 ].sort();
 
 describe("กวาดทุกเครื่องมือ: ค่าตั้งต้นและค่าปลายช่วง", () => {

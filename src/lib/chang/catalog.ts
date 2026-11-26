@@ -3,6 +3,8 @@ import {
   Snowflake,
   AppWindow,
   Axe,
+  Blinds,
+  Cctv,
   Droplets,
   Hammer,
   Home,
@@ -10,6 +12,7 @@ import {
   LayoutGrid,
   Paintbrush,
   PanelTop,
+  ReceiptText,
   Ruler,
   Box,
   ShieldCheck,
@@ -23,12 +26,15 @@ import type { Pillar, Trade } from "./types";
 import { ceilingJob, ceilingTools } from "./tools/ceiling";
 import { concreteJob, concreteTools } from "./tools/concrete";
 import { earthTools } from "./tools/earth";
+import { curtainTools } from "./tools/curtain";
 import { electricalJob, electricalTools } from "./tools/electrical";
+import { estimateTools } from "./tools/estimate";
 import { generalJob, generalTools } from "./tools/general";
 import { glassJob, glassTools } from "./tools/glass";
 import { handymanJob, handymanTools } from "./tools/handyman";
 import { hvacJob, hvacTools } from "./tools/hvac";
 import { landscapeTools } from "./tools/landscape";
+import { lowvoltTools } from "./tools/lowvolt";
 import { masonryJob, masonryTools } from "./tools/masonry";
 import { paintJob, paintTools } from "./tools/paint";
 import { plumbingJob, plumbingTools } from "./tools/plumbing";
@@ -40,23 +46,25 @@ import { waterproofJob, waterproofTools } from "./tools/waterproof";
 import { woodTools } from "./tools/wood";
 
 export const PILLARS: Pillar[] = [
-  { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา" },
-  { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก" },
+  { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา กล้องวงจรปิด" },
+  { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก ม่าน ไม้" },
   { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ คอนกรีต หลังคา เหล็ก สี กันซึม" },
   { id: "outdoor", name: "งานภายนอกและที่ดิน", blurb: "ถมดิน สวน พื้นภายนอก" },
-  { id: "general", name: "เครื่องมือทั่วไป", blurb: "แปลงหน่วย รูปทรง" },
+  { id: "general", name: "เครื่องมือทั่วไปและราคา", blurb: "แปลงหน่วย รูปทรง ใบเสนอราคา" },
 ];
 
 export const TRADE_ICONS: Record<string, LucideIcon> = {
   hvac: Snowflake,
   electrical: Zap,
   plumbing: Droplets,
+  lowvolt: Cctv,
   handyman: Hammer,
   tile: LayoutGrid,
   vinyl: Layers,
   ceiling: PanelTop,
   glass: AppWindow,
   wood: Axe,
+  curtain: Blinds,
   masonry: Box,
   concrete: Truck,
   roof: Home,
@@ -66,6 +74,7 @@ export const TRADE_ICONS: Record<string, LucideIcon> = {
   earth: Shovel,
   landscape: Trees,
   general: Ruler,
+  estimate: ReceiptText,
 };
 
 /**
@@ -117,6 +126,14 @@ export const TRADES: Trade[] = [
     job: plumbingJob,
   },
   {
+    id: "lowvolt",
+    name: "ช่างกล้องวงจรปิดและเน็ต",
+    short: "กล้อง/เน็ต",
+    pillarId: "mep",
+    blurb: "ฮาร์ดดิสก์ PoE สาย LAN มุมกล้อง",
+    tools: lowvoltTools,
+  },
+  {
     id: "handyman",
     name: "ช่างติดตั้งและบิ้วอิน",
     short: "บิ้วอิน",
@@ -162,6 +179,13 @@ export const TRADES: Trade[] = [
     job: glassJob,
   },
   {
+    id: "curtain",
+    name: "ช่างผ้าม่าน",
+    short: "ผ้าม่าน",
+    pillarId: "finish",
+    blurb: "ผ้ากี่หลา ความฟู ม่านม้วน มู่ลี่",
+    tools: curtainTools,
+  },  {
     id: "wood",
     name: "ช่างไม้และพื้นไม้",
     short: "ไม้",
@@ -169,6 +193,7 @@ export const TRADES: Trade[] = [
     blurb: "ลูกบาศก์ฟุต ระแนง ไม้ฝา เดค",
     tools: woodTools,
   },
+
   {
     id: "masonry",
     name: "ช่างก่ออิฐฉาบปูน",
@@ -248,6 +273,14 @@ export const TRADES: Trade[] = [
     tools: generalTools,
     job: generalJob,
   },
+  {
+    id: "estimate",
+    name: "ประมาณราคาและใบเสนอราคา",
+    short: "ใบเสนอราคา",
+    pillarId: "general",
+    blurb: "VAT หัก ณ ที่จ่าย กำไร งวดงาน ค่าแรง",
+    tools: estimateTools,
+  },
 ];
 
 /**
@@ -299,6 +332,18 @@ export const TOOLS_WITHOUT_COVER: string[] = [
   "general/rai",
   "general/tank",
   "general/unitprice",
+  // รอบ 4: สายงานใหม่ (ยังไม่มีภาพปก)
+  "lowvolt/hdd",
+  "lowvolt/poe",
+  "lowvolt/lan",
+  "lowvolt/fov",
+  "curtain/fabric",
+  "curtain/blind",
+  "estimate/quote",
+  "estimate/markup",
+  "estimate/vat",
+  "estimate/instalment",
+  "estimate/labour",
 ];
 
 /**
@@ -385,6 +430,9 @@ const TRADE_ALIASES: Record<string, string[]> = {
   wood: ["ไม้", "ช่างไม้", "ไม้แปรรูป", "ระแนง", "ไม้ฝา", "wpc", "ไม้เทียม", "เดค", "deck"],
   earth: ["ดิน", "ถมดิน", "ถมที่", "ขุดดิน", "ดินถม", "ลูกรัง", "รถดิน", "รถ 10 ล้อ"],
   landscape: ["สวน", "จัดสวน", "หญ้า", "ตัวหนอน", "บล็อกปูพื้น", "สปริงเกอร์", "น้ำฝน", "พื้นภายนอก"],
+  lowvolt: ["กล้องวงจรปิด", "cctv", "กล้อง", "nvr", "dvr", "สายแลน", "lan", "poe", "เน็ต", "ไวไฟ", "wifi"],
+  curtain: ["ผ้าม่าน", "ม่าน", "ม่านม้วน", "มู่ลี่", "ราง", "หลา"],
+  estimate: ["ใบเสนอราคา", "เสนอราคา", "ประมาณราคา", "vat", "ภาษี", "หัก ณ ที่จ่าย", "มัดจำ", "งวดงาน", "กำไร", "ค่าแรง"],
   waterproof: ["กันซึม", "กันรั่ว", "ดาดฟ้า", "ดาดฟ้ารั่ว", "ห้องน้ำรั่ว", "รอยร้าว", "ร้าว", "pu", "เมมเบรน", "membrane", "ซีเมนต์กันซึม"],
 };
 
@@ -446,6 +494,18 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "landscape/paver": ["ตัวหนอน", "อิฐตัวหนอน", "บล็อกปูพื้น", "คันหิน", "บล็อกขอบ", "แผ่นทางเท้า", "ลานจอดรถ"],
   "landscape/sprinkler": ["สปริงเกอร์", "sprinkler", "รดน้ำ", "หัวพ่นน้ำ", "ระบบรดน้ำ"],
   "landscape/rain": ["น้ำฝน", "เก็บน้ำฝน", "ถังเก็บน้ำฝน", "rainwater"],
+  // รอบ 4: สายงานใหม่
+  "lowvolt/hdd": ["ฮาร์ดดิสก์", "hdd", "เก็บกี่วัน", "อัดกี่วัน", "nvr", "dvr", "tb"],
+  "lowvolt/poe": ["poe", "poe+", "สวิตช์ poe", "งบไฟ", "802.3af", "802.3at", "802.3bt"],
+  "lowvolt/lan": ["สายแลน", "สาย lan", "cat6", "cat5e", "rj45", "หัวแลน", "กล่อง 305", "305 เมตร"],
+  "lowvolt/fov": ["มุมกล้อง", "เลนส์", "เห็นหน้า", "ระยะกล้อง", "ppm", "fov", "dori"],
+  "curtain/fabric": ["ผ้าม่าน", "หลา", "ม่านจีบ", "ม่านตาไก่", "ม่านลอน", "ความฟู", "ตะขอม่าน", "รางม่าน"],
+  "curtain/blind": ["ม่านม้วน", "มู่ลี่", "roller blind", "ม่านปรับแสง", "ตร.หลา"],
+  "estimate/quote": ["ใบเสนอราคา", "quotation", "เสนอราคา", "vat", "หัก ณ ที่จ่าย"],
+  "estimate/markup": ["markup", "margin", "บวกกำไร", "กำไรกี่เปอร์เซ็นต์"],
+  "estimate/vat": ["vat", "ถอด vat", "รวม vat", "ภาษีมูลค่าเพิ่ม", "หัก ณ ที่จ่าย", "50 ทวิ", "3%", "7%"],
+  "estimate/instalment": ["งวดงาน", "มัดจำ", "แบ่งงวด", "เงินประกันผลงาน", "ค้ำประกันผลงาน"],
+  "estimate/labour": ["ค่าแรง", "ค่าช่าง", "ราคาต่อตารางเมตร", "รายวัน", "กี่วันเสร็จ"],
   "concrete/rebar": ["เหล็กเส้น", "ปลอก", "เหล็กปลอก", "ลวดผูก", "ข้ออ้อย", "db12", "rb6", "คานคอดิน", "ทาบเหล็ก"],
 
   // รอบ 4: เครื่องมือใหม่ในสายงานเดิม

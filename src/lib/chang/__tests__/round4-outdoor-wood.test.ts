@@ -308,7 +308,7 @@ describe("ลงทะเบียนหมวดงานภายนอกแ�
 
   it("ช่างไม้อยู่ถัดจากกระจกในงานตกแต่ง · ดินและสวนอยู่หมวดงานภายนอก · มีไอคอนทุกสาย", () => {
     const ids = TRADES.map((t) => t.id);
-    expect(ids.indexOf("wood")).toBe(ids.indexOf("glass") + 1);
+    expect(ids.indexOf("wood")).toBe(ids.indexOf("curtain") + 1);
     const byId = (id: string) => TRADES.find((t) => t.id === id)!;
     expect(byId("wood").pillarId).toBe("finish");
     expect(byId("earth").pillarId).toBe("outdoor");
