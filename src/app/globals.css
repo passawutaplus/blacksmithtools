@@ -848,6 +848,44 @@ summary::-webkit-details-marker {
   }
 }
 
+/*
+ * สารบัญติดจอ (ChangToc): --chang-top = ความสูงหัวเว็บที่ติดอยู่ด้านบน (AssistantChrome วัดจริงแล้วเขียนทับ)
+ * .chang-anchor = หัวข้อที่ลิงก์ #… พาไป — เว้นที่ให้หัวเว็บ (+ แถบแท็บหมวดบนจอเล็ก) จะได้ไม่บังหัวข้อ
+ */
+.chang-scope {
+  --chang-top: 4rem;
+}
+
+.chang-scope .chang-anchor {
+  scroll-margin-top: calc(var(--chang-top) + 3.75rem);
+}
+
+@media (min-width: 1024px) {
+  .chang-scope .chang-anchor {
+    scroll-margin-top: calc(var(--chang-top) + 1.25rem);
+  }
+}
+
+/* ผู้ใช้ตั้งลดการเคลื่อนไหว: กระโดดไปหัวข้อทันที ไม่เลื่อนนุ่ม */
+@media (prefers-reduced-motion: reduce) {
+  html:has(.chang-scope) {
+    scroll-behavior: auto;
+  }
+}
+
+.chang-scope .chang-noscrollbar {
+  scrollbar-width: none;
+}
+
+.chang-scope .chang-noscrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.chang-scope .chang-thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(37, 54, 65, 0.3) transparent;
+}
+
 /* ช่องค้นหามีไอคอนแว่นขยายด้านซ้าย */
 .chang-scope .input.chang-search {
   padding-left: 2.5rem;

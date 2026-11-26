@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, Map } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { ArrowLeft, ListTree } from "lucide-react";
 
 function fallbackFrom(pathname: string): string {
   const parts = pathname.split("/").filter(Boolean);
@@ -24,7 +25,35 @@ function canGoBack(): boolean {
   }
 }
 
+/** หัวเว็บที่ติดด้านบนจอ (sticky/fixed) — ใช้หาว่าแถบสารบัญต้องติดต่ำลงมาเท่าไร */
+function findStickyHeader(): HTMLElement | null {
+  for (const el of document.querySelectorAll<HTMLElement>("header")) {
+    const pos = getComputedStyle(el).position;
+    if (pos === "sticky" || pos === "fixed") return el;
+  }
+  return null;
+}
+
+/**
+ * วัดความสูงหัวเว็บจริงแล้วเขียนเป็น --chang-top ที่ .chang-scope
+ * (หัวเว็บสูงไม่เท่ากันระหว่างมือถือ/เดสก์ท็อป และยืดเมื่อเปิดช่องค้นหา) — แตะแค่ตัวแปรในขอบเขตผู้ช่วย ไม่แตะหัวเว็บ
+ */
+function useStickyTopVar(anchor: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const scope = anchor.current?.closest<HTMLElement>(".chang-scope");
+    const header = findStickyHeader();
+    if (!scope || !header) return;
+    const write = () => scope.style.setProperty("--chang-top", `${Math.round(header.getBoundingClientRect().height)}px`);
+    write();
+    const ro = new ResizeObserver(write);
+    ro.observe(header);
+    return () => ro.disconnect();
+  }, [anchor]);
+}
+
 export function AssistantChrome() {
+  const navRef = useRef<HTMLElement>(null);
+  useStickyTopVar(navRef);
   const pathname = usePathname();
   const router = useRouter();
   const fallback = fallbackFrom(pathname);
@@ -39,7 +68,7 @@ export function AssistantChrome() {
   }
 
   return (
-    <nav aria-label="นำทางผู้ช่วยงานช่าง" className="mb-5 flex items-center justify-between gap-3">
+    <nav ref={navRef} aria-label="นำทางผู้ช่วยงานช่าง" className="mb-5 flex items-center justify-between gap-3">
       <button
         type="button"
         onClick={back}
@@ -57,8 +86,8 @@ export function AssistantChrome() {
         }`}
         aria-current={onMap ? "page" : undefined}
       >
-        <Map className="h-4 w-4 shrink-0" aria-hidden />
-        แผนผัง
+        <ListTree className="h-4 w-4 shrink-0" aria-hidden />
+        สารบัญ
       </Link>
     </nav>
   );

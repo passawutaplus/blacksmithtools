@@ -245,3 +245,14 @@ export function searchTools(query: string): SearchResult {
     })),
   };
 }
+
+/**
+ * ข้อความนี้ตรงกับคำค้นไหม — กติกาเดียวกับ searchTools (ทุกคำต้องเจอ, คำพ้อง, ไม่สนวรรณยุกต์)
+ * ใช้กับของที่ไม่อยู่ในดัชนีเครื่องมือ เช่น ชื่อ "คิดทั้งงาน" ของแต่ละสายงาน
+ */
+export function textMatchesQuery(text: string, query: string): boolean {
+  const tokens = tokenize(query);
+  if (tokens.length === 0) return false;
+  const hay = normalizeSearchText(text);
+  return tokens.every((token) => expand(token).some((term) => containsTerm(hay, term)));
+}

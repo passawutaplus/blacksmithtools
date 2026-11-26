@@ -3,14 +3,15 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowRight, Gauge, History, Pin, Ruler, Search, Share2, Sigma } from "lucide-react";
-import { PILLARS, TRADES, getTool, parseToolPath, toolCount, TRADE_COVERS, TRADE_ICONS } from "@/lib/chang/catalog";
+import { ArrowRight, Gauge, History, ListTree, Pin, Ruler, Search, Share2, Sigma } from "lucide-react";
+import { TRADES, getTool, parseToolPath, toolCount, TRADE_COVERS, TRADE_ICONS } from "@/lib/chang/catalog";
 import { CatalogList, CatalogTile } from "@/components/chang/CatalogTile";
+import { PillarHeading, TocSidebar, TocTabs, useTocActive } from "@/components/chang/ChangToc";
 import { UnitConverter } from "@/components/chang/UnitConverter";
 import { useStoredRaw } from "@/components/chang/useStored";
 import { FAV_KEY, RECENT_KEY, clearRecent, parseFavorites, parseRecent } from "@/lib/chang/favorites";
 import { searchTools } from "@/lib/chang/search";
-import type { Trade } from "@/lib/chang/types";
+import { buildToc, type TocPillar } from "@/lib/chang/toc";
 
 const TASKS = [
   { href: "/assistant/hvac/job", label: "คิดขนาดแอร์ทั้งห้อง" },
@@ -18,7 +19,7 @@ const TASKS = [
   { href: "/assistant/tile/job", label: "สั่งกระเบื้องทั้งห้อง" },
   { href: "/assistant/masonry/job", label: "ก่อฉาบผนัง" },
   { href: "/assistant/paint/job", label: "ปริมาณสีทั้งห้อง" },
-  { href: "/assistant/map", label: "แผนผังเครื่องมือ" },
+  { href: "/assistant/map", label: "สารบัญเครื่องมือทั้งหมด" },
   { href: "/assistant/tables", label: "เปิดตารางอ้างอิง" },
 ];
 
@@ -58,37 +59,87 @@ function resolveSaved(paths: string[]): SavedTool[] {
   return out;
 }
 
-function TradeGroups({ trades }: { trades: Trade[] }) {
-  const grouped = PILLARS.map((p) => ({ pillar: p, trades: trades.filter((t) => t.pillarId === p.id) })).filter(
-    (g) => g.trades.length,
-  );
+const NO_TOC: TocPillar[] = [];
+
+/**
+ * รายการสายงานแบ่งตามหมวด + สารบัญติดจอ
+ * withToc = false ตอนกำลังค้นหา (ผลสั้นอยู่แล้ว ไม่ต้องมีแถบนำทาง)
+ */
+function CatalogSections({ toc, withToc }: { toc: TocPillar[]; withToc: boolean }) {
+  const { activeId, pillarId } = useTocActive(withToc ? toc : NO_TOC);
   return (
-    <>
-      {grouped.map(({ pillar, trades: list }) => (
-        <section key={pillar.id} aria-labelledby={`pillar-${pillar.id}`}>
-          <div className="mb-2.5 flex items-baseline gap-3 border-b border-navy/15 pb-2 sm:mb-3">
-            <h2 id={`pillar-${pillar.id}`} className="text-base font-bold text-navy">
-              {pillar.name}
-            </h2>
-            <p className="text-[0.8125rem] text-navy/70">{pillar.blurb}</p>
-          </div>
-          <CatalogList>
-            {list.map((trade) => (
-              <CatalogTile
-                key={trade.id}
-                href={`/assistant/${trade.id}`}
-                title={trade.name}
-                meta={`${trade.tools.length} เครื่องมือ`}
-                blurb={trade.blurb}
-                cover={TRADE_COVERS[trade.id]}
-                icon={TRADE_ICONS[trade.id]}
-                badge={trade.short}
-              />
-            ))}
-          </CatalogList>
-        </section>
-      ))}
-    </>
+    <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-8">
+      {withToc ? (
+        <>
+          <a
+            href="#chang-catalog-body"
+            className="sr-only focus:not-sr-only focus:mb-2 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-[2px] focus:bg-navy focus:px-3 focus:text-sm focus:font-semibold focus:text-white lg:col-span-2"
+          >
+            ข้ามสารบัญ ไปที่รายการสายงาน
+          </a>
+          <TocSidebar
+            toc={toc}
+            activeId={activeId}
+            activePillarId={pillarId}
+            label="สารบัญหมวดงาน"
+            title="หมวดงาน"
+            footer={
+              <Link
+                href="/assistant/map"
+                className="flex min-h-11 items-center gap-2 px-2 text-sm font-semibold text-navy underline decoration-forge decoration-2 underline-offset-4"
+              >
+                <ListTree className="h-4 w-4 shrink-0" aria-hidden />
+                ดูสารบัญเครื่องมือทั้งหมด
+              </Link>
+            }
+          />
+        </>
+      ) : null}
+      <div id="chang-catalog-body" className={withToc ? "min-w-0" : "min-w-0 lg:col-span-2"}>
+        {withToc ? (
+          <TocTabs
+            toc={toc}
+            activePillarId={pillarId}
+            lead={
+              <Link
+                href="/assistant/map"
+                className="-ml-1 mr-1 flex min-h-11 shrink-0 items-center gap-1.5 border-r border-navy/15 pl-1 pr-3 text-sm font-semibold text-navy"
+              >
+                <ListTree className="h-4 w-4 shrink-0" aria-hidden />
+                สารบัญ
+              </Link>
+            }
+          />
+        ) : null}
+        <div className="grid grid-cols-1 gap-8">
+          {toc.map((pillar) => (
+            <section
+              key={pillar.id}
+              id={pillar.anchor}
+              aria-labelledby={`${pillar.anchor}-h`}
+              className="chang-anchor"
+            >
+              <PillarHeading pillar={pillar} headingId={`${pillar.anchor}-h`} as="h3" />
+              <CatalogList>
+                {pillar.trades.map(({ trade, anchor }) => (
+                  <CatalogTile
+                    key={trade.id}
+                    id={withToc ? anchor : undefined}
+                    href={`/assistant/${trade.id}`}
+                    title={trade.name}
+                    meta={`${trade.tools.length} เครื่องมือ`}
+                    blurb={trade.blurb}
+                    cover={TRADE_COVERS[trade.id]}
+                    icon={TRADE_ICONS[trade.id]}
+                    badge={trade.short}
+                  />
+                ))}
+              </CatalogList>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -107,6 +158,7 @@ export function AssistantHome() {
   const recent = useMemo(() => resolveSaved(parseRecent(recentRaw)), [recentRaw]);
 
   const found = useMemo(() => searchTools(q), [q]);
+  const toc = useMemo(() => buildToc(), []);
   const suggestTools = useMemo(() => found.tools.slice(0, 6), [found.tools]);
   const suggestTrades = useMemo(
     () => (suggestTools.length < 6 ? found.trades.slice(0, 6 - suggestTools.length) : []),
@@ -117,6 +169,13 @@ export function AssistantHome() {
   const showDropdown = open && hasQuery;
   const suggestionCount = suggestTools.length + suggestTrades.length;
   const noResults = hasQuery && found.tools.length === 0 && found.trades.length === 0;
+  // ค้นหาอยู่: เหลือเฉพาะสายงานที่ตรง (เลขข้อเดิมไม่เปลี่ยน) · ไม่เจออะไรเลย: โชว์ทั้งหมดให้เลือกต่อ
+  const filtering = hasQuery && !noResults;
+  const catalog = useMemo(() => {
+    if (!filtering) return toc;
+    const shown = new Set(found.trades.map((t) => t.id));
+    return toc.map((p) => ({ ...p, trades: p.trades.filter((t) => shown.has(t.id)) })).filter((p) => p.trades.length);
+  }, [filtering, found.trades, toc]);
   const optionId = (i: number) => `${listId}-opt-${i}`;
 
   useEffect(() => {
@@ -377,12 +436,6 @@ export function AssistantHome() {
         </section>
       ) : null}
 
-      {!hasQuery ? (
-        <div className="hidden md:block">
-          <UnitConverter />
-        </div>
-      ) : null}
-
       {found.tools.length > 0 ? (
         <section aria-labelledby="chang-found">
           <div className="mb-2 flex items-baseline justify-between gap-3">
@@ -418,19 +471,36 @@ export function AssistantHome() {
           <p className="mt-1 text-sm leading-relaxed text-navy/75">
             ลองพิมพ์ให้สั้นลง เช่น สี, แอร์, อิฐ — หรือเลือกจากสายงานด้านล่าง / เปิด{" "}
             <Link href="/assistant/map" className="inline-flex min-h-11 items-center font-semibold text-navy underline decoration-forge decoration-2 underline-offset-4">
-              แผนผังเครื่องมือทั้งหมด
+              สารบัญเครื่องมือทั้งหมด
             </Link>
           </p>
         </section>
       ) : null}
 
-      <TradeGroups trades={noResults ? TRADES : found.trades} />
-
-      {!hasQuery ? (
-        <div className="md:hidden">
-          <UnitConverter />
-        </div>
+      {catalog.length ? (
+          <section aria-labelledby="chang-catalog" className="grid grid-cols-1 gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+              <div className="min-w-0">
+                <h2 id="chang-catalog" className="text-xl font-bold leading-snug text-navy">
+                  {filtering ? "สายงานที่เกี่ยวข้อง" : "เลือกตามหมวดงาน"}
+                </h2>
+                <p className="text-[0.8125rem] text-navy/75">
+                  <span className="font-latin font-semibold text-navy">{toc.length}</span> หมวด ·{" "}
+                  <span className="font-latin font-semibold text-navy">{TRADES.length}</span> สายงาน ·{" "}
+                  <span className="font-latin font-semibold text-navy">{toolCount()}</span> เครื่องมือ
+                </p>
+              </div>
+              <Link href="/assistant/map" className="chang-chip hidden shrink-0 font-semibold lg:inline-flex">
+                <ListTree className="h-4 w-4 shrink-0" aria-hidden />
+                ดูสารบัญทั้งหมด
+                <ArrowRight className="h-4 w-4 shrink-0" aria-hidden />
+              </Link>
+            </div>
+            <CatalogSections toc={catalog} withToc={!filtering} />
+          </section>
       ) : null}
+
+      {!hasQuery ? <UnitConverter /> : null}
     </div>
   );
 }

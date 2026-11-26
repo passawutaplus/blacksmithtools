@@ -19,6 +19,7 @@ export function CatalogList({ children, label }: { children: React.ReactNode; la
 }
 
 export function CatalogTile({
+  id,
   href,
   title,
   meta,
@@ -29,6 +30,8 @@ export function CatalogTile({
   eager = false,
   highPriority = false,
 }: {
+  /** anchor ของการ์ด (สารบัญลิงก์มาที่นี่) */
+  id?: string;
   href: string;
   title: string;
   meta?: string;
@@ -42,7 +45,7 @@ export function CatalogTile({
   highPriority?: boolean;
 }) {
   return (
-    <li className="sm:flex">
+    <li id={id} className={`sm:flex${id ? " chang-anchor" : ""}`}>
       <Link
         href={href}
         className="group flex min-h-[72px] w-full items-center gap-3 px-3 py-2 transition-colors hover:bg-[#f7f8f9] sm:block sm:min-h-0 sm:overflow-hidden sm:rounded-[3px] sm:border sm:border-navy/15 sm:bg-white sm:p-0 sm:hover:border-navy sm:hover:bg-white"
