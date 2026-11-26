@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useDeferredValue, useId, useMemo, useState, type KeyboardEvent } from "react";
-import { ArrowRight, ChevronRight, Filter, TableProperties, X } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Filter, TableProperties, X } from "lucide-react";
 import { TRADE_ICONS, TRADES, toolCount } from "@/lib/chang/catalog";
 import { buildToc, filterToc, jobAnchor, toolAnchor, type TocPillar, type TocTrade } from "@/lib/chang/toc";
 import { PillarHeading, TocSidebar, TocTabs, useTocActive } from "@/components/chang/ChangToc";
@@ -151,6 +151,36 @@ export function ToolIndex() {
           />
           <div id="chang-index-list" className="min-w-0">
             <TocTabs toc={view} activePillarId={pillarId} />
+            {/* จอเล็ก: แถบแท็บพาไปได้แค่ระดับหมวด — กางรายชื่อสายงานไว้กระโดดตรงได้ */}
+            <details className="group mb-6 rounded-[3px] border border-navy/15 bg-white lg:hidden">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2 px-3 text-sm font-semibold text-navy [&::-webkit-details-marker]:hidden">
+                <span className="min-w-0 flex-1">
+                  ไปที่สายงาน{" "}
+                  <span className="font-latin font-normal text-navy/70">
+                    ({view.reduce((n, p) => n + p.trades.length, 0)})
+                  </span>
+                </span>
+                <ChevronDown className="h-4 w-4 shrink-0 transition-transform group-open:rotate-180" aria-hidden />
+              </summary>
+              <ol className="grid border-t border-navy/15 py-1 sm:grid-cols-2">
+                {view.flatMap((p) =>
+                  p.trades.map((t) => (
+                    <li key={t.id}>
+                      <a
+                        href={`#${t.anchor}`}
+                        className="flex min-h-11 items-center gap-2 px-3 text-sm text-navy hover:bg-[#f7f8f9]"
+                      >
+                        <span className="font-latin w-8 shrink-0 text-xs tabular-nums text-navy/70">{t.number}</span>
+                        <span className="min-w-0 flex-1 leading-snug">{t.name}</span>
+                        <span className="font-latin text-xs tabular-nums text-navy/70">
+                          {counts ? (counts[t.id] ?? 0) : t.count}
+                        </span>
+                      </a>
+                    </li>
+                  )),
+                )}
+              </ol>
+            </details>
             <div className="grid grid-cols-1 gap-9">
               {view.map((pillar) => (
                 <section

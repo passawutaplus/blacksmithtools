@@ -852,8 +852,21 @@ summary::-webkit-details-marker {
  * สารบัญติดจอ (ChangToc): --chang-top = ความสูงหัวเว็บที่ติดอยู่ด้านบน (AssistantChrome วัดจริงแล้วเขียนทับ)
  * .chang-anchor = หัวข้อที่ลิงก์ #… พาไป — เว้นที่ให้หัวเว็บ (+ แถบแท็บหมวดบนจอเล็ก) จะได้ไม่บังหัวข้อ
  */
+/* ค่าตั้งต้น = ความสูงหัวเว็บแต่ละช่วงจอ (64/68px + เส้นขอบ, จอ lg มีแถบเมนู 44px) — ใช้ตอนเปิดหน้าด้วย #anchor ก่อน JS วัดเสร็จ */
 .chang-scope {
-  --chang-top: 4rem;
+  --chang-top: 65px;
+}
+
+@media (min-width: 768px) {
+  .chang-scope {
+    --chang-top: 69px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .chang-scope {
+    --chang-top: 113px;
+  }
 }
 
 .chang-scope .chang-anchor {

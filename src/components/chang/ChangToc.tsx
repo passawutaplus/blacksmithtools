@@ -40,7 +40,8 @@ export function useActiveSection(ids: string[]): string | null {
       let curTop = -Infinity;
       for (const el of els) {
         const top = el.getBoundingClientRect().top;
-        if (top <= line && top > curTop + 1) {
+        // +2: แถบปลุกของ IntersectionObserver อยู่ที่ [line, line+1] — ตอนมันปลุก ขอบบนเพิ่งข้ามมาไม่เกิน line+1
+        if (top < line + 2 && top > curTop + 1) {
           cur = el.id;
           curTop = top;
         }
