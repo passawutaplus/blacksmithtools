@@ -160,6 +160,12 @@ const EXPECTED_BLOCKED = [
   "general/spacing:total@min",
   "general/spacing:n@max",
   "general/spacing:w@max",
+  // ชาร์จรถ EV: ชาร์จถึง % ต้องมากกว่าแบตที่เหลือ (99 > 80 · 1 < 20)
+  "electrical/ev:from@max",
+  "electrical/ev:to@min",
+  // ปริมาตรถัง: ระดับน้ำสูงกว่าถัง (3,000 ซม. > Ø 100 · Ø 10 ซม. < ระดับ 30)
+  "general/tank:level@max",
+  "general/tank:d@min",
 ].sort();
 
 describe("กวาดทุกเครื่องมือ: ค่าตั้งต้นและค่าปลายช่วง", () => {

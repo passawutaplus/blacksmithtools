@@ -26,6 +26,7 @@ import {
   AC_CHARGE_G_PER_M,
   AC_PIPE_LONG_RUN,
   AC_SIZES,
+  ACH_PRESETS,
   BTU_FACTOR,
   CABLE_METHODS,
   CABLE_TABLE_5_20,
@@ -36,6 +37,8 @@ import {
   REFRIGERANT_PT,
   REFRIGERANT_PT_SOURCE,
   SHSC,
+  VENT,
+  VENT_FAN_CLASSES,
 } from "../constants";
 import { calcSlope } from "./plumbing";
 
@@ -949,6 +952,110 @@ export function calcAcKit(v: Values) {
   });
 }
 
+/* ═══════════════ รอบ 4 (2026-11-26): พัดลมระบายอากาศ ═══════════════ */
+
+/** ลม (ลบ.ม./ชม.) = ปริมาตรห้อง × อัตราเปลี่ยนอากาศ · CFM = ลบ.ม./ชม. ÷ 1.699011 */
+export function ventAirflow(w: number, l: number, h: number, ach: number) {
+  const vol = w * l * h;
+  const m3h = vol * ach;
+  return { vol, m3h, cfm: m3h / VENT.cfm.value };
+}
+
+export function calcVentFan(v: Values): CalcResult {
+  const bad = guard("fan", v);
+  if (bad) return bad;
+  const w = num(v, "w", 1.5);
+  const l = num(v, "l", 2);
+  const h = num(v, "h", 2.4);
+  const room = str(v, "room", "bath");
+  const preset = ACH_PRESETS[room];
+  const ach = preset ? preset.ach.value : num(v, "ach", 10);
+  const margin = num(v, "margin", VENT.margin.value);
+  const a = ventAirflow(w, l, h, ach);
+  const design = a.m3h * (1 + margin / 100);
+  const pick = VENT_FAN_CLASSES.find((f) => f.m3h >= design - 1e-9);
+  const biggest = VENT_FAN_CLASSES[VENT_FAN_CLASSES.length - 1];
+  const many = pick ? 0 : ceil(design / biggest.m3h);
+  const name = preset ? preset.label : "กำหนดเอง";
+  return resultX({
+    title: "พัดลมระบายอากาศ",
+    headline: pick
+      ? `ต้องการลม ${fmt(a.m3h)} ลบ.ม./ชม. (${fmt(a.cfm)} CFM) → ${pick.label}`
+      : `ต้องการลม ${fmt(a.m3h)} ลบ.ม./ชม. (${fmt(a.cfm)} CFM) → ${biggest.label} ${fmt(many)} ตัว`,
+    chart: pick
+      ? {
+          kind: "steps",
+          unit: "ลบ.ม./ชม.",
+          need: design,
+          needLabel: "ต้องการ (รวมเผื่อ)",
+          items: VENT_FAN_CLASSES.map((f) => ({ label: f.label, value: f.m3h, state: f === pick ? "chosen" : f.m3h < pick.m3h ? "under" : "over" })),
+        }
+      : undefined,
+    rows: [
+      { label: "ปริมาตรห้อง", value: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} × ${fmtTrim(h, 2)} ม. = ${fmt(a.vol, 2)} ลบ.ม.` },
+      { label: `เปลี่ยนอากาศ (${name})`, value: `${fmtTrim(ach, 1)} ครั้ง/ชม.` },
+      { label: "ลมที่ต้องดูดออก", value: `${fmt(a.m3h, 1)} ลบ.ม./ชม. = ${fmt(a.cfm, 1)} CFM`, emphasize: true },
+      { label: `รวมเผื่อท่อ/หน้ากาก ${fmtTrim(margin, 1)}%`, value: `${fmt(design, 1)} ลบ.ม./ชม.` },
+      pick
+        ? { label: "ขนาดพัดลม", value: `${pick.label} (ราว ${fmt(pick.m3h)} ลบ.ม./ชม.)`, emphasize: true }
+        : { label: "ขนาดพัดลม", value: `${biggest.label} ${fmt(many)} ตัว (ตัวละราว ${fmt(biggest.m3h)} ลบ.ม./ชม.) หรือพัดลมอุตสาหกรรม`, emphasize: true },
+    ],
+    tip: "พัดลมดูดออกต้องมีช่องให้ลมเข้าแทน (เกล็ดประตู ช่องใต้ประตู) ไม่งั้นลมไม่ออกตามสเปก — ดูค่าลมบนกล่องว่าวัดแบบมีท่อหรือไม่มี",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-26",
+      summary: "ลมที่ต้องดูด = ปริมาตรห้อง × อัตราเปลี่ยนอากาศต่อชั่วโมง แล้วบวกเผื่อแรงต้านท่อ เทียบกับขั้นลมของพัดลม · 1 CFM = 1.699 ลบ.ม./ชม.",
+      steps: [
+        { label: "ปริมาตรห้อง", expr: "V = กว้าง × ยาว × สูง", subst: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} × ${fmtTrim(h, 2)} = ${fmt(a.vol, 3)} ลบ.ม.` },
+        { label: "ลมที่ต้องดูด", expr: "Q = V × ACH", subst: `${fmt(a.vol, 3)} × ${fmtTrim(ach, 1)} = ${fmt(a.m3h, 2)} ลบ.ม./ชม.` },
+        {
+          label: "แปลงเป็น CFM",
+          expr: "CFM = ลบ.ม./ชม. ÷ (0.3048³ × 60)",
+          subst: `${fmt(a.m3h, 2)} ÷ ${fmt(VENT.cfm.value, 6)} = ${fmt(a.cfm, 2)} CFM`,
+          note: "1 ฟุต = 0.3048 ม. ตามนิยาม จึงได้ 1 CFM = 1.699011 ลบ.ม./ชม.",
+        },
+        { label: "รวมเผื่อ", expr: "Q × (1 + เผื่อ%)", subst: `${fmt(a.m3h, 2)} × ${fmtTrim(1 + margin / 100, 3)} = ${fmt(design, 2)} ลบ.ม./ชม.` },
+        pick
+          ? { label: "เลือกขั้นพัดลม", expr: "ขั้นแรกที่ลม ≥ ที่ต้องการรวมเผื่อ", subst: `${fmt(pick.m3h)} ≥ ${fmt(design, 1)} → ${pick.label}` }
+          : { label: "จำนวนพัดลม", expr: `ตัว = ปัดขึ้น(ลมรวมเผื่อ ÷ ${fmt(biggest.m3h)})`, subst: `${fmt(design, 1)} ÷ ${fmt(biggest.m3h)} = ${fmt(many)} ตัว` },
+      ],
+      constants: [...(preset ? [preset.ach] : []), VENT.cfm, VENT.margin, VENT.fanTableMax],
+      assumptions: ["ห้องปิด ลมเข้าแทนได้จากช่องเปิดที่มี", "ขั้นลมของพัดลมเป็นค่าแบบไม่มีท่อ ⚠️ ยังไม่ยืนยันกับรุ่นจริง"],
+      caveats: [
+        "อัตราเปลี่ยนอากาศตามชนิดห้องเป็นค่าอ้างอิงทั่วไป อาคารที่ต้องขออนุญาตต้องตรวจกับกฎกระทรวงฉบับที่ 39 (พ.ศ. 2537) และมาตรฐานที่ใช้จริง",
+        "ครัวที่ผัดทอดหนักต้องใช้เครื่องดูดควันเหนือเตา พัดลมระบายอากาศห้องอย่างเดียวไม่พอ",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "การระบายอากาศด้วยอัตราเปลี่ยนอากาศ (Air changes per hour)" }, { label: "กฎกระทรวงฉบับที่ 39 (พ.ศ. 2537) การระบายอากาศ" }],
+    },
+  });
+}
+
+const fanTool: ToolDef = {
+  id: "fan",
+  name: "พัดลมระบายอากาศ",
+  blurb: "ขนาดห้อง + ชนิดห้อง → ลม ลบ.ม./ชม. CFM และขนาดพัดลม",
+  keywords: ["พัดลมระบายอากาศ", "พัดลมดูดอากาศ", "ดูดอากาศ", "ระบายอากาศ", "cfm", "ach", "ห้องน้ำอับ"],
+  fields: [
+    { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 1.5, min: 0.5, max: 50, step: 0.05 },
+    { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 2, min: 0.5, max: 50, step: 0.05 },
+    { type: "number", key: "h", label: "สูงห้อง", unit: "ม.", default: 2.4, min: 1.8, max: 10, step: 0.05 },
+    {
+      type: "select",
+      key: "room",
+      label: "ชนิดห้อง (ค่าอ้างอิง)",
+      default: "bath",
+      options: [
+        ...Object.entries(ACH_PRESETS).map(([value, p]) => ({ value, label: `${p.label} ${fmt(p.ach.value)} ครั้ง/ชม.` })),
+        { value: "custom", label: "กำหนดเอง" },
+      ],
+    },
+    { type: "number", key: "ach", label: "เปลี่ยนอากาศ", unit: "ครั้ง/ชม.", default: 10, min: 1, max: 60, step: 0.5, when: { key: "room", is: "custom" } },
+    { type: "number", key: "margin", label: "เผื่อแรงต้านท่อ/หน้ากาก", unit: "%", default: VENT.margin.value, min: 0, max: 100 },
+  ],
+  calc: calcVentFan,
+};
+
 export const hvacTools: ToolDef[] = [
   {
     id: "btu",
@@ -1134,6 +1241,7 @@ export const hvacTools: ToolDef[] = [
     ],
     calc: calcEnergy,
   },
+  fanTool,
 ];
 
 export const hvacJob: JobDef = {

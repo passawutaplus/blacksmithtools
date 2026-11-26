@@ -1,6 +1,7 @@
-import type { CalcResult, JobDef, ToolDef, Values } from "../types";
+import type { CalcResult, Field, JobDef, ToolDef, Values } from "../types";
 import {
   blockedResult,
+  bool,
   ceil,
   fmt,
   fmtTrim,
@@ -12,7 +13,7 @@ import {
   str,
   withDefaults,
 } from "../math";
-import { DISCLAIMER_AB, DISCLAIMER_C, MATERIAL, READYMIX, REBAR_SIZES, REBAR_WORK, SLAB, STEEL_FORMULA, WIRE_MESH } from "../constants";
+import { DISCLAIMER_AB, DISCLAIMER_C, FORMWORK, MATERIAL, MEMBERS, READYMIX, REBAR_SIZES, REBAR_WORK, SLAB, STEEL_FORMULA, WIRE_MESH } from "../constants";
 import { calcMix } from "./masonry";
 import { packBfd } from "./steel";
 
@@ -547,6 +548,297 @@ const REBAR_FIELDS: ToolDef["fields"] = [
   { type: "number", key: "price", label: "ราคาเหล็ก (ไม่ใส่ก็ได้)", unit: "บาท/กก.", default: 0, min: 0, max: 1000, step: 0.5 },
 ];
 
+/* ═══════════════ รอบ 4 (2026-11-26): ปริมาตรเสา-คาน-ฐานราก · ไม้แบบ / ไม้อัด ═══════════════ */
+
+type MemberKind = "col" | "beam" | "ftg" | "ped";
+
+export type MemberPart = {
+  kind: MemberKind;
+  name: string;
+  /** หน่วยนับ เช่น ต้น ตัว ฐาน */
+  unit: string;
+  count: number;
+  /** ขนาดแบบอ่านง่าย เช่น "20×20 ซม. สูง 3 ม." */
+  size: string;
+  /** ปริมาตรต่อชิ้น (ลบ.ม.) */
+  volEach: number;
+  vol: number;
+  /** พื้นที่ไม้แบบที่สัมผัสคอนกรีต (ตร.ม.) */
+  form: number;
+  volExpr: string;
+  formExpr: string;
+};
+
+/**
+ * แยกชิ้นส่วนจากช่องกรอก — คิดเรขาคณิตล้วน ไม่ได้ออกแบบขนาด
+ * เสา/ตอม่อ: หน้าตัด ก×ข × สูง · ไม้แบบ 4 ด้าน
+ * คาน: หน้าตัด กว้าง×ลึก × ยาว · ไม้แบบ 2 ข้าง (+ ท้องคานถ้าเลือก)
+ * ฐานแผ่: กว้าง×ยาว×หนา · ไม้แบบเฉพาะขอบ 4 ด้าน (ก้นวางบนคอนกรีตหยาบ)
+ */
+export function memberParts(v: Values, beamBottom = true): MemberPart[] {
+  const parts: MemberPart[] = [];
+  const colN = num(v, "colN", 8);
+  if (colN > 0) {
+    const b = num(v, "colB", 20) / 100;
+    const d = num(v, "colD", 20) / 100;
+    const h = num(v, "colH", 3);
+    parts.push({
+      kind: "col",
+      unit: "ต้น",
+      name: "เสา",
+      count: colN,
+      size: `${fmtTrim(b * 100, 1)}×${fmtTrim(d * 100, 1)} ซม. สูง ${fmtTrim(h, 2)} ม.`,
+      volEach: b * d * h,
+      vol: b * d * h * colN,
+      form: 2 * (b + d) * h * colN,
+      volExpr: `${fmtTrim(b, 3)} × ${fmtTrim(d, 3)} × ${fmtTrim(h, 2)} × ${fmt(colN)}`,
+      formExpr: `2 × (${fmtTrim(b, 3)} + ${fmtTrim(d, 3)}) × ${fmtTrim(h, 2)} × ${fmt(colN)}`,
+    });
+  }
+  const beamN = num(v, "beamN", 10);
+  if (beamN > 0) {
+    const b = num(v, "beamB", 20) / 100;
+    const d = num(v, "beamD", 40) / 100;
+    const len = num(v, "beamL", 4);
+    const girth = 2 * d + (beamBottom ? b : 0);
+    parts.push({
+      kind: "beam",
+      unit: "ตัว",
+      name: "คาน",
+      count: beamN,
+      size: `${fmtTrim(b * 100, 1)}×${fmtTrim(d * 100, 1)} ซม. ยาว ${fmtTrim(len, 2)} ม.`,
+      volEach: b * d * len,
+      vol: b * d * len * beamN,
+      form: girth * len * beamN,
+      volExpr: `${fmtTrim(b, 3)} × ${fmtTrim(d, 3)} × ${fmtTrim(len, 2)} × ${fmt(beamN)}`,
+      formExpr: beamBottom
+        ? `(2 × ${fmtTrim(d, 3)} + ${fmtTrim(b, 3)}) × ${fmtTrim(len, 2)} × ${fmt(beamN)}`
+        : `2 × ${fmtTrim(d, 3)} × ${fmtTrim(len, 2)} × ${fmt(beamN)}`,
+    });
+  }
+  const ftgN = num(v, "ftgN", 8);
+  if (ftgN > 0) {
+    const w = num(v, "ftgW", 1);
+    const l = num(v, "ftgL", 1);
+    const t = num(v, "ftgT", 30) / 100;
+    parts.push({
+      kind: "ftg",
+      unit: "ฐาน",
+      name: "ฐานแผ่",
+      count: ftgN,
+      size: `${fmtTrim(w, 2)}×${fmtTrim(l, 2)} ม. หนา ${fmtTrim(t * 100, 1)} ซม.`,
+      volEach: w * l * t,
+      vol: w * l * t * ftgN,
+      form: 2 * (w + l) * t * ftgN,
+      volExpr: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} × ${fmtTrim(t, 3)} × ${fmt(ftgN)}`,
+      formExpr: `2 × (${fmtTrim(w, 2)} + ${fmtTrim(l, 2)}) × ${fmtTrim(t, 3)} × ${fmt(ftgN)}`,
+    });
+  }
+  const pedN = num(v, "pedN", 8);
+  if (pedN > 0) {
+    const b = num(v, "pedB", 20) / 100;
+    const d = num(v, "pedD", 20) / 100;
+    const h = num(v, "pedH", 1.2);
+    parts.push({
+      kind: "ped",
+      unit: "ต้น",
+      name: "ตอม่อ",
+      count: pedN,
+      size: `${fmtTrim(b * 100, 1)}×${fmtTrim(d * 100, 1)} ซม. สูง ${fmtTrim(h, 2)} ม.`,
+      volEach: b * d * h,
+      vol: b * d * h * pedN,
+      form: 2 * (b + d) * h * pedN,
+      volExpr: `${fmtTrim(b, 3)} × ${fmtTrim(d, 3)} × ${fmtTrim(h, 2)} × ${fmt(pedN)}`,
+      formExpr: `2 × (${fmtTrim(b, 3)} + ${fmtTrim(d, 3)}) × ${fmtTrim(h, 2)} × ${fmt(pedN)}`,
+    });
+  }
+  return parts;
+}
+
+const MEMBER_NOTE = "ขนาดหน้าตัด ความลึกฐาน และจำนวนชิ้น ต้องเอาจากแบบวิศวกร — เครื่องมือนี้คิดปริมาตร/พื้นที่จากขนาดที่กรอก ไม่ได้ออกแบบโครงสร้าง";
+
+const NO_MEMBERS = {
+  headline: "ยังไม่มีชิ้นส่วนให้คิด — ใส่จำนวนเสา คาน ฐานแผ่ หรือตอม่อ อย่างน้อย 1 ชิ้น",
+  tip: "จำนวน 0 = ไม่มีชิ้นส่วนนั้น",
+};
+
+export function calcMembers(v: Values): CalcResult {
+  const bad = guard("members", v);
+  if (bad) return bad;
+  const parts = memberParts(v);
+  if (parts.length === 0) return blockedResult(NO_MEMBERS);
+  const waste = num(v, "waste", MEMBERS.wastePct.value);
+  const truck = num(v, "truck", READYMIX.truckM3.value);
+  const net = parts.reduce((s, p) => s + p.vol, 0);
+  const need = net * (1 + waste / 100);
+  const step = READYMIX.orderStep.value;
+  const order = ceil(need / step) * step;
+  const trucks = ceil(order / truck);
+  const lastLoad = order - (trucks - 1) * truck;
+  return resultX({
+    title: "ปริมาตรเสา-คาน-ฐานราก",
+    headline: `คอนกรีต ${fmt(need, 2)} คิว (รวมเผื่อ) · สั่ง ${fmtTrim(order, 2)} คิว รถโม่ ${fmt(trucks)} เที่ยว`,
+    chart:
+      parts.length > 1
+        ? {
+            kind: "stack",
+            parts: parts.map((p) => ({ label: p.name, value: p.vol, display: `${fmt(p.vol, 2)} คิว` })),
+            totalLabel: "คอนกรีตสุทธิ",
+            totalDisplay: `${fmt(net, 2)} คิว`,
+          }
+        : undefined,
+    rows: [
+      ...parts.map((p) => ({ label: `${p.name} ${fmt(p.count)} ${p.unit} (${p.size})`, value: `${fmt(p.vol, 3)} คิว (ชิ้นละ ${fmt(p.volEach, 3)})` })),
+      { label: "คอนกรีตสุทธิ", value: `${fmt(net, 3)} คิว` },
+      { label: `รวมเผื่อ ${fmtTrim(waste, 1)}%`, value: `${fmt(need, 2)} คิว`, emphasize: true },
+      { label: "สั่งคอนกรีตผสมเสร็จ", value: `${fmtTrim(order, 2)} คิว (สั่งทีละ ${fmtTrim(step, 2)} คิว)`, emphasize: true },
+      {
+        label: `รถโม่ ${fmtTrim(truck, 1)} คิว`,
+        value: trucks === 1 ? `1 เที่ยว` : `${fmt(trucks)} เที่ยว (เที่ยวสุดท้าย ${fmtTrim(lastLoad, 2)} คิว)`,
+      },
+    ],
+    tip: "วัดชิ้นส่วนไม่ให้ทับกัน: คานวัดช่วงระหว่างหน้าเสา เสาวัดถึงท้องคาน ไม่งั้นนับคอนกรีตตรงจุดต่อซ้ำ",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary: "ปริมาตรแต่ละชิ้น = หน้าตัด × ความยาว/ความสูง × จำนวน (ฐานแผ่ = กว้าง × ยาว × หนา) รวมกันแล้วบวกเผื่อ ปัดขึ้นเป็นขั้นที่โรงรับสั่ง",
+      steps: [
+        ...parts.map((p) => ({ label: p.name, expr: p.kind === "ftg" ? "คิว = กว้าง × ยาว × หนา × จำนวน" : p.kind === "beam" ? "คิว = กว้าง × ลึก × ยาว × จำนวน" : "คิว = กว้าง × ลึก × สูง × จำนวน", subst: `${p.volExpr} = ${fmt(p.vol, 3)} คิว` })),
+        { label: "รวมเผื่อ", expr: "ที่ต้องใช้ = สุทธิ × (1 + เผื่อ%)", subst: `${fmt(net, 3)} × ${fmtTrim(1 + waste / 100, 3)} = ${fmt(need, 3)} คิว` },
+        { label: "ปัดเป็นขั้นที่โรงรับสั่ง", expr: `สั่ง = ปัดขึ้น(ที่ต้องใช้ ÷ ${fmtTrim(step, 2)}) × ${fmtTrim(step, 2)}`, subst: `${fmt(need, 3)} → ${fmtTrim(order, 2)} คิว · ${fmt(trucks)} เที่ยว` },
+      ],
+      constants: [MEMBERS.wastePct, READYMIX.orderStep, READYMIX.truckM3],
+      assumptions: ["ชิ้นส่วนเป็นทรงสี่เหลี่ยมตัน ขนาดตามที่กรอก", "ฐานแผ่ไม่รวมคอนกรีตหยาบรองก้นฐาน"],
+      caveats: [MEMBER_NOTE, "เทเสา-คานทีละน้อยด้วยถัง สั่งรถโม่อาจไม่คุ้ม ถามโรงเรื่องขั้นต่ำก่อน", DISCLAIMER_AB],
+      refs: [{ label: "เรขาคณิตปริมาตรทรงสี่เหลี่ยม" }, { label: "แนวปฏิบัติประมาณราคางานคอนกรีตโครงสร้าง" }],
+    },
+  });
+}
+
+export function calcFormwork(v: Values): CalcResult {
+  const bad = guard("formwork", v);
+  if (bad) return bad;
+  const parts = memberParts(v, bool(v, "beamBottom", true));
+  if (parts.length === 0) return blockedResult(NO_MEMBERS);
+  const reuse = num(v, "reuse", FORMWORK.reuse.value);
+  const waste = num(v, "waste", FORMWORK.wastePct.value);
+  const rate = num(v, "batten", FORMWORK.battenPerM2.value);
+  const stock = num(v, "stock", FORMWORK.battenStock.value);
+  const area = parts.reduce((s, p) => s + p.form, 0);
+  const gross = area * (1 + waste / 100);
+  const perCycle = gross / reuse;
+  const sheetM2 = FORMWORK.plyW.value * FORMWORK.plyL.value;
+  const sheets = ceil(perCycle / sheetM2);
+  const battenM = perCycle * rate;
+  const battenPcs = battenM > 0 ? ceil(battenM / stock) : 0;
+  return resultX({
+    title: "ไม้แบบ / ไม้อัด",
+    headline: `ไม้แบบ ${fmt(area, 1)} ตร.ม. · ไม้อัด 4×8 ฟุต ${fmt(sheets)} แผ่น${battenPcs > 0 ? ` · ไม้เคร่า ${fmt(battenPcs)} ท่อน` : ""}`,
+    chart: {
+      kind: "packs",
+      unitLabel: `ไม้อัด ${fmtTrim(FORMWORK.plyW.value, 2)}×${fmtTrim(FORMWORK.plyL.value, 2)} ม.`,
+      count: sheets,
+      lastUsed: (perCycle - (sheets - 1) * sheetM2) / sheetM2,
+      note: `ใช้ซ้ำ ${fmt(reuse)} ครั้ง`,
+    },
+    rows: [
+      ...parts.map((p) => ({ label: `${p.name} ${fmt(p.count)} ${p.unit} (${p.size})`, value: `${fmt(p.form, 2)} ตร.ม.` })),
+      { label: "พื้นที่ไม้แบบสัมผัสคอนกรีต", value: `${fmt(area, 2)} ตร.ม.` },
+      { label: `รวมเผื่อตัด ${fmtTrim(waste, 1)}%`, value: `${fmt(gross, 2)} ตร.ม.` },
+      { label: `ใช้ซ้ำ ${fmt(reuse)} ครั้ง ต้องมีไม้แบบจริง`, value: `${fmt(perCycle, 2)} ตร.ม.` },
+      { label: `ไม้อัด 4×8 ฟุต (${fmtTrim(sheetM2, 4)} ตร.ม./แผ่น)`, value: `${fmt(sheets)} แผ่น`, emphasize: true },
+      ...(battenM > 0
+        ? [{ label: `ไม้เคร่า (${fmtTrim(rate, 2)} ม./ตร.ม.)`, value: `${fmt(battenM, 1)} ม. = ${fmt(battenPcs)} ท่อน (ท่อนละ ${fmtTrim(stock, 2)} ม.)`, emphasize: true }]
+        : []),
+    ],
+    tip: "ใช้ซ้ำได้จริงต้องแบ่งเทเป็นรอบ ถอดแบบรอบแรกมาใช้รอบถัดไป ถ้าเทพร้อมกันหมดให้ใส่ใช้ซ้ำ 1 ครั้ง",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary: "พื้นที่ไม้แบบ = ผิวคอนกรีตที่ต้องมีแบบกั้น (เสา/ตอม่อ 4 ด้าน คาน 2 ข้าง + ท้อง ฐานแผ่เฉพาะขอบ) บวกเผื่อตัด หารจำนวนครั้งที่ใช้ซ้ำ แล้วหารพื้นที่ไม้อัด 1 แผ่น",
+      steps: [
+        ...parts.map((p) => ({
+          label: p.name,
+          expr: p.kind === "ftg" ? "ตร.ม. = รอบฐาน × หนา × จำนวน" : p.kind === "beam" ? "ตร.ม. = (2 × ลึก + ท้อง) × ยาว × จำนวน" : "ตร.ม. = รอบหน้าตัด × สูง × จำนวน",
+          subst: `${p.formExpr} = ${fmt(p.form, 2)} ตร.ม.`,
+        })),
+        { label: "ไม้แบบที่ต้องมีจริง", expr: "ตร.ม. × (1 + เผื่อ%) ÷ ใช้ซ้ำ", subst: `${fmt(area, 2)} × ${fmtTrim(1 + waste / 100, 3)} ÷ ${fmt(reuse)} = ${fmt(perCycle, 3)} ตร.ม.` },
+        {
+          label: "ไม้อัด",
+          expr: `แผ่น = ปัดขึ้น(ตร.ม. ÷ (${FORMWORK.plyW.value} × ${FORMWORK.plyL.value}))`,
+          subst: `${fmt(perCycle, 3)} ÷ ${fmtTrim(sheetM2, 4)} = ${fmt(perCycle / sheetM2, 2)} → ${fmt(sheets)} แผ่น`,
+        },
+        {
+          label: "ไม้เคร่า",
+          expr: "ม. = ไม้แบบที่ต้องมี × ม./ตร.ม. · ท่อน = ปัดขึ้น(ม. ÷ ยาวท่อน)",
+          subst: `${fmt(perCycle, 3)} × ${fmtTrim(rate, 2)} = ${fmt(battenM, 2)} ม. → ${fmt(battenPcs)} ท่อน`,
+        },
+      ],
+      constants: [FORMWORK.plyW, FORMWORK.plyL, FORMWORK.reuse, FORMWORK.wastePct, FORMWORK.battenPerM2, FORMWORK.battenStock],
+      assumptions: [
+        bool(v, "beamBottom", true) ? "คานตั้งแบบท้องคานด้วย" : "คานวางบนดิน/คอนกรีตหยาบ ไม่ต้องมีแบบท้องคาน",
+        "ฐานแผ่ตั้งแบบเฉพาะขอบ ก้นฐานวางบนคอนกรีตหยาบ",
+        "เทแบ่งรอบ ไม้แบบถอดมาใช้ซ้ำได้ตามจำนวนครั้งที่กรอก",
+      ],
+      caveats: [
+        "ยังไม่รวมไม้ค้ำยัน เสาค้ำท้องคาน ตะปู และน้ำมันทาแบบ — ค้ำยันรับน้ำหนักคอนกรีตเปียก ต้องให้ผู้ควบคุมงานตรวจก่อนเท",
+        MEMBER_NOTE,
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "ขนาดไม้อัด 4 × 8 ฟุต (1.22 × 2.44 ม.)" }, { label: "แนวปฏิบัติประมาณราคางานไม้แบบ" }],
+    },
+  });
+}
+
+const MEMBER_FIELDS: Field[] = [
+  { type: "number", key: "colN", label: "เสา: จำนวน (0 = ไม่มี)", unit: "ต้น", default: 8, min: 0, max: 500 },
+  { type: "number", key: "colB", label: "เสา: กว้าง", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
+  { type: "number", key: "colD", label: "เสา: ลึก", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
+  { type: "number", key: "colH", label: "เสา: สูง", unit: "ม.", default: 3, min: 0.3, max: 20, step: 0.05 },
+  { type: "number", key: "beamN", label: "คาน: จำนวน (0 = ไม่มี)", unit: "ตัว", default: 10, min: 0, max: 500 },
+  { type: "number", key: "beamB", label: "คาน: กว้าง", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
+  { type: "number", key: "beamD", label: "คาน: ลึก", unit: "ซม.", default: 40, min: 10, max: 300, step: 0.5 },
+  { type: "number", key: "beamL", label: "คาน: ยาว (ระหว่างหน้าเสา)", unit: "ม.", default: 4, min: 0.3, max: 30, step: 0.05 },
+  { type: "number", key: "ftgN", label: "ฐานแผ่: จำนวน (0 = ไม่มี)", unit: "ฐาน", default: 8, min: 0, max: 500 },
+  { type: "number", key: "ftgW", label: "ฐานแผ่: กว้าง", unit: "ม.", default: 1, min: 0.3, max: 10, step: 0.05 },
+  { type: "number", key: "ftgL", label: "ฐานแผ่: ยาว", unit: "ม.", default: 1, min: 0.3, max: 10, step: 0.05 },
+  { type: "number", key: "ftgT", label: "ฐานแผ่: หนา", unit: "ซม.", default: 30, min: 10, max: 200, step: 0.5 },
+  { type: "number", key: "pedN", label: "ตอม่อ: จำนวน (0 = ไม่มี)", unit: "ต้น", default: 8, min: 0, max: 500 },
+  { type: "number", key: "pedB", label: "ตอม่อ: กว้าง", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
+  { type: "number", key: "pedD", label: "ตอม่อ: ลึก", unit: "ซม.", default: 20, min: 10, max: 200, step: 0.5 },
+  { type: "number", key: "pedH", label: "ตอม่อ: สูง", unit: "ม.", default: 1.2, min: 0.1, max: 10, step: 0.05 },
+];
+
+const round4Tools: ToolDef[] = [
+  {
+    id: "members",
+    name: "ปริมาตรเสา-คาน-ฐานราก",
+    blurb: "เสา คาน ฐานแผ่ ตอม่อ → กี่คิว รวมเผื่อ รถโม่กี่เที่ยว",
+    keywords: ["เสา", "คาน", "ฐานราก", "ฐานแผ่", "ตอม่อ", "คิว", "ปริมาตรคอนกรีต", "เทเสา", "เทคาน"],
+    fields: [
+      ...MEMBER_FIELDS,
+      { type: "number", key: "waste", label: "เผื่อเสีย", unit: "%", default: MEMBERS.wastePct.value, min: 0, max: 30, step: 0.5 },
+      { type: "number", key: "truck", label: "รถโม่คันละ", unit: "คิว", default: READYMIX.truckM3.value, min: 1, max: 12, step: 0.5 },
+    ],
+    calc: calcMembers,
+  },
+  {
+    id: "formwork",
+    name: "ไม้แบบ / ไม้อัด",
+    blurb: "เสา คาน ฐาน → พื้นที่ไม้แบบ ไม้อัด 4×8 กี่แผ่น ไม้เคร่ากี่ท่อน",
+    keywords: ["ไม้แบบ", "ไม้อัด", "แบบหล่อ", "ไม้เคร่า", "ตั้งแบบ", "ไม้อัดยาง", "4x8"],
+    fields: [
+      ...MEMBER_FIELDS,
+      { type: "bool", key: "beamBottom", label: "คานมีแบบท้องคาน (ไม่ได้วางบนดิน)", default: true },
+      { type: "number", key: "reuse", label: "ใช้ไม้แบบซ้ำ", unit: "ครั้ง", default: FORMWORK.reuse.value, min: 1, max: 20 },
+      { type: "number", key: "waste", label: "เผื่อตัด", unit: "%", default: FORMWORK.wastePct.value, min: 0, max: 30, step: 0.5 },
+      { type: "number", key: "batten", label: "ไม้เคร่าต่อพื้นที่แบบ (0 = ไม่คิด)", unit: "ม./ตร.ม.", default: FORMWORK.battenPerM2.value, min: 0, max: 10, step: 0.1 },
+      { type: "number", key: "stock", label: "ไม้เคร่ายาวท่อนละ", unit: "ม.", default: FORMWORK.battenStock.value, min: 1, max: 6, step: 0.5 },
+    ],
+    calc: calcFormwork,
+  },
+];
+
 export const concreteTools: ToolDef[] = [
   {
     id: "slab",
@@ -564,6 +856,7 @@ export const concreteTools: ToolDef[] = [
     fields: REBAR_FIELDS,
     calc: calcRebar,
   },
+  ...round4Tools,
 ];
 
 /* ─────────────── คิดทั้งงานเทพื้น ─────────────── */
