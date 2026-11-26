@@ -7,6 +7,7 @@ import { DISCLAIMER_C } from "@/lib/chang/constants";
 import { withBrandCredit } from "@/lib/chang/brand";
 import { copyText, shareText } from "@/lib/chang/share";
 import { ExportPanel } from "./ExportPanel";
+import { InfoButton } from "./InfoButton";
 import { formulaToText } from "./FormulaNote";
 import { ResultChart } from "./ResultChart";
 
@@ -106,10 +107,18 @@ export function ResultPanel({
         className="@container scroll-mt-24 rounded-[3px] border border-navy bg-white"
       >
         {/* หัวการ์ด: สถานะ + คำตอบ อยู่ใน live region ให้โปรแกรมอ่านจอประกาศเมื่อคำตอบเปลี่ยน */}
-        <div className="border-b border-navy/15 px-4 pb-3.5 pt-3" aria-live="polite" aria-atomic="true">
-          <p className={`chang-kicker ${invalid ? "text-forge" : ""}`}>{invalid ? "ยังคิดไม่ได้" : "คิดให้แล้ว"}</p>
-          {result.headline ? (
-            <h2 className="mt-1.5 text-xl font-bold leading-snug text-navy">{result.headline}</h2>
+        <div className="flex items-start justify-between gap-2 border-b border-navy/15 pb-3.5 pl-4 pr-2 pt-3">
+          <div className="min-w-0" aria-live="polite" aria-atomic="true">
+            <p className={`chang-kicker ${invalid ? "text-forge" : ""}`}>{invalid ? "ยังคิดไม่ได้" : "คิดให้แล้ว"}</p>
+            {result.headline ? (
+              <h2 className="mt-1.5 text-xl font-bold leading-snug text-navy">{result.headline}</h2>
+            ) : null}
+          </div>
+          {/* เกร็ดหน้างานพับไว้ในปุ่ม i · ตอนคิดไม่ได้ เกร็ดคือวิธีแก้ จึงโชว์เต็มด้านล่างแทน */}
+          {!invalid && result.tip ? (
+            <InfoButton title="ข้อควรรู้" label="ข้อควรรู้" className="-mt-2.5">
+              <p>{result.tip}</p>
+            </InfoButton>
           ) : null}
         </div>
 
@@ -140,11 +149,17 @@ export function ResultPanel({
             </div>
           ) : null}
 
+          {/* คำเตือนงานความปลอดภัย: บรรทัดสั้นต้องเห็นเสมอ ข้อความเต็มอยู่ในปุ่ม i */}
           {result.explain?.risk === "C" && !invalid ? (
-            <p className="mt-3.5 flex items-start gap-2 border border-forge/50 bg-white px-3 py-2.5 text-[0.8125rem] leading-relaxed text-navy">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-forge" aria-hidden />
-              <span>{DISCLAIMER_C}</span>
-            </p>
+            <div className="mt-2 flex items-center justify-between gap-2 border-l-[3px] border-forge py-0.5 pl-2.5">
+              <p className="flex items-center gap-2 text-[0.8125rem] font-medium leading-snug text-navy">
+                <ShieldAlert className="h-4 w-4 shrink-0 text-forge" aria-hidden />
+                ค่าเบื้องต้น ต้องให้ผู้มีใบอนุญาตตรวจก่อนทำ
+              </p>
+              <InfoButton title="ค่าเบื้องต้น ไม่ใช่แบบรับรอง">
+                <p>{DISCLAIMER_C}</p>
+              </InfoButton>
+            </div>
           ) : null}
 
           {result.chart ? <ResultChart spec={result.chart} /> : null}
@@ -164,9 +179,11 @@ export function ResultPanel({
             </dl>
           ) : null}
 
-          <p className="mt-3 border-l-[3px] border-navy/30 bg-[#f1f3f5] px-3 py-2.5 text-sm leading-relaxed text-navy">
-            {result.tip}
-          </p>
+          {invalid && result.tip ? (
+            <p className="mt-3 border-l-[3px] border-navy/30 bg-[#f1f3f5] px-3 py-2.5 text-sm leading-relaxed text-navy">
+              {result.tip}
+            </p>
+          ) : null}
 
           {invalid ? null : (
             <>
@@ -192,7 +209,7 @@ export function ResultPanel({
                   onClick={() => void onCopy(true)}
                 >
                   {copied === "formula" ? <Check className="h-4 w-4 shrink-0" aria-hidden /> : null}
-                  {copied === "formula" ? "คัดลอกพร้อมสูตรแล้ว" : "คัดลอกพร้อมสูตร (ส่งให้ช่างอีกคน)"}
+                  {copied === "formula" ? "คัดลอกพร้อมสูตรแล้ว" : "คัดลอกพร้อมสูตร"}
                 </button>
               ) : null}
               <ExportPanel

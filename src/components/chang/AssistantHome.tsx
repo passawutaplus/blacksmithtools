@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ArrowRight, Gauge, History, ListTree, Pin, Ruler, Search, Share2, Sigma } from "lucide-react";
+import { ArrowRight, History, ListTree, Pin, Search } from "lucide-react";
 import { TRADES, getTool, parseToolPath, toolCount, TRADE_COVERS, TRADE_ICONS } from "@/lib/chang/catalog";
 import { CatalogList, CatalogTile } from "@/components/chang/CatalogTile";
 import { PillarHeading, TocSidebar, TocTabs, useTocActive } from "@/components/chang/ChangToc";
 import { UnitConverter } from "@/components/chang/UnitConverter";
+import { InfoButton, InfoList } from "@/components/chang/InfoButton";
 import { useStoredRaw } from "@/components/chang/useStored";
 import { FAV_KEY, RECENT_KEY, clearRecent, parseFavorites, parseRecent } from "@/lib/chang/favorites";
 import { searchTools } from "@/lib/chang/search";
@@ -25,22 +26,18 @@ const TASKS = [
 
 const HERO_POINTS = [
   {
-    icon: Gauge,
     title: "คิดจบในหน้าเดียว",
     text: "กรอกเลขแล้วคำตอบขยับตามทันที ไม่ต้องกดปุ่มคำนวณ",
   },
   {
-    icon: Sigma,
     title: "กางสูตรดูได้ทุกบรรทัด",
     text: "เปิดดูได้ว่าตัวเลขมาจากไหน ใช้ค่าคงที่อะไร อ้างอิงจากไหน",
   },
   {
-    icon: Ruler,
     title: "เผื่อเศษแบบหน้างานจริง",
     text: "บวกเผื่อตัดเผื่อเสีย แล้วปัดขึ้นเป็นหน่วยที่ร้านขายจริง",
   },
   {
-    icon: Share2,
     title: "ส่งต่อให้ทีมได้",
     text: "คัดลอก แชร์ หรือบันทึกเป็นรูปส่งเข้าไลน์กลุ่มงาน",
   },
@@ -233,19 +230,31 @@ export function AssistantHome() {
   return (
     <div className="grid grid-cols-1 gap-6">
       <section className="chang-on-navy rounded-[3px] border-b-[3px] border-forge bg-navy text-white">
-        <div className="grid gap-6 p-4 md:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] md:items-center md:gap-10 md:p-9">
-          <div className="min-w-0">
+        <div className="p-4 md:p-8">
+          <div className="min-w-0 max-w-2xl">
             <p className="flex items-center gap-2 text-[0.8125rem] font-medium text-white/80">
               <span className="h-0.5 w-5 shrink-0 bg-forge" aria-hidden />
               ผู้ช่วยงานช่าง · ใช้ฟรี ไม่ต้องสมัคร
             </p>
-            <h1 className="mt-2 text-balance text-[1.375rem] font-bold leading-snug md:mt-3 md:text-[2rem] md:leading-tight">
-              บอกขนาดหน้างาน แล้วได้ของที่ต้องซื้อ
-            </h1>
-            <p className="mt-3 hidden text-sm leading-relaxed text-white/80 md:block">
-              เครื่องคิดเลขที่รู้จักงานช่างไทย — กรอกขนาดห้อง ความยาวสาย หรือพื้นที่ผนัง แล้วได้จำนวนของพร้อมเผื่อเศษ
-              เปิดดูสูตรได้ว่าคิดมาจากไหน อ้างอิง มอก. วสท. และมาตรฐานสากล
-            </p>
+            <div className="mt-1 flex items-start gap-1 md:mt-2">
+              <h1 className="min-w-0 pt-1.5 text-balance text-[1.375rem] font-bold leading-snug md:text-[2rem] md:leading-tight">
+                บอกขนาดหน้างาน แล้วได้ของที่ต้องซื้อ
+              </h1>
+              {/* คำแนะนำการใช้ย้ายเข้าปุ่ม i — หัวหน้าเหลือหัวข้อกับช่องค้นหา */}
+              <InfoButton title="ผู้ช่วยงานช่างใช้ยังไง" tone="navy" className="md:mt-1">
+                <p>
+                  เครื่องคิดเลขที่รู้จักงานช่างไทย กรอกขนาดห้อง ความยาวสาย หรือพื้นที่ผนัง แล้วได้จำนวนของพร้อมเผื่อเศษ
+                  อ้างอิง มอก. วสท. และมาตรฐานสากล
+                </p>
+                <InfoList
+                  items={HERO_POINTS.map(({ title, text }) => (
+                    <>
+                      <span className="font-semibold text-navy">{title}</span> · {text}
+                    </>
+                  ))}
+                />
+              </InfoButton>
+            </div>
             <div ref={searchRef} className="relative mt-3.5 md:mt-5">
               <label className="sr-only" htmlFor={`${listId}-input`}>
                 ค้นหาเครื่องมือ
@@ -354,23 +363,6 @@ export function AssistantHome() {
               <span className="font-latin font-semibold text-white">{TRADES.length}</span> สายงาน · เปิดดูสูตรได้ทุกตัว
             </p>
           </div>
-          {/* จุดขาย 4 ข้อ: เฉพาะจอกว้าง — บนมือถือเอาที่ให้ช่องค้นหา ของที่ปักหมุด และรายการสายงานขึ้นมาก่อน */}
-          <ul className="hidden divide-y divide-white/15 border-y border-white/15 md:block">
-            {HERO_POINTS.map(({ icon: Icon, title, text }, i) => (
-              <li key={title} className="flex items-start gap-3.5 py-3.5">
-                <span className="font-latin mt-0.5 w-5 shrink-0 text-xs font-semibold tabular-nums text-white/60">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[2px] border border-white/30">
-                  <Icon className="h-4 w-4" aria-hidden />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-semibold">{title}</span>
-                  <span className="mt-0.5 block text-[0.8125rem] leading-relaxed text-white/75">{text}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
         </div>
       </section>
 

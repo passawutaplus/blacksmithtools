@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
-import { BookOpen, ChevronDown, Compass, Library, Pin, ShieldAlert, TriangleAlert, type LucideIcon } from "lucide-react";
+import { BookOpen, ChevronDown, Compass, Library, Pin, TriangleAlert, type LucideIcon } from "lucide-react";
 import { DISCLAIMER_C } from "@/lib/chang/constants";
 import { safeGet, safeSet } from "@/lib/chang/storage";
 import type { FormulaExplain } from "@/lib/chang/types";
@@ -55,12 +55,6 @@ export function FormulaNote({ explain }: { explain: FormulaExplain }) {
 
   return (
     <div>
-      {explain.risk === "C" ? (
-        <p className="mb-3 flex items-start gap-2 border border-forge/50 bg-white px-3 py-2.5 text-[0.8125rem] leading-relaxed text-navy">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-forge" aria-hidden />
-          <span>{DISCLAIMER_C}</span>
-        </p>
-      ) : null}
 
       <details
         ref={ref}

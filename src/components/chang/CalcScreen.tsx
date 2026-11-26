@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight, Star } from "lucide-react";
 import { Fields, focusField } from "@/components/chang/Fields";
 import { FormulaNote } from "@/components/chang/FormulaNote";
+import { InfoButton } from "@/components/chang/InfoButton";
 import { ResultPanel, type FieldIssue } from "@/components/chang/ResultPanel";
 import { ToolDiagram } from "@/components/chang/diagrams/ToolDiagram";
 import { useStoredRaw } from "@/components/chang/useStored";
@@ -85,8 +86,22 @@ export function CalcScreen({
               {crumbName}
             </Link>
           </nav>
-          <h1 className="text-2xl font-bold leading-tight text-navy">{title}</h1>
-          <p className="mt-1 text-sm text-navy/70">{blurb}</p>
+          {/* คำโปรยกับหลักคิดย้ายเข้าปุ่ม i — หัวหน้าเหลือแค่ชื่อเครื่องมือ */}
+          <div className="flex items-start gap-1">
+            <h1 className="min-w-0 pt-1.5 text-2xl font-bold leading-tight text-navy">{title}</h1>
+            <InfoButton title={title}>
+              <p>{blurb}</p>
+              {result.explain && !result.invalid ? (
+                <p className="mt-3 border-t border-navy/15 pt-3">
+                  <span className="font-semibold text-navy">หลักคิด: </span>
+                  {result.explain.summary}
+                </p>
+              ) : null}
+              {result.explain ? (
+                <p className="mt-3 text-[0.8125rem] text-navy/70">สูตรเต็มทุกบรรทัดอยู่ที่ “ดูสูตรที่ใช้คิด” ท้ายหน้า</p>
+              ) : null}
+            </InfoButton>
+          </div>
         </div>
         {favPath ? (
           <button

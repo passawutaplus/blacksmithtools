@@ -1,5 +1,6 @@
 "use client";
 
+import { InfoButton, InfoList } from "@/components/chang/InfoButton";
 import { useEffect, useState } from "react";
 import { ChevronDown, Ruler } from "lucide-react";
 import { writeStored } from "../../../lib/chang/storage";
@@ -58,23 +59,19 @@ export function ToolDiagram({ path, values }: { path: string; values: DiagramPro
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 text-navy/60 transition-transform group-open:rotate-180" aria-hidden />
       </summary>
-      <figure className="border-t border-navy/15 md:flex md:items-start md:gap-5 md:p-4">
-        <div className="w-full shrink-0 text-navy md:max-w-[400px]">
+      {/* ภาพเต็มความกว้าง คำอธิบายภาพพับไว้ในปุ่ม i มุมขวาบน */}
+      <figure className="relative border-t border-navy/15 md:px-4 md:py-3">
+        <figcaption className="sr-only">{caption}</figcaption>
+        <div className="mx-auto w-full text-navy md:max-w-[440px]">
           <ActiveFieldContext.Provider value={focused}>
             <Diagram values={values} />
           </ActiveFieldContext.Provider>
         </div>
-        <figcaption className="border-t border-navy/15 px-3 py-3 md:min-w-0 md:border-l md:border-t-0 md:py-1 md:pl-5 md:pr-0">
-          <p className="text-sm font-semibold leading-snug text-navy">{caption}</p>
-          <ul className="mt-1.5 space-y-1 text-[0.8125rem] leading-relaxed text-navy/75">
-            {notes.map((note) => (
-              <li key={note} className="flex gap-2">
-                <span className="mt-[0.6em] h-px w-2 shrink-0 bg-forge" aria-hidden />
-                <span>{note}</span>
-              </li>
-            ))}
-          </ul>
-        </figcaption>
+        <div className="absolute right-0.5 top-0.5">
+          <InfoButton title={caption}>
+            <InfoList items={notes} />
+          </InfoButton>
+        </div>
       </figure>
     </details>
   );
