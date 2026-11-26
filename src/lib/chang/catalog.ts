@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Snowflake,
   AppWindow,
+  Axe,
   Droplets,
   Hammer,
   Home,
@@ -12,6 +13,8 @@ import {
   Ruler,
   Box,
   ShieldCheck,
+  Shovel,
+  Trees,
   Truck,
   Wrench,
   Zap,
@@ -19,11 +22,13 @@ import {
 import type { Pillar, Trade } from "./types";
 import { ceilingJob, ceilingTools } from "./tools/ceiling";
 import { concreteJob, concreteTools } from "./tools/concrete";
+import { earthTools } from "./tools/earth";
 import { electricalJob, electricalTools } from "./tools/electrical";
 import { generalJob, generalTools } from "./tools/general";
 import { glassJob, glassTools } from "./tools/glass";
 import { handymanJob, handymanTools } from "./tools/handyman";
 import { hvacJob, hvacTools } from "./tools/hvac";
+import { landscapeTools } from "./tools/landscape";
 import { masonryJob, masonryTools } from "./tools/masonry";
 import { paintJob, paintTools } from "./tools/paint";
 import { plumbingJob, plumbingTools } from "./tools/plumbing";
@@ -32,11 +37,13 @@ import { steelJob, steelTools } from "./tools/steel";
 import { tileJob, tileTools } from "./tools/tile";
 import { vinylJob, vinylTools } from "./tools/vinyl";
 import { waterproofJob, waterproofTools } from "./tools/waterproof";
+import { woodTools } from "./tools/wood";
 
 export const PILLARS: Pillar[] = [
   { id: "mep", name: "งานระบบ", blurb: "แอร์ ไฟ ประปา" },
   { id: "finish", name: "งานตกแต่ง", blurb: "บิ้วอิน กระเบื้อง ฝ้า กระจก" },
   { id: "shell", name: "งานโครงสร้าง", blurb: "ก่ออิฐ คอนกรีต หลังคา เหล็ก สี กันซึม" },
+  { id: "outdoor", name: "งานภายนอกและที่ดิน", blurb: "ถมดิน สวน พื้นภายนอก" },
   { id: "general", name: "เครื่องมือทั่วไป", blurb: "แปลงหน่วย รูปทรง" },
 ];
 
@@ -49,12 +56,15 @@ export const TRADE_ICONS: Record<string, LucideIcon> = {
   vinyl: Layers,
   ceiling: PanelTop,
   glass: AppWindow,
+  wood: Axe,
   masonry: Box,
   concrete: Truck,
   roof: Home,
   steel: Wrench,
   paint: Paintbrush,
   waterproof: ShieldCheck,
+  earth: Shovel,
+  landscape: Trees,
   general: Ruler,
 };
 
@@ -152,6 +162,14 @@ export const TRADES: Trade[] = [
     job: glassJob,
   },
   {
+    id: "wood",
+    name: "ช่างไม้และพื้นไม้",
+    short: "ไม้",
+    pillarId: "finish",
+    blurb: "ลูกบาศก์ฟุต ระแนง ไม้ฝา เดค",
+    tools: woodTools,
+  },
+  {
     id: "masonry",
     name: "ช่างก่ออิฐฉาบปูน",
     short: "ก่อฉาบ",
@@ -206,6 +224,22 @@ export const TRADES: Trade[] = [
     job: waterproofJob,
   },
   {
+    id: "earth",
+    name: "ช่างดินและถมที่",
+    short: "ดิน",
+    pillarId: "outdoor",
+    blurb: "ถมดิน ขุดดิน เที่ยวรถ",
+    tools: earthTools,
+  },
+  {
+    id: "landscape",
+    name: "ช่างสวนและพื้นภายนอก",
+    short: "สวน",
+    pillarId: "outdoor",
+    blurb: "หญ้า บล็อกปูพื้น สปริงเกอร์ น้ำฝน",
+    tools: landscapeTools,
+  },
+  {
     id: "general",
     name: "เครื่องมือทั่วไป",
     short: "ทั่วไป",
@@ -240,6 +274,16 @@ export const TOOLS_WITHOUT_COVER: string[] = [
   "steel/railing",
   "concrete/slab",
   "concrete/rebar",
+  // รอบ 4: สายงานใหม่ ยังไม่มีภาพปก
+  "wood/timber",
+  "wood/cladding",
+  "wood/deck",
+  "earth/fill",
+  "earth/dig",
+  "landscape/sod",
+  "landscape/paver",
+  "landscape/sprinkler",
+  "landscape/rain",
 ];
 
 /**
@@ -322,6 +366,10 @@ const TRADE_ALIASES: Record<string, string[]> = {
   vinyl: ["กระเบื้องยาง", "spc", "lvt", "พื้นไม้", "ลามิเนตปูพื้น"],
   paint: ["ทาสี", "สกิมโค้ท", "โป๊ว", "วอลเปเปอร์", "รองพื้น", "กันสนิม", "สีน้ำมัน"],
   // รอบ 3: สายงานใหม่
+  // รอบ 4: สายงานใหม่
+  wood: ["ไม้", "ช่างไม้", "ไม้แปรรูป", "ระแนง", "ไม้ฝา", "wpc", "ไม้เทียม", "เดค", "deck"],
+  earth: ["ดิน", "ถมดิน", "ถมที่", "ขุดดิน", "ดินถม", "ลูกรัง", "รถดิน", "รถ 10 ล้อ"],
+  landscape: ["สวน", "จัดสวน", "หญ้า", "ตัวหนอน", "บล็อกปูพื้น", "สปริงเกอร์", "น้ำฝน", "พื้นภายนอก"],
   waterproof: ["กันซึม", "กันรั่ว", "ดาดฟ้า", "ดาดฟ้ารั่ว", "ห้องน้ำรั่ว", "รอยร้าว", "ร้าว", "pu", "เมมเบรน", "membrane", "ซีเมนต์กันซึม"],
 };
 
@@ -373,6 +421,16 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "steel/railing": ["รั้ว", "ราวกันตก", "ราวระเบียง", "ราวบันได", "ลูกกรง", "กันสาด", "ประตูรั้ว", "เหล็กกล่อง"],
   "steel/weight": ["ราคาเหล็ก", "กก./เส้น", "แป๊บ", "ท่อดำ"],
   "concrete/slab": ["เทพื้น", "ไวร์เมช", "wiremesh", "wire mesh", "รถโม่", "ปูนโม่", "คิว", "ลานจอดรถ"],
+  // รอบ 4: ไม้ ดิน สวน
+  "wood/timber": ["ลูกบาศก์ฟุต", "ลบ.ฟ.", "คิวไม้", "ราคาไม้", "ไม้แปรรูป", "ไม้ 2x4", "ไม้หน้าสาม", "board foot"],
+  "wood/cladding": ["ระแนง", "ไม้ฝา", "wpc", "ไม้เทียม", "ไม้ฝาซ้อนเกล็ด", "รั้วระแนง", "ไม้ฝาเฌอร่า", "โครงเคร่า"],
+  "wood/deck": ["เดค", "deck", "พื้นระเบียง", "พื้นไม้ภายนอก", "ตง", "คลิปซ่อน", "ไม้พื้น wpc"],
+  "earth/fill": ["ถมดิน", "ถมที่", "ดินถม", "ลูกรัง", "ทรายถม", "กี่คิว", "กี่เที่ยว", "รถ 6 ล้อ", "รถ 10 ล้อ", "ดินยุบ", "ไร่"],
+  "earth/dig": ["ขุดดิน", "ขนดินทิ้ง", "ขุดร่อง", "ขุดหลุม", "ดินพองตัว", "ขุดบ่อ"],
+  "landscape/sod": ["หญ้า", "หญ้าแผ่น", "ปูหญ้า", "หญ้านวลน้อย", "หญ้ามาเลเซีย", "สนามหญ้า"],
+  "landscape/paver": ["ตัวหนอน", "อิฐตัวหนอน", "บล็อกปูพื้น", "คันหิน", "บล็อกขอบ", "แผ่นทางเท้า", "ลานจอดรถ"],
+  "landscape/sprinkler": ["สปริงเกอร์", "sprinkler", "รดน้ำ", "หัวพ่นน้ำ", "ระบบรดน้ำ"],
+  "landscape/rain": ["น้ำฝน", "เก็บน้ำฝน", "ถังเก็บน้ำฝน", "rainwater"],
   "concrete/rebar": ["เหล็กเส้น", "ปลอก", "เหล็กปลอก", "ลวดผูก", "ข้ออ้อย", "db12", "rb6", "คานคอดิน", "ทาบเหล็ก"],
 };
 
