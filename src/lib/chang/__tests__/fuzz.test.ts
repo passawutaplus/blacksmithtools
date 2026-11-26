@@ -160,6 +160,9 @@ const EXPECTED_BLOCKED = [
   "general/spacing:total@min",
   "general/spacing:n@max",
   "general/spacing:w@max",
+  // สาย LAN: เส้นยาวสุดสั้นกว่าค่าเฉลี่ย (1 < 30 ม. · 45 < 250 ม.) เป็นไปไม่ได้
+  "lowvolt/lan:longest@min",
+  "lowvolt/lan:avg@max",
 ].sort();
 
 describe("กวาดทุกเครื่องมือ: ค่าตั้งต้นและค่าปลายช่วง", () => {

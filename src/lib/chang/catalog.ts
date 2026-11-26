@@ -2,6 +2,8 @@ import type { LucideIcon } from "lucide-react";
 import {
   Snowflake,
   AppWindow,
+  Blinds,
+  Cctv,
   Droplets,
   Hammer,
   Home,
@@ -9,6 +11,7 @@ import {
   LayoutGrid,
   Paintbrush,
   PanelTop,
+  ReceiptText,
   Ruler,
   Box,
   ShieldCheck,
@@ -19,11 +22,14 @@ import {
 import type { Pillar, Trade } from "./types";
 import { ceilingJob, ceilingTools } from "./tools/ceiling";
 import { concreteJob, concreteTools } from "./tools/concrete";
+import { curtainTools } from "./tools/curtain";
 import { electricalJob, electricalTools } from "./tools/electrical";
+import { estimateTools } from "./tools/estimate";
 import { generalJob, generalTools } from "./tools/general";
 import { glassJob, glassTools } from "./tools/glass";
 import { handymanJob, handymanTools } from "./tools/handyman";
 import { hvacJob, hvacTools } from "./tools/hvac";
+import { lowvoltTools } from "./tools/lowvolt";
 import { masonryJob, masonryTools } from "./tools/masonry";
 import { paintJob, paintTools } from "./tools/paint";
 import { plumbingJob, plumbingTools } from "./tools/plumbing";
@@ -44,11 +50,13 @@ export const TRADE_ICONS: Record<string, LucideIcon> = {
   hvac: Snowflake,
   electrical: Zap,
   plumbing: Droplets,
+  lowvolt: Cctv,
   handyman: Hammer,
   tile: LayoutGrid,
   vinyl: Layers,
   ceiling: PanelTop,
   glass: AppWindow,
+  curtain: Blinds,
   masonry: Box,
   concrete: Truck,
   roof: Home,
@@ -56,6 +64,7 @@ export const TRADE_ICONS: Record<string, LucideIcon> = {
   paint: Paintbrush,
   waterproof: ShieldCheck,
   general: Ruler,
+  estimate: ReceiptText,
 };
 
 /**
@@ -107,6 +116,14 @@ export const TRADES: Trade[] = [
     job: plumbingJob,
   },
   {
+    id: "lowvolt",
+    name: "ช่างกล้องวงจรปิดและเน็ต",
+    short: "กล้อง/เน็ต",
+    pillarId: "mep",
+    blurb: "ฮาร์ดดิสก์ PoE สาย LAN มุมกล้อง",
+    tools: lowvoltTools,
+  },
+  {
     id: "handyman",
     name: "ช่างติดตั้งและบิ้วอิน",
     short: "บิ้วอิน",
@@ -150,6 +167,14 @@ export const TRADES: Trade[] = [
     blurb: "ตัดเฟรม น้ำหนัก ซิลิโคน เจาะ",
     tools: glassTools,
     job: glassJob,
+  },
+  {
+    id: "curtain",
+    name: "ช่างผ้าม่าน",
+    short: "ผ้าม่าน",
+    pillarId: "finish",
+    blurb: "ผ้ากี่หลา ความฟู ม่านม้วน มู่ลี่",
+    tools: curtainTools,
   },
   {
     id: "masonry",
@@ -214,6 +239,14 @@ export const TRADES: Trade[] = [
     tools: generalTools,
     job: generalJob,
   },
+  {
+    id: "estimate",
+    name: "ประมาณราคาและใบเสนอราคา",
+    short: "ใบเสนอราคา",
+    pillarId: "general",
+    blurb: "VAT หัก ณ ที่จ่าย กำไร งวดงาน ค่าแรง",
+    tools: estimateTools,
+  },
 ];
 
 /**
@@ -240,6 +273,18 @@ export const TOOLS_WITHOUT_COVER: string[] = [
   "steel/railing",
   "concrete/slab",
   "concrete/rebar",
+  // รอบ 4: สายงานใหม่ (ยังไม่มีภาพปก)
+  "lowvolt/hdd",
+  "lowvolt/poe",
+  "lowvolt/lan",
+  "lowvolt/fov",
+  "curtain/fabric",
+  "curtain/blind",
+  "estimate/quote",
+  "estimate/markup",
+  "estimate/vat",
+  "estimate/instalment",
+  "estimate/labour",
 ];
 
 /**
@@ -322,6 +367,10 @@ const TRADE_ALIASES: Record<string, string[]> = {
   vinyl: ["กระเบื้องยาง", "spc", "lvt", "พื้นไม้", "ลามิเนตปูพื้น"],
   paint: ["ทาสี", "สกิมโค้ท", "โป๊ว", "วอลเปเปอร์", "รองพื้น", "กันสนิม", "สีน้ำมัน"],
   // รอบ 3: สายงานใหม่
+  // รอบ 4: สายงานใหม่
+  lowvolt: ["กล้องวงจรปิด", "cctv", "กล้อง", "nvr", "dvr", "สายแลน", "lan", "poe", "เน็ต", "ไวไฟ", "wifi"],
+  curtain: ["ผ้าม่าน", "ม่าน", "ม่านม้วน", "มู่ลี่", "ราง", "หลา"],
+  estimate: ["ใบเสนอราคา", "เสนอราคา", "ประมาณราคา", "vat", "ภาษี", "หัก ณ ที่จ่าย", "มัดจำ", "งวดงาน", "กำไร", "ค่าแรง"],
   waterproof: ["กันซึม", "กันรั่ว", "ดาดฟ้า", "ดาดฟ้ารั่ว", "ห้องน้ำรั่ว", "รอยร้าว", "ร้าว", "pu", "เมมเบรน", "membrane", "ซีเมนต์กันซึม"],
 };
 
@@ -373,6 +422,18 @@ const TOOL_ALIASES: Record<string, string[]> = {
   "steel/railing": ["รั้ว", "ราวกันตก", "ราวระเบียง", "ราวบันได", "ลูกกรง", "กันสาด", "ประตูรั้ว", "เหล็กกล่อง"],
   "steel/weight": ["ราคาเหล็ก", "กก./เส้น", "แป๊บ", "ท่อดำ"],
   "concrete/slab": ["เทพื้น", "ไวร์เมช", "wiremesh", "wire mesh", "รถโม่", "ปูนโม่", "คิว", "ลานจอดรถ"],
+  // รอบ 4: สายงานใหม่
+  "lowvolt/hdd": ["ฮาร์ดดิสก์", "hdd", "เก็บกี่วัน", "อัดกี่วัน", "nvr", "dvr", "tb"],
+  "lowvolt/poe": ["poe", "poe+", "สวิตช์ poe", "งบไฟ", "802.3af", "802.3at", "802.3bt"],
+  "lowvolt/lan": ["สายแลน", "สาย lan", "cat6", "cat5e", "rj45", "หัวแลน", "กล่อง 305", "305 เมตร"],
+  "lowvolt/fov": ["มุมกล้อง", "เลนส์", "เห็นหน้า", "ระยะกล้อง", "ppm", "fov", "dori"],
+  "curtain/fabric": ["ผ้าม่าน", "หลา", "ม่านจีบ", "ม่านตาไก่", "ม่านลอน", "ความฟู", "ตะขอม่าน", "รางม่าน"],
+  "curtain/blind": ["ม่านม้วน", "มู่ลี่", "roller blind", "ม่านปรับแสง", "ตร.หลา"],
+  "estimate/quote": ["ใบเสนอราคา", "quotation", "เสนอราคา", "vat", "หัก ณ ที่จ่าย"],
+  "estimate/markup": ["markup", "margin", "บวกกำไร", "กำไรกี่เปอร์เซ็นต์"],
+  "estimate/vat": ["vat", "ถอด vat", "รวม vat", "ภาษีมูลค่าเพิ่ม", "หัก ณ ที่จ่าย", "50 ทวิ", "3%", "7%"],
+  "estimate/instalment": ["งวดงาน", "มัดจำ", "แบ่งงวด", "เงินประกันผลงาน", "ค้ำประกันผลงาน"],
+  "estimate/labour": ["ค่าแรง", "ค่าช่าง", "ราคาต่อตารางเมตร", "รายวัน", "กี่วันเสร็จ"],
   "concrete/rebar": ["เหล็กเส้น", "ปลอก", "เหล็กปลอก", "ลวดผูก", "ข้ออ้อย", "db12", "rb6", "คานคอดิน", "ทาบเหล็ก"],
 };
 
