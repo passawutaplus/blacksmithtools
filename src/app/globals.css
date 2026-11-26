@@ -841,10 +841,23 @@ summary::-webkit-details-marker {
   }
 }
 
+/* มือถือในหน้าผู้ช่วย: ซ่อนปุ่มแชทตอนเลื่อนลงหรือกำลังพิมพ์ ไม่ให้บังช่อง/ปุ่ม (สถานะมาจาก AssistantChrome) · แชทที่เปิดอยู่ไม่ถูกซ่อน */
+@media (max-width: 639px) {
+  html[data-chang-scroll="down"] .chat-fab:not([data-open]),
+  html[data-chang-typing="1"] .chat-fab:not([data-open]) {
+    transform: translateY(calc(100% + 2rem));
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 @media (max-width: 639px) and (prefers-reduced-motion: no-preference) {
   /* เลื่อนขึ้น-ลงนุ่ม ๆ เฉพาะในหน้าผู้ช่วย (หน้าที่มี .chang-scope) */
   html:has(.chang-scope) .chat-fab {
-    transition: bottom 0.18s ease-out;
+    transition:
+      bottom 0.18s ease-out,
+      transform 0.2s ease-out,
+      opacity 0.2s ease-out;
   }
 }
 
@@ -968,6 +981,54 @@ summary::-webkit-details-marker {
   .chang-field[data-invalid="true"] {
     border-color: var(--forge);
     box-shadow: inset 3px 0 0 var(--forge);
+  }
+
+  /* ช่องนับจำนวน: ปุ่ม − / + ชิดขอบซ้าย-ขวาในกรอบเดียวกับช่อง คั่นด้วยเส้นบาง */
+  .chang-field-stepper {
+    padding: 0;
+    gap: 0;
+  }
+
+  .chang-field-stepper input {
+    padding: 0 0.75rem;
+    text-align: center;
+  }
+
+  .chang-field-stepper > span {
+    padding-right: 0.75rem;
+  }
+
+  .chang-step {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    min-height: 46px;
+    align-self: stretch;
+    color: var(--navy);
+    touch-action: manipulation;
+  }
+
+  .chang-step:first-child {
+    border-right: 1px solid rgba(37, 54, 65, 0.15);
+  }
+
+  .chang-step:last-child {
+    border-left: 1px solid rgba(37, 54, 65, 0.15);
+  }
+
+  .chang-step:hover:not(:disabled) {
+    background: #f1f3f5;
+  }
+
+  .chang-step:active:not(:disabled) {
+    background: rgba(37, 54, 65, 0.1);
+  }
+
+  .chang-step:disabled {
+    color: rgba(37, 54, 65, 0.25);
+    cursor: not-allowed;
   }
 
   .chang-field input {

@@ -51,9 +51,53 @@ function useStickyTopVar(anchor: React.RefObject<HTMLElement | null>) {
   }, [anchor]);
 }
 
+/**
+ * มือถือ: ปุ่มแชทลอยของร้านบังช่องกรอก/ปุ่มในการ์ดผล ระหว่างเลื่อนหน้าและตอนพิมพ์
+ * เขียนสถานะลง <html> ให้ CSS ซ่อนปุ่มชั่วคราว — เลื่อนลง = ซ่อน, เลื่อนขึ้น/หยุดที่บนสุด = กลับมา,
+ * โฟกัสช่องกรอกในผู้ช่วย (คีย์บอร์ดขึ้น) = ซ่อน · ออกจากหน้าผู้ช่วยแล้วล้างสถานะทิ้ง (กติกาอยู่ใน globals.css)
+ */
+function useHideFabWhileWorking() {
+  useEffect(() => {
+    const root = document.documentElement;
+    let lastY = window.scrollY;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY;
+        if (Math.abs(y - lastY) > 6) {
+          root.dataset.changScroll = y > lastY && y > 120 ? "down" : "up";
+          lastY = y;
+        }
+        ticking = false;
+      });
+    };
+    const isField = (t: EventTarget | null) =>
+      t instanceof HTMLElement && t.matches(".chang-scope input, .chang-scope select, .chang-scope textarea");
+    const onFocusIn = (e: FocusEvent) => {
+      if (isField(e.target)) root.dataset.changTyping = "1";
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      if (isField(e.target) && !isField(e.relatedTarget)) delete root.dataset.changTyping;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+      delete root.dataset.changScroll;
+      delete root.dataset.changTyping;
+    };
+  }, []);
+}
+
 export function AssistantChrome() {
   const navRef = useRef<HTMLElement>(null);
   useStickyTopVar(navRef);
+  useHideFabWhileWorking();
   const pathname = usePathname();
   const router = useRouter();
   const fallback = fallbackFrom(pathname);
