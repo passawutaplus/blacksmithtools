@@ -44,7 +44,8 @@ describe("searchTools", () => {
   });
 
   it("สะกดวรรณยุกต์เพี้ยน: ปั้ม = ปั๊ม", () => {
-    expect(ids("ปั้ม")[0]).toBe("plumbing/pump");
+    // ปั๊มน้ำมีสองเครื่องมือ (เลือกปั๊ม / ปั๊มบ้านกี่วัตต์) — อันไหนขึ้นก่อนก็ถูก
+    expect(ids("ปั้ม")[0]).toMatch(/^plumbing\/(pump|homepump)$/);
     expect(ids("ปั้ม")).toEqual(ids("ปั๊ม"));
   });
 
@@ -53,7 +54,7 @@ describe("searchTools", () => {
     expect(ids("tile").some((id) => id === "tile/qty")).toBe(true);
     expect(ids("kW").length).toBeGreaterThan(0);
     expect(ids("KW")).toContain("electrical/unit");
-    expect(ids("pump")[0]).toBe("plumbing/pump");
+    expect(ids("pump")[0]).toMatch(/^plumbing\/(pump|homepump)$/);
     expect(ids("paint")[0]).toMatch(/^paint\//);
   });
 
