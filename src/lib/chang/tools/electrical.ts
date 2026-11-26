@@ -1,4 +1,4 @@
-import type { ChartSpec, ConstRef, JobDef, ToolDef, Values } from "../types";
+import type { CalcResult, ChartSpec, ConstRef, Field, JobDef, ToolDef, Values } from "../types";
 import { blockedResult, ceil, fmt, fmtTrim, guardInputs, guardTool, jobFromParts, num, resultX, round, stepTable, str, withDefaults } from "../math";
 import {
   BREAKER_SIZES,
@@ -12,6 +12,8 @@ import {
   DISCLAIMER_C,
   AC,
   ELEC,
+  EV,
+  EV_CHARGERS,
   GROUND_WIRE_TABLE,
   KG_CIRCUITS,
   KG_CIRCUITS_BANDS,
@@ -19,10 +21,16 @@ import {
   KG_SOURCE,
   KT_AIR_PVC,
   KT_SOURCE,
+  LIGHTING,
+  LUX_PRESETS,
+  NOMINAL_V,
+  POWER_BILL,
   PUMP,
   SOLAR,
   THW_OD,
   THW_OD_SOURCE,
+  WATER_HEAT,
+  WATER_HEATER_KW,
 } from "../constants";
 
 const guard = (id: string, v: Values) => guardTool(electricalTools, id, v);
@@ -889,6 +897,470 @@ export function calcConduit(v: Values) {
   });
 }
 
+/* ═══════════════ รอบ 4 (2026-11-26): ค่าไฟเครื่องใช้ไฟฟ้า · โคมตามความสว่าง · เครื่องทำน้ำอุ่น · ชาร์จรถ EV ═══════════════ */
+
+/** ชั่วโมงทศนิยม → "5 ชม. 24 นาที" (ปัดเป็นนาทีเต็มครั้งเดียวตอนแสดงผล) */
+export function hoursText(h: number): string {
+  const total = Math.round(h * 60);
+  const hh = Math.floor(total / 60);
+  const mm = total - hh * 60;
+  if (hh === 0) return `${fmt(mm)} นาที`;
+  return mm === 0 ? `${fmt(hh)} ชม.` : `${fmt(hh)} ชม. ${fmt(mm)} นาที`;
+}
+
+/* ─────────── ค่าไฟเครื่องใช้ไฟฟ้า ─────────── */
+
+const APPLIANCE_MAX = 6;
+const APPLIANCE_DEFAULTS: Array<{ name: string; w: number; h: number; q: number }> = [
+  { name: "หลอด LED", w: 9, h: 6, q: 8 },
+  { name: "ทีวี", w: 100, h: 5, q: 1 },
+  { name: "พัดลม", w: 60, h: 8, q: 2 },
+  { name: "หม้อหุงข้าว", w: 700, h: 1, q: 1 },
+  { name: "เตารีด", w: 1000, h: 0.5, q: 1 },
+  { name: "คอมพิวเตอร์", w: 200, h: 4, q: 1 },
+];
+
+export type ApplianceLine = { name: string; w: number; h: number; q: number; kwh: number; baht: number };
+
+/** หน่วยไฟ/เดือน = วัตต์ × ชม./วัน × จำนวน × วัน ÷ 1000 · ค่าไฟ = หน่วย × ค่าไฟต่อหน่วย */
+export function applianceLine(w: number, h: number, q: number, days: number, rate: number) {
+  const kwh = (w * h * q * days) / 1000;
+  return { kwh, baht: kwh * rate };
+}
+
+export function calcAppliance(v: Values): CalcResult {
+  const bad = guard("appliance", v);
+  if (bad) return bad;
+  const n = Number(str(v, "n", "3"));
+  const days = num(v, "days", POWER_BILL.daysPerMonth.value);
+  const rate = num(v, "rate", POWER_BILL.rate.value);
+  const ft = num(v, "ft", 0);
+  const unitPrice = rate + ft;
+  const lines: ApplianceLine[] = [];
+  for (let i = 1; i <= n; i++) {
+    const d = APPLIANCE_DEFAULTS[i - 1];
+    const name = str(v, `name${i}`, d.name).trim() || `เครื่องที่ ${i}`;
+    const w = num(v, `w${i}`, d.w);
+    const h = num(v, `h${i}`, d.h);
+    const q = num(v, `q${i}`, d.q);
+    lines.push({ name, w, h, q, ...applianceLine(w, h, q, days, unitPrice) });
+  }
+  const kwh = lines.reduce((s, x) => s + x.kwh, 0);
+  const baht = kwh * unitPrice;
+  const top = lines.reduce((a, b) => (b.baht > a.baht ? b : a), lines[0]);
+  return resultX({
+    title: "ค่าไฟเครื่องใช้ไฟฟ้า",
+    headline: `ค่าไฟราว ${fmt(baht)} บาท/เดือน (${fmt(kwh, 1)} หน่วย)`,
+    chart:
+      lines.length > 1 && baht > 0
+        ? {
+            kind: "stack",
+            parts: lines.map((x) => ({ label: x.name, value: x.baht, display: `${fmt(x.baht)} บาท` })),
+            totalLabel: "รวมต่อเดือน",
+            totalDisplay: `${fmt(baht)} บาท`,
+          }
+        : undefined,
+    rows: [
+      ...lines.map((x) => ({
+        label: `${x.name} (${fmtTrim(x.w, 1)} W × ${fmtTrim(x.h, 2)} ชม. × ${fmt(x.q)})`,
+        value: `${fmt(x.kwh, 1)} หน่วย · ${fmt(x.baht)} บาท`,
+      })),
+      { label: "รวมหน่วยไฟต่อเดือน", value: `${fmt(kwh, 1)} หน่วย (kWh)` },
+      { label: `ค่าไฟต่อเดือน (${fmtTrim(unitPrice, 2)} บาท/หน่วย)`, value: `${fmt(baht)} บาท`, emphasize: true },
+      { label: "ค่าไฟต่อปี", value: `${fmt(baht * 12)} บาท` },
+      ...(lines.length > 1 && baht > 0 ? [{ label: "กินไฟมากสุด", value: `${top.name} ${fmt((top.baht / baht) * 100)}% ของทั้งหมด` }] : []),
+    ],
+    tip: "ตู้เย็นกับแอร์ คอมเพรสเซอร์ตัด-ต่อเป็นช่วง ใส่ชั่วโมงที่คอมเพรสเซอร์ทำงานจริง (ตู้เย็นราว 8–12 ชม./วัน) ไม่ใช่ 24 ชม.",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary: "หน่วยไฟ (kWh) = วัตต์ × ชั่วโมงต่อวัน × จำนวนเครื่อง × วันต่อเดือน ÷ 1,000 แล้วคูณค่าไฟต่อหน่วย",
+      steps: [
+        ...lines.map((x) => ({
+          label: x.name,
+          expr: "หน่วย = W × ชม./วัน × จำนวน × วัน ÷ 1000",
+          subst: `${fmtTrim(x.w, 1)} × ${fmtTrim(x.h, 2)} × ${fmt(x.q)} × ${fmt(days)} ÷ 1000 = ${fmt(x.kwh, 2)} หน่วย`,
+        })),
+        {
+          label: "ค่าไฟ",
+          expr: "บาท = หน่วยรวม × (ค่าไฟต่อหน่วย + Ft ที่บวกเพิ่ม)",
+          subst: `${fmt(kwh, 2)} × ${fmtTrim(unitPrice, 2)} = ${fmt(baht, 2)} บาท`,
+        },
+      ],
+      constants: [POWER_BILL.rate, POWER_BILL.daysPerMonth],
+      assumptions: [
+        "วัตต์ที่ใส่คือกำลังขณะทำงานจริง (ป้ายเครื่องมักเป็นค่าสูงสุด ใช้จริงต่ำกว่า)",
+        "ค่าไฟเป็นอัตราเฉลี่ยเดียวทุกหน่วย ไม่ได้คิดแบบขั้นบันได",
+      ],
+      caveats: [
+        "อัตราไฟบ้านจริงเป็นขั้นบันได ยิ่งใช้มากหน่วยท้าย ๆ ยิ่งแพง และมีค่าบริการรายเดือน — เอาค่าไฟทั้งบิล ÷ หน่วยในบิลมาใส่จะใกล้ที่สุด",
+        "ค่า Ft ปรับทุก 4 เดือน ถ้าอัตราที่ใส่ยังไม่รวม Ft ให้ใส่ในช่อง Ft",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "นิยามหน่วยไฟฟ้า 1 หน่วย = 1 kWh" }, { label: "อัตราค่าไฟฟ้าบ้านอยู่อาศัย กฟน./กฟภ. (ประเภท 1) และค่า Ft ของ กกพ." }],
+    },
+  });
+}
+
+function applianceFields(): Field[] {
+  const out: Field[] = [];
+  for (let i = 1; i <= APPLIANCE_MAX; i++) {
+    const d = APPLIANCE_DEFAULTS[i - 1];
+    const shown = Array.from({ length: APPLIANCE_MAX - i + 1 }, (_, k) => String(i + k));
+    const when = i === 1 ? undefined : { key: "n", is: shown };
+    out.push(
+      { type: "text", key: `name${i}`, label: `เครื่องที่ ${i}: ชื่อ`, default: d.name, placeholder: "เช่น ตู้เย็น", ...(when ? { when } : {}) },
+      { type: "number", key: `w${i}`, label: `เครื่องที่ ${i}: กำลังไฟ`, unit: "W", default: d.w, min: 0.5, max: 20000, step: 0.5, ...(when ? { when } : {}) },
+      { type: "number", key: `h${i}`, label: `เครื่องที่ ${i}: ใช้วันละ`, unit: "ชม.", default: d.h, min: 0, max: 24, step: 0.25, ...(when ? { when } : {}) },
+      { type: "number", key: `q${i}`, label: `เครื่องที่ ${i}: จำนวน`, unit: "เครื่อง", default: d.q, min: 1, max: 500, ...(when ? { when } : {}) },
+    );
+  }
+  return out;
+}
+
+/* ─────────── จำนวนโคมตามความสว่าง (วิธีลูเมน) ─────────── */
+
+/** จำนวนโคม = E × A ÷ (Φ × UF × MF) */
+export function fixturesNeeded(lux: number, area: number, lumens: number, uf: number, mf: number): number {
+  return (lux * area) / (lumens * uf * mf);
+}
+
+/**
+ * จัดผังโคมเป็นตาราง แถว × ดวง ให้ระยะสองทิศใกล้กันที่สุด
+ * ลองทุกจำนวนแถว r (ตามด้านกว้าง) ดวงต่อแถว c = ปัดขึ้น(N ÷ r)
+ * เลือกผังที่ระยะสองทิศต่างกันไม่เกินเกณฑ์และใช้โคมน้อยสุด ถ้าไม่มีผังไหนผ่านเกณฑ์ เอาผังที่ระยะใกล้กันที่สุด
+ */
+export function fixtureGrid(n: number, w: number, l: number) {
+  type Grid = { rows: number; cols: number; total: number; ratio: number };
+  let best: Grid | null = null;
+  let closest: Grid | null = null;
+  const limit = LIGHTING.maxSpacingRatio.value;
+  for (let r = 1; r <= n; r++) {
+    const c = ceil(n / r);
+    const sw = w / r;
+    const sl = l / c;
+    const ratio = Math.max(sw, sl) / Math.min(sw, sl);
+    const cand = { rows: r, cols: c, total: r * c, ratio };
+    if (ratio <= limit + 1e-9 && (!best || cand.total < best.total || (cand.total === best.total && ratio < best.ratio))) best = cand;
+    if (!closest || ratio < closest.ratio - 1e-9 || (Math.abs(ratio - closest.ratio) <= 1e-9 && cand.total < closest.total)) closest = cand;
+  }
+  const g = best ?? closest ?? { rows: 1, cols: 1, total: 1, ratio: 1 };
+  return { ...g, spacingW: w / g.rows, spacingL: l / g.cols };
+}
+
+export function calcLux(v: Values): CalcResult {
+  const bad = guard("lux", v);
+  if (bad) return bad;
+  const w = num(v, "w", 4);
+  const l = num(v, "l", 5);
+  const room = str(v, "room", "living");
+  const preset = LUX_PRESETS[room];
+  const lux = preset ? preset.lux.value : num(v, "lux", 300);
+  const lm = num(v, "lm", LIGHTING.lumens.value);
+  const uf = num(v, "uf", LIGHTING.uf.value);
+  const mf = num(v, "mf", LIGHTING.mf.value);
+  const area = w * l;
+  const raw = fixturesNeeded(lux, area, lm, uf, mf);
+  const n = Math.max(1, ceil(raw));
+  if (n > LIGHTING.maxFixtures.value) {
+    return blockedResult({
+      headline: `ต้องใช้โคมราว ${fmt(n)} ดวง เกินที่จัดผังให้ (${fmt(LIGHTING.maxFixtures.value)} ดวง) — แบ่งพื้นที่เป็นโซนแล้วคิดทีละโซน`,
+      tip: "ตรวจหน่วยแสงต่อโคม (ลูเมน ไม่ใช่วัตต์) และขนาดห้องอีกครั้ง",
+    });
+  }
+  const g = fixtureGrid(n, w, l);
+  const got = (g.total * lm * uf * mf) / area;
+  const name = preset ? preset.label : "กำหนดเอง";
+  return resultX({
+    title: "จำนวนโคมตามความสว่าง",
+    headline: `โคม ${fmt(g.total)} ดวง · จัด ${fmt(g.rows)} แถว × ${fmt(g.cols)} ดวง`,
+    rows: [
+      { label: "พื้นที่ห้อง", value: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} ม. = ${fmt(area, 2)} ตร.ม.` },
+      { label: `ความสว่างเป้าหมาย (${name})`, value: `${fmt(lux)} lux` },
+      { label: "คิดได้", value: `${fmt(raw, 2)} ดวง → ปัดขึ้น ${fmt(n)} ดวง` },
+      {
+        label: "จัดผัง",
+        value: `ตามด้านกว้าง ${fmt(g.rows)} แถว × ตามด้านยาว ${fmt(g.cols)} ดวง = ${fmt(g.total)} ดวง${g.total > n ? ` (เพิ่ม ${fmt(g.total - n)} ดวงให้ลงตาราง)` : ""}`,
+        emphasize: true,
+      },
+      {
+        label: "ระยะห่างโคม",
+        value: `${fmt(g.spacingW, 2)} ม. × ${fmt(g.spacingL, 2)} ม. · ห่างผนัง ${fmt(g.spacingW / 2, 2)} / ${fmt(g.spacingL / 2, 2)} ม.`,
+        emphasize: true,
+      },
+      { label: "ความสว่างเฉลี่ยที่ได้", value: `ราว ${fmt(got)} lux` },
+    ],
+    tip: "ระยะห่างโคมไม่ควรเกินที่ผู้ผลิตกำหนด (มักราว 1–1.5 เท่าของความสูงโคมเหนือโต๊ะ) ไม่งั้นแสงเป็นดวง ๆ",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-26",
+      summary: "วิธีลูเมน: จำนวนโคม = ความสว่าง (lux) × พื้นที่ ÷ (แสงต่อโคม × UF × MF) ปัดขึ้น แล้วจัดเป็นตารางให้ระยะสองทิศใกล้กัน",
+      steps: [
+        { label: "พื้นที่", expr: "A = กว้าง × ยาว", subst: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} = ${fmt(area, 2)} ตร.ม.` },
+        {
+          label: "จำนวนโคม",
+          expr: "N = E × A ÷ (Φ × UF × MF)",
+          subst: `${fmt(lux)} × ${fmt(area, 2)} ÷ (${fmt(lm)} × ${fmtTrim(uf, 2)} × ${fmtTrim(mf, 2)}) = ${fmt(raw, 2)} → ${fmt(n)} ดวง`,
+          note: "1 lux = 1 ลูเมนต่อตารางเมตร",
+        },
+        {
+          label: "จัดผัง",
+          expr: "ลองแถว r = 1, 2, … · ดวงต่อแถว = ปัดขึ้น(N ÷ r) · เลือกผังที่ระยะ กว้าง÷r กับ ยาว÷ดวง ต่างกันไม่เกิน 1.5 เท่า ใช้โคมน้อยสุด",
+          subst: `${fmt(g.rows)} × ${fmt(g.cols)} = ${fmt(g.total)} ดวง · ระยะ ${fmt(g.spacingW, 2)} × ${fmt(g.spacingL, 2)} ม.`,
+        },
+        { label: "ความสว่างที่ได้", expr: "E = จำนวนโคม × Φ × UF × MF ÷ A", subst: `${fmt(g.total)} × ${fmt(lm)} × ${fmtTrim(uf, 2)} × ${fmtTrim(mf, 2)} ÷ ${fmt(area, 2)} = ${fmt(got, 1)} lux` },
+      ],
+      constants: [...(preset ? [preset.lux] : []), LIGHTING.lumens, LIGHTING.uf, LIGHTING.mf, LIGHTING.maxSpacingRatio],
+      assumptions: ["ห้องสี่เหลี่ยม โคมรุ่นเดียวกันทั้งห้อง แสงกระจายทั่วห้อง (ไม่ใช่ไฟส่องเฉพาะจุด)", "UF และ MF ใช้ค่าเดียวทั้งห้องตามที่กรอก"],
+      caveats: [
+        "ความสว่างตามชนิดห้องเป็นค่าอ้างอิงทั่วไป ไม่ใช่ข้อบังคับ งานอาคารที่มีข้อกำหนด (สำนักงาน โรงงาน) ต้องตรวจกับมาตรฐานที่ใช้จริง",
+        "UF ขึ้นกับรูปห้อง ความสูงติดตั้ง และสีผนัง-เพดาน ค่าที่แม่นต้องเปิดตาราง UF ของโคมรุ่นนั้น",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "วิธีลูเมน (Lumen method) — คู่มือออกแบบแสงสว่าง" }, { label: "EN 12464-1 ความส่องสว่างสถานที่ทำงานภายในอาคาร" }, { label: "CIE 97 ตัวประกอบการบำรุงรักษา" }],
+    },
+  });
+}
+
+/* ─────────── เครื่องทำน้ำอุ่นกี่ kW ─────────── */
+
+/** kW = (ลิตร/นาที ÷ 60) × ความหนาแน่น × cp × ΔT */
+export function heaterKw(lpm: number, dT: number): number {
+  return (lpm / 60) * WATER_HEAT.density.value * WATER_HEAT.cp.value * dT;
+}
+
+export function calcHeater(v: Values): CalcResult {
+  const bad = guard("heater", v);
+  if (bad) return bad;
+  const lpm = num(v, "lpm", 4);
+  const tin = num(v, "tin", 28);
+  const tout = num(v, "tout", 40);
+  const dT = tout - tin;
+  if (dT <= 0) {
+    return blockedResult({
+      headline: `อุณหภูมิที่ต้องการ (${fmtTrim(tout, 1)} °C) ต้องสูงกว่าน้ำเข้า (${fmtTrim(tin, 1)} °C)`,
+      tip: "น้ำเข้าที่อุ่นกว่าน้ำที่ต้องการแล้ว ไม่ต้องใช้เครื่องทำน้ำอุ่น",
+    });
+  }
+  const kw = heaterKw(lpm, dT);
+  const size = WATER_HEATER_KW.find((s) => s >= kw - 1e-9);
+  const amps = ((size ?? kw) * 1000) / NOMINAL_V.phase.value;
+  const flowAt = (p: number) => (p / (WATER_HEAT.density.value * WATER_HEAT.cp.value * dT)) * 60;
+  const maxSize = WATER_HEATER_KW[WATER_HEATER_KW.length - 1];
+  return resultX({
+    title: "เครื่องทำน้ำอุ่นกี่ kW",
+    headline: size
+      ? `ต้องการ ${fmt(kw, 2)} kW → เครื่อง ${fmtTrim(size, 1)} kW`
+      : `ต้องการ ${fmt(kw, 2)} kW เกินเครื่องทำน้ำอุ่นตัวเดียวที่ขายทั่วไป (${fmtTrim(maxSize, 1)} kW)`,
+    chart: size
+      ? {
+          kind: "steps",
+          unit: "kW",
+          need: kw,
+          needLabel: "ต้องการ",
+          items: WATER_HEATER_KW.map((s) => ({ label: `${fmtTrim(s, 1)} kW`, value: s, state: s === size ? "chosen" : s < size ? "under" : "over" })),
+        }
+        : undefined,
+    rows: [
+      { label: "น้ำร้อนขึ้น", value: `${fmtTrim(tin, 1)} → ${fmtTrim(tout, 1)} °C (ΔT ${fmtTrim(dT, 1)} °C)` },
+      { label: "กำลังที่ต้องใช้", value: `${fmt(kw, 2)} kW` },
+      size
+        ? { label: "เลือกเครื่อง", value: `${fmtTrim(size, 1)} kW (ขั้นแรกที่ไม่น้อยกว่าที่ต้องการ)`, emphasize: true }
+        : { label: "เลือกเครื่อง", value: "ใช้เครื่องทำน้ำร้อนแบบมีถังเก็บ หรือแยกจุดใช้น้ำ", emphasize: true },
+      ...(size ? [{ label: `เครื่อง ${fmtTrim(size, 1)} kW ปล่อยน้ำได้`, value: `ราว ${fmt(flowAt(size), 1)} ลิตร/นาที ที่ ${fmtTrim(tout, 1)} °C` }] : []),
+      { label: `กระแสโดยประมาณ (${fmt(NOMINAL_V.phase.value)} V)`, value: `${fmt(amps, 1)} A` },
+      { label: "เบรกเกอร์ / สายไฟ / สายดิน", value: "ให้ช่างไฟเลือกตามป้ายเครื่องและตาราง วสท. — ใช้เครื่องมือ \"เลือกขนาดสายไฟ\" ต่อได้" },
+    ],
+    tip: "ฝักบัวน้ำอุ่นทั่วไปไหลราว 3–5 ลิตร/นาที ถ้าอยากเปิดแรงกว่านี้ต้องเพิ่ม kW ตาม",
+    explain: {
+      risk: "C",
+      updatedAt: "2026-11-26",
+      summary: "พลังงานที่ทำให้น้ำร้อนขึ้น: kW = อัตราไหล (กก./วินาที) × ความจุความร้อนน้ำ × อุณหภูมิที่เพิ่ม แล้วเลือกเครื่องขั้นที่ไม่น้อยกว่านั้น",
+      steps: [
+        {
+          label: "อัตราไหลเป็น กก./วินาที",
+          expr: "ṁ = ลิตร/นาที ÷ 60 × 1 กก./ลิตร",
+          subst: `${fmtTrim(lpm, 2)} ÷ 60 = ${fmt(lpm / 60, 4)} กก./วินาที`,
+        },
+        {
+          label: "กำลังที่ต้องใช้",
+          expr: `P = ṁ × ${WATER_HEAT.cp.value} × ΔT`,
+          subst: `${fmt(lpm / 60, 4)} × ${WATER_HEAT.cp.value} × ${fmtTrim(dT, 1)} = ${fmt(kw, 3)} kW`,
+          note: "kJ/วินาที = kW",
+        },
+        ...(size
+          ? [
+              {
+                label: "น้ำที่เครื่องที่เลือกทำได้",
+                expr: "ลิตร/นาที = kW ÷ (4.186 × ΔT) × 60",
+                subst: `${fmtTrim(size, 1)} ÷ (${WATER_HEAT.cp.value} × ${fmtTrim(dT, 1)}) × 60 = ${fmt(flowAt(size), 2)} ลิตร/นาที`,
+              },
+            ]
+          : []),
+        { label: "กระแส", expr: `I = W ÷ ${NOMINAL_V.phase.value} V`, subst: `${fmt((size ?? kw) * 1000)} ÷ ${NOMINAL_V.phase.value} = ${fmt(amps, 2)} A` },
+      ],
+      constants: [WATER_HEAT.cp, WATER_HEAT.density, NOMINAL_V.phase],
+      assumptions: ["เครื่องทำน้ำอุ่นแบบทันที ความร้อนจากขดลวดเข้าน้ำเกือบทั้งหมด", `ขนาดเครื่องที่ขายทั่วไป ${WATER_HEATER_KW.map((s) => fmtTrim(s, 1)).join(" / ")} kW ⚠️ ยังไม่ยืนยันรุ่นจริง`],
+      caveats: [
+        "เครื่องทำน้ำอุ่นใช้ไฟมากและอยู่ใกล้น้ำ ต้องมีสายดินและเครื่องตัดไฟรั่ว ขนาดเบรกเกอร์และสายไฟต้องให้ช่างไฟเลือกตามตาราง วสท. และป้ายเครื่อง",
+        `กระแส ${fmt(amps, 1)} A ที่แสดงคิดจากแรงดัน ${NOMINAL_V.phase.value} V เป็นค่าประกอบเท่านั้น ไม่ใช่ขนาดเบรกเกอร์`,
+        DISCLAIMER_C,
+      ],
+      refs: [{ label: "สมการพลังงานความร้อน Q = ṁ·cp·ΔT" }, { label: "วสท. มาตรฐานการติดตั้งทางไฟฟ้าสำหรับประเทศไทย" }],
+    },
+  });
+}
+
+/* ─────────── ชาร์จรถ EV ─────────── */
+
+export function calcEv(v: Values): CalcResult {
+  const bad = guard("ev", v);
+  if (bad) return bad;
+  const cap = num(v, "cap", 60);
+  const from = num(v, "from", 20);
+  const to = num(v, "to", 80);
+  const chargerKey = str(v, "charger", "7.4");
+  const preset = EV_CHARGERS[chargerKey];
+  const chargerKw = preset ? preset.kw : num(v, "kw", 7.4);
+  const carKw = num(v, "car", 11);
+  const eff = num(v, "eff", EV.efficiency.value);
+  const rate = num(v, "rate", POWER_BILL.rate.value);
+  if (to <= from) {
+    return blockedResult({
+      headline: `ชาร์จถึง (${fmtTrim(to, 1)}%) ต้องมากกว่าแบตที่เหลือ (${fmtTrim(from, 1)}%)`,
+      tip: "ใส่ % แบตตอนเริ่มชาร์จ กับ % ที่อยากชาร์จถึง",
+    });
+  }
+  const powerKw = Math.min(chargerKw, carKw);
+  const battKwh = (cap * (to - from)) / 100;
+  const gridKwh = battKwh / (eff / 100);
+  const hours = gridKwh / powerKw;
+  const baht = gridKwh * rate;
+  const threePhase = chargerKw > EV.onePhaseMaxKw.value + 1e-9;
+  const carLimited = carKw < chargerKw - 1e-9;
+  return resultX({
+    title: "ชาร์จรถ EV",
+    headline: `ชาร์จ ${fmtTrim(from, 1)}→${fmtTrim(to, 1)}% ราว ${hoursText(hours)} · ${fmt(baht)} บาท`,
+    rows: [
+      { label: "ไฟเข้าแบต", value: `${fmt(battKwh, 2)} kWh (${fmtTrim(to - from, 1)}% ของ ${fmtTrim(cap, 1)} kWh)` },
+      { label: `ไฟจากมิเตอร์ (ประสิทธิภาพ ${fmtTrim(eff, 1)}%)`, value: `${fmt(gridKwh, 2)} หน่วย (kWh)` },
+      {
+        label: "กำลังชาร์จจริง",
+        value: carLimited ? `${fmtTrim(powerKw, 2)} kW (รถรับได้แค่นี้ แม้หัวชาร์จ ${fmtTrim(chargerKw, 2)} kW)` : `${fmtTrim(powerKw, 2)} kW`,
+      },
+      { label: "เวลาชาร์จ", value: hoursText(hours), emphasize: true },
+      { label: `ค่าไฟ (${fmtTrim(rate, 2)} บาท/หน่วย)`, value: `${fmt(baht)} บาท`, emphasize: true },
+      ...(threePhase ? [{ label: "ไฟที่บ้าน", value: `หัวชาร์จเกิน ${fmtTrim(EV.onePhaseMaxKw.value, 1)} kW ต้องใช้ไฟ 3 เฟส` }] : []),
+    ],
+    tip:
+      to > EV.taperFrom.value
+        ? `ชาร์จเกิน ${fmt(EV.taperFrom.value)}% รถจะค่อย ๆ ลดกำลังชาร์จ เวลาจริงนานกว่านี้ — ถ้ามีมิเตอร์ TOU ใส่ค่าไฟช่วงกลางคืน`
+        : "ถ้ามีมิเตอร์ TOU ชาร์จช่วงกลางคืน ใส่ค่าไฟ off-peak จะได้ค่าไฟใกล้จริง",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-26",
+      summary: "ไฟเข้าแบต = ความจุ × (% ถึง − % เริ่ม) · ไฟจากมิเตอร์ = ไฟเข้าแบต ÷ ประสิทธิภาพ · เวลา = ไฟจากมิเตอร์ ÷ กำลังชาร์จ (ค่าน้อยกว่าระหว่างหัวชาร์จกับที่รถรับได้)",
+      steps: [
+        { label: "ไฟเข้าแบต", expr: "kWh = ความจุ × (ถึง − เริ่ม) ÷ 100", subst: `${fmtTrim(cap, 1)} × (${fmtTrim(to, 1)} − ${fmtTrim(from, 1)}) ÷ 100 = ${fmt(battKwh, 2)} kWh` },
+        { label: "ไฟจากมิเตอร์", expr: "หน่วย = ไฟเข้าแบต ÷ ประสิทธิภาพ", subst: `${fmt(battKwh, 2)} ÷ ${fmtTrim(eff / 100, 3)} = ${fmt(gridKwh, 2)} หน่วย` },
+        { label: "กำลังชาร์จ", expr: "kW = ค่าน้อยกว่า(หัวชาร์จ, รถรับได้)", subst: `min(${fmtTrim(chargerKw, 2)}, ${fmtTrim(carKw, 2)}) = ${fmtTrim(powerKw, 2)} kW` },
+        { label: "เวลา", expr: "ชม. = หน่วยจากมิเตอร์ ÷ kW", subst: `${fmt(gridKwh, 2)} ÷ ${fmtTrim(powerKw, 2)} = ${fmt(hours, 2)} ชม. = ${hoursText(hours)}` },
+        { label: "ค่าไฟ", expr: "บาท = หน่วยจากมิเตอร์ × ค่าไฟต่อหน่วย", subst: `${fmt(gridKwh, 2)} × ${fmtTrim(rate, 2)} = ${fmt(baht, 2)} บาท` },
+      ],
+      constants: [EV.efficiency, EV.onePhaseMaxKw, EV.taperFrom, POWER_BILL.rate],
+      assumptions: ["กำลังชาร์จคงที่ตลอด (ช่วงท้ายเกินราว 80% รถลดกำลังลง เวลาจริงนานขึ้น)", "ความจุแบตคือความจุใช้งานได้ (usable) ตามสเปกรถ"],
+      caveats: [
+        "ติดตั้งเครื่องชาร์จที่บ้านต้องเดินวงจรแยก มีเครื่องตัดไฟรั่ว และมิเตอร์ต้องรับกระแสได้ — ให้ช่างไฟและการไฟฟ้าตรวจกับมาตรฐานก่อนติดตั้ง",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "IEC 61851 ระบบชาร์จรถไฟฟ้าแบบนำไฟฟ้า (โหมด 3)" }, { label: "สเปกรถ: ความจุแบตใช้งานได้ และกำลังชาร์จ AC สูงสุด" }],
+    },
+  });
+}
+
+const round4Tools: ToolDef[] = [
+  {
+    id: "appliance",
+    name: "ค่าไฟเครื่องใช้ไฟฟ้า",
+    blurb: "วัตต์ × ชั่วโมง × จำนวน → หน่วยและบาทต่อเดือน สูงสุด 6 รายการ",
+    keywords: ["ค่าไฟ", "หน่วยไฟ", "kwh", "กินไฟ", "ตู้เย็น", "เครื่องใช้ไฟฟ้า", "บิลค่าไฟ"],
+    fields: [
+      {
+        type: "select",
+        key: "n",
+        label: "จำนวนรายการ",
+        default: "3",
+        options: Array.from({ length: APPLIANCE_MAX }, (_, k) => ({ value: String(k + 1), label: `${k + 1} รายการ` })),
+      },
+      ...applianceFields(),
+      { type: "number", key: "days", label: "ใช้ต่อเดือน", unit: "วัน", default: POWER_BILL.daysPerMonth.value, min: 1, max: 31 },
+      { type: "number", key: "rate", label: "ค่าไฟเฉลี่ย (รวม Ft/VAT)", unit: "บาท/หน่วย", default: POWER_BILL.rate.value, min: 0.5, max: 20, step: 0.01 },
+      { type: "number", key: "ft", label: "Ft บวกเพิ่ม (ถ้าอัตราข้างบนยังไม่รวม)", unit: "บาท/หน่วย", default: 0, min: 0, max: 5, step: 0.0001 },
+    ],
+    calc: calcAppliance,
+  },
+  {
+    id: "lux",
+    name: "จำนวนโคมไฟตามความสว่าง",
+    blurb: "ห้อง + lux + ลูเมนต่อโคม → กี่ดวง จัดกี่แถว ห่างกันเท่าไหร่",
+    keywords: ["lux", "ลักซ์", "ความสว่าง", "โคมไฟ", "ดาวน์ไลท์", "ลูเมน", "lumen", "ผังไฟ"],
+    fields: [
+      { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 4, min: 0.5, max: 200, step: 0.05 },
+      { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 5, min: 0.5, max: 200, step: 0.05 },
+      {
+        type: "select",
+        key: "room",
+        label: "ชนิดห้อง (ค่าอ้างอิง)",
+        default: "living",
+        options: [
+          ...Object.entries(LUX_PRESETS).map(([value, p]) => ({ value, label: `${p.label} ${fmt(p.lux.value)} lux` })),
+          { value: "custom", label: "กำหนดเอง" },
+        ],
+      },
+      { type: "number", key: "lux", label: "ความสว่างที่ต้องการ", unit: "lux", default: 300, min: 20, max: 2000, when: { key: "room", is: "custom" } },
+      { type: "number", key: "lm", label: "แสงต่อโคม (ดูกล่อง)", unit: "lm", default: LIGHTING.lumens.value, min: 100, max: 100000 },
+      { type: "number", key: "uf", label: "UF ตัวประกอบการใช้ประโยชน์", default: LIGHTING.uf.value, min: 0.2, max: 1, step: 0.01 },
+      { type: "number", key: "mf", label: "MF ตัวประกอบการบำรุงรักษา", default: LIGHTING.mf.value, min: 0.4, max: 1, step: 0.01 },
+    ],
+    calc: calcLux,
+  },
+  {
+    id: "heater",
+    name: "เครื่องทำน้ำอุ่นกี่ kW",
+    blurb: "อัตราไหล + อุณหภูมิน้ำเข้า-ที่ต้องการ → kW และขนาดเครื่อง",
+    keywords: ["เครื่องทำน้ำอุ่น", "น้ำอุ่น", "ฮีตเตอร์", "kw", "ฝักบัว", "น้ำร้อน"],
+    fields: [
+      { type: "number", key: "lpm", label: "อัตราไหลที่ต้องการ", unit: "ลิตร/นาที", default: 4, min: 0.5, max: 20, step: 0.1 },
+      { type: "number", key: "tin", label: "อุณหภูมิน้ำเข้า", unit: "°C", default: 28, min: 5, max: 35, step: 0.5 },
+      { type: "number", key: "tout", label: "อุณหภูมิที่ต้องการ", unit: "°C", default: 40, min: 36, max: 60, step: 0.5 },
+    ],
+    calc: calcHeater,
+  },
+  {
+    id: "ev",
+    name: "ชาร์จรถ EV",
+    blurb: "แบตกี่ kWh ชาร์จจาก-ถึงกี่ % → กี่ชั่วโมง กี่บาท",
+    keywords: ["ev", "รถไฟฟ้า", "ชาร์จรถ", "wallbox", "หัวชาร์จ", "ค่าชาร์จ"],
+    fields: [
+      { type: "number", key: "cap", label: "ความจุแบต (ใช้งานได้)", unit: "kWh", default: 60, min: 5, max: 250, step: 0.1 },
+      { type: "number", key: "from", label: "แบตเหลือ", unit: "%", default: 20, min: 0, max: 99, step: 1 },
+      { type: "number", key: "to", label: "ชาร์จถึง", unit: "%", default: 80, min: 1, max: 100, step: 1 },
+      {
+        type: "select",
+        key: "charger",
+        label: "หัวชาร์จ AC",
+        default: "7.4",
+        options: [...Object.entries(EV_CHARGERS).map(([value, ch]) => ({ value, label: ch.label })), { value: "custom", label: "กำหนดเอง" }],
+      },
+      { type: "number", key: "kw", label: "กำลังหัวชาร์จ", unit: "kW", default: 7.4, min: 1, max: 22, step: 0.1, when: { key: "charger", is: "custom" } },
+      { type: "number", key: "car", label: "รถรับไฟ AC ได้สูงสุด (ดูสเปกรถ)", unit: "kW", default: 11, min: 1, max: 22, step: 0.1 },
+      { type: "number", key: "eff", label: "ประสิทธิภาพการชาร์จ", unit: "%", default: EV.efficiency.value, min: 50, max: 100, step: 1 },
+      { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: POWER_BILL.rate.value, min: 0.5, max: 20, step: 0.01 },
+    ],
+    calc: calcEv,
+  },
+];
+
 export const electricalTools: ToolDef[] = [
   {
     id: "cable",
@@ -1094,6 +1566,7 @@ export const electricalTools: ToolDef[] = [
     ],
     calc: calcElecUnit,
   },
+  ...round4Tools,
 ];
 
 export const electricalJob: JobDef = {

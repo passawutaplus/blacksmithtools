@@ -1,4 +1,4 @@
-import type { JobDef, ToolDef, Values } from "../types";
+import type { Field, JobDef, ToolDef, Values } from "../types";
 import {
   blockedResult,
   ceil,
@@ -624,6 +624,480 @@ const lenOpts = [
   { value: "yd", label: "หลา" },
 ];
 
+/* ═══════════════ รอบ 4 (2026-11-26): ความชัน · ไร่-งาน-วา · ปริมาตรถัง · เทียบราคาต่อหน่วย ═══════════════ */
+
+const RAD = Math.PI / 180;
+
+/** องศาทศนิยม → องศา-ลิปดา-ฟิลิปดา เช่น 4.7636 → "4° 45′ 49″" (ปัดฟิลิปดาครั้งเดียว) */
+export function degText(deg: number): string {
+  const totalSec = Math.round(deg * 3600);
+  const d = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec - d * 3600) / 60);
+  const s = totalSec - d * 3600 - m * 60;
+  return `${d}° ${m}′ ${s}″`;
+}
+
+/** ความชันในรูปต่าง ๆ จาก tanθ (ยก ÷ ราบ) */
+export function slopeForms(tan: number) {
+  const deg = Math.atan(tan) / RAD;
+  return { tan, pct: tan * 100, deg, n: 1 / tan, perM: tan * 100 };
+}
+
+export function calcSlopeConvert(v: Values) {
+  const bad = guard("slope", v);
+  if (bad) return bad;
+  const mode = str(v, "mode", "ratio");
+  const len = num(v, "len", 3);
+  let tan: number;
+  let given: string;
+  if (mode === "pct") {
+    const pct = num(v, "pct", 2);
+    tan = pct / 100;
+    given = `${fmtTrim(pct, 4)}%`;
+  } else if (mode === "deg") {
+    const deg = num(v, "deg", 30);
+    tan = Math.tan(deg * RAD);
+    given = `${fmtTrim(deg, 4)}°`;
+  } else if (mode === "rise") {
+    const rise = num(v, "rise", 25);
+    const run = num(v, "run", 3);
+    tan = rise / 100 / run;
+    given = `ยก ${fmtTrim(rise, 2)} ซม. ในระยะราบ ${fmtTrim(run, 3)} ม.`;
+  } else {
+    const n = num(v, "n", 12);
+    tan = 1 / n;
+    given = `1:${fmtTrim(n, 4)}`;
+  }
+  const f = slopeForms(tan);
+  const riseLen = len * tan;
+  const slopeLen = len * Math.sqrt(1 + tan * tan);
+  return resultX({
+    title: "แปลงความชัน",
+    headline: [
+      given,
+      ...(mode === "pct" ? [] : [`${fmtTrim(f.pct, 3)}%`]),
+      ...(mode === "deg" ? [] : [`${fmtTrim(f.deg, 3)}°`]),
+      ...(mode === "ratio" ? [] : [f.n >= 1 ? `1:${fmtTrim(f.n, 3)}` : `${fmtTrim(tan, 3)}:1`]),
+    ].join(" = "),
+    rows: [
+      { label: "เปอร์เซ็นต์", value: `${fmtTrim(f.pct, 4)}%`, emphasize: true },
+      { label: "องศา", value: `${fmtTrim(f.deg, 4)}° (${degText(f.deg)})`, emphasize: true },
+      { label: "อัตราส่วน ยก : ราบ", value: f.n >= 1 ? `1:${fmtTrim(f.n, 3)}` : `${fmtTrim(tan, 3)}:1 (ยกมากกว่าราบ)`, emphasize: true },
+      { label: "ยกต่อระยะราบ 1 ม.", value: `${fmtTrim(f.perM, 3)} ซม. (${fmtTrim(f.perM * 10, 2)} มม./ม.)` },
+      { label: `ระยะราบ ${fmtTrim(len, 3)} ม. ต้องยก`, value: `${fmtTrim(riseLen * 100, 2)} ซม.` },
+      { label: `ความยาวตามแนวเอียง (ราบ ${fmtTrim(len, 3)} ม.)`, value: `${fmtTrim(slopeLen, 4)} ม.` },
+    ],
+    tip: "ทางลาดคนพิการตามกฎกระทรวงต้องไม่ชันกว่า 1:12 · ท่อน้ำทิ้งในบ้านใช้ราว 1:50 ถึง 1:100 ดูเครื่องมือความลาดท่อในสายงานประปา",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary: "ทุกรูปแบบมาจากค่าเดียวคือ ยก ÷ ราบ (tanθ): % = tanθ × 100 · องศา = arctan(tanθ) · 1:n โดย n = 1 ÷ tanθ",
+      steps: [
+        { label: "ยก ÷ ราบ", expr: "tanθ จากค่าที่กรอก", subst: `${given} → tanθ = ${fmtTrim(tan, 6)}` },
+        { label: "เปอร์เซ็นต์", expr: "% = tanθ × 100", subst: `${fmtTrim(tan, 6)} × 100 = ${fmtTrim(f.pct, 4)}%` },
+        { label: "องศา", expr: "θ = arctan(tanθ)", subst: `arctan(${fmtTrim(tan, 6)}) = ${fmtTrim(f.deg, 4)}°` },
+        { label: "1:n", expr: "n = 1 ÷ tanθ", subst: `1 ÷ ${fmtTrim(tan, 6)} = ${fmtTrim(f.n, 4)}` },
+        { label: "ยกตามระยะ", expr: "ยก = ระยะราบ × tanθ · แนวเอียง = ระยะราบ × √(1 + tan²θ)", subst: `${fmtTrim(len, 3)} × ${fmtTrim(tan, 6)} = ${fmtTrim(riseLen, 4)} ม. · แนวเอียง ${fmtTrim(slopeLen, 4)} ม.` },
+      ],
+      assumptions: ["ระยะราบวัดตามแนวนอน ไม่ใช่ตามแนวเอียง"],
+      caveats: ["100% = 45° ไม่ใช่ 90° — ระวังอ่านสลับ", DISCLAIMER_AB],
+      refs: [{ label: "ตรีโกณมิติพื้นฐาน (tan, arctan)" }, { label: "กฎกระทรวงกำหนดสิ่งอำนวยความสะดวกในอาคารสำหรับผู้พิการฯ (ทางลาด 1:12)" }],
+    },
+  });
+}
+
+/* ── ไร่-งาน-ตารางวา ── */
+
+/**
+ * ตร.ม. → ไร่ งาน ตร.วา (1 ไร่ = 4 งาน = 400 ตร.วา = 1,600 ตร.ม. · 1 ตร.วา = 4 ตร.ม.)
+ * ปัดตารางวาเป็นทศนิยม 2 ตำแหน่งก่อนแตกหน่วย กัน "99.999 ตร.วา" ปัดขึ้นเป็น 100 แล้วไม่ทดเป็นงาน
+ */
+export function raiNganWa(m2: number) {
+  const wa = m2 / UNIT.sqWa.value;
+  const cents = Math.round(wa * 100);
+  const waPerRai = UNIT.rai.value / UNIT.sqWa.value;
+  const waPerNgan = UNIT.ngan.value / UNIT.sqWa.value;
+  const rai = Math.floor(cents / (waPerRai * 100));
+  const ngan = Math.floor((cents - rai * waPerRai * 100) / (waPerNgan * 100));
+  const restWa = (cents - rai * waPerRai * 100 - ngan * waPerNgan * 100) / 100;
+  return { wa, rai, ngan, restWa };
+}
+
+export function raiText(m2: number): string {
+  const r = raiNganWa(m2);
+  const parts = [] as string[];
+  if (r.rai > 0) parts.push(`${fmt(r.rai)} ไร่`);
+  if (r.ngan > 0) parts.push(`${fmt(r.ngan)} งาน`);
+  if (r.restWa > 0 || parts.length === 0) parts.push(`${fmtTrim(r.restWa, 2)} ตร.วา`);
+  return parts.join(" ");
+}
+
+export function calcRai(v: Values) {
+  const bad = guard("rai", v);
+  if (bad) return bad;
+  const mode = str(v, "mode", "m2");
+  let m2: number;
+  let given: string;
+  if (mode === "thai") {
+    const rai = num(v, "rai", 2);
+    const ngan = num(v, "ngan", 1);
+    const wa = num(v, "wa", 35.5);
+    m2 = rai * UNIT.rai.value + ngan * UNIT.ngan.value + wa * UNIT.sqWa.value;
+    given = `${fmtTrim(rai, 4)} ไร่ ${fmtTrim(ngan, 4)} งาน ${fmtTrim(wa, 2)} ตร.วา`;
+  } else if (mode === "wl") {
+    const w = num(v, "w", 40);
+    const l = num(v, "l", 93.55);
+    m2 = w * l;
+    given = `${fmtTrim(w, 3)} × ${fmtTrim(l, 3)} ม.`;
+  } else {
+    m2 = num(v, "m2", 3742);
+    given = `${fmtTrim(m2, 2)} ตร.ม.`;
+  }
+  if (m2 <= 0) {
+    return blockedResult({ headline: "พื้นที่เป็น 0 — ใส่ขนาดที่ดินก่อน", tip: "ใส่ไร่ งาน หรือตารางวา อย่างน้อยหนึ่งช่อง" });
+  }
+  const r = raiNganWa(m2);
+  const price = num(v, "price", 0);
+  const text = raiText(m2);
+  return resultX({
+    title: "ไร่-งาน-ตารางวา",
+    headline: `${given} = ${text}`,
+    rows: [
+      { label: "ไร่ งาน ตารางวา", value: text, emphasize: true },
+      { label: "ตารางเมตร", value: `${fmtTrim(m2, 2)} ตร.ม.`, emphasize: true },
+      { label: "ตารางวารวม", value: `${fmtTrim(r.wa, 2)} ตร.วา` },
+      { label: "ไร่ (ทศนิยม)", value: `${fmtTrim(m2 / UNIT.rai.value, 4)} ไร่` },
+      ...(price > 0 ? [{ label: `ราคา ${fmt(price)} บาท/ตร.วา`, value: `${fmt(r.wa * price)} บาท`, emphasize: true }] : []),
+    ],
+    tip: "ขนาดตามโฉนดคือค่าที่ใช้ซื้อขาย ที่วัดเองเป็นค่าประมาณ ที่ดินไม่ใช่สี่เหลี่ยมให้แบ่งเป็นรูปย่อยแล้วรวม",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary: "1 ไร่ = 4 งาน = 400 ตร.วา = 1,600 ตร.ม. · 1 งาน = 100 ตร.วา = 400 ตร.ม. · 1 ตร.วา = 4 ตร.ม. (ค่าตามนิยาม ไม่ปัด)",
+      steps: [
+        {
+          label: "เป็นตารางเมตร",
+          expr: mode === "thai" ? "ตร.ม. = ไร่ × 1,600 + งาน × 400 + ตร.วา × 4" : mode === "wl" ? "ตร.ม. = กว้าง × ยาว" : "ตร.ม. ตามที่กรอก",
+          subst: mode === "m2" ? `${fmtTrim(m2, 4)} ตร.ม.` : `${given} = ${fmtTrim(m2, 4)} ตร.ม.`,
+        },
+        { label: "เป็นตารางวา", expr: "ตร.วา = ตร.ม. ÷ 4", subst: `${fmtTrim(m2, 4)} ÷ 4 = ${fmtTrim(r.wa, 4)} ตร.วา` },
+        {
+          label: "แตกเป็นไร่ งาน วา",
+          expr: "ไร่ = ปัดลง(ตร.วา ÷ 400) · งาน = ปัดลง(เศษ ÷ 100) · ที่เหลือเป็นตร.วา",
+          subst: `${fmtTrim(r.wa, 2)} = ${fmt(r.rai)} × 400 + ${fmt(r.ngan)} × 100 + ${fmtTrim(r.restWa, 2)} → ${text}`,
+        },
+      ],
+      constants: [UNIT.rai, UNIT.ngan, UNIT.sqWa],
+      assumptions: ["ตารางวาแสดงทศนิยม 2 ตำแหน่ง"],
+      caveats: [DISCLAIMER_AB],
+      refs: [{ label: "หน่วยวัดพื้นที่ไทย (ไร่ งาน ตารางวา) — ใช้ในโฉนดที่ดิน" }],
+    },
+  });
+}
+
+/* ── ปริมาตรถัง / ทรงกระบอกเป็นลิตร ── */
+
+/** พื้นที่ส่วนของวงกลมรัศมี r ที่น้ำสูง h จากก้น (หน่วยเดียวกับ r ยกกำลังสอง) — สูตรตรงของ circular segment */
+export function segmentArea(r: number, h: number): number {
+  if (h <= 0) return 0;
+  if (h >= 2 * r) return Math.PI * r * r;
+  return r * r * Math.acos((r - h) / r) - (r - h) * Math.sqrt(2 * r * h - h * h);
+}
+
+/** ปริมาตรถัง (ลิตร) เต็มถังและที่ระดับน้ำ (ซม.) · ลิตรต่อ 1 ซม. ที่ระดับนั้น — คิดเป็น ซม. แล้ว ÷ 1000 */
+export function tankVolume(shape: string, dims: { d: number; len: number; h: number; bw: number; bl: number }, level: number) {
+  if (shape === "hcyl") {
+    const r = dims.d / 2;
+    const full = (Math.PI * r * r * dims.len) / 1000;
+    const at = (segmentArea(r, level) * dims.len) / 1000;
+    const chord = level > 0 && level < dims.d ? 2 * Math.sqrt(2 * r * level - level * level) : 0;
+    return { full, at, perCm: (chord * dims.len) / 1000, top: dims.d };
+  }
+  if (shape === "box") {
+    const base = dims.bw * dims.bl;
+    return { full: (base * dims.h) / 1000, at: (base * level) / 1000, perCm: base / 1000, top: dims.h };
+  }
+  const base = (Math.PI * dims.d * dims.d) / 4;
+  return { full: (base * dims.h) / 1000, at: (base * level) / 1000, perCm: base / 1000, top: dims.h };
+}
+
+export function calcTankVolume(v: Values) {
+  const bad = guard("tank", v);
+  if (bad) return bad;
+  const shape = str(v, "shape", "hcyl");
+  const dims = { d: num(v, "d", 100), len: num(v, "len", 200), h: num(v, "h", 130), bw: num(v, "bw", 100), bl: num(v, "bl", 100) };
+  const level = num(v, "level", 30);
+  const t = tankVolume(shape, dims, level);
+  const topName = shape === "hcyl" ? "เส้นผ่านศูนย์กลาง" : "ความสูงถัง";
+  if (level > t.top + 1e-9) {
+    return blockedResult({
+      headline: `ระดับน้ำ ${fmtTrim(level, 1)} ซม. สูงกว่า${topName} (${fmtTrim(t.top, 1)} ซม.)`,
+      tip: "วัดระดับน้ำจากก้นถังขึ้นมา ไม่เกินความสูงภายในถัง",
+    });
+  }
+  const shapeName: Record<string, string> = { vcyl: "ถังกลมตั้ง", hcyl: "ถังกลมนอน", box: "ถังเหลี่ยม" };
+  const sizeText =
+    shape === "hcyl"
+      ? `Ø ${fmtTrim(dims.d, 1)} × ยาว ${fmtTrim(dims.len, 1)} ซม.`
+      : shape === "box"
+        ? `${fmtTrim(dims.bw, 1)} × ${fmtTrim(dims.bl, 1)} × สูง ${fmtTrim(dims.h, 1)} ซม.`
+        : `Ø ${fmtTrim(dims.d, 1)} × สูง ${fmtTrim(dims.h, 1)} ซม.`;
+  const pctVol = (t.at / t.full) * 100;
+  const fullExpr =
+    shape === "hcyl" ? "π × (Ø/2)² × ยาว ÷ 1000" : shape === "box" ? "กว้าง × ยาว × สูง ÷ 1000" : "π × (Ø/2)² × สูง ÷ 1000";
+  const atExpr =
+    shape === "hcyl"
+      ? "[r² × arccos((r − h)/r) − (r − h) × √(2rh − h²)] × ยาว ÷ 1000"
+      : shape === "box"
+        ? "กว้าง × ยาว × ระดับ ÷ 1000"
+        : "π × (Ø/2)² × ระดับ ÷ 1000";
+  return resultX({
+    title: "ปริมาตรถังเป็นลิตร",
+    headline: `${shapeName[shape] ?? "ถัง"} เต็ม ${fmt(t.full, 1)} ลิตร · น้ำสูง ${fmtTrim(level, 1)} ซม. = ${fmt(t.at, 1)} ลิตร (${fmt(pctVol, 1)}%)`,
+    chart: {
+      kind: "threshold",
+      unit: "ลิตร",
+      value: t.at,
+      max: t.full,
+      zones: [{ upTo: t.full, tone: "accent", label: "ความจุถัง" }],
+    },
+    rows: [
+      { label: "ขนาดภายในถัง", value: sizeText },
+      { label: "ความจุเต็มถัง", value: `${fmt(t.full, 1)} ลิตร (${fmt(t.full / 1000, 3)} ลบ.ม.)`, emphasize: true },
+      { label: `น้ำที่ระดับ ${fmtTrim(level, 1)} ซม.`, value: `${fmt(t.at, 1)} ลิตร`, emphasize: true },
+      { label: "เต็มถัง", value: `${fmt(pctVol, 1)}% ของปริมาตร (${fmt((level / t.top) * 100, 1)}% ของความสูง)` },
+      { label: "เติมอีกจนเต็ม", value: `${fmt(t.full - t.at, 1)} ลิตร` },
+      { label: "ที่ระดับนี้ น้ำขึ้น 1 ซม.", value: `${fmt(t.perCm, 2)} ลิตร` },
+    ],
+    tip:
+      shape === "hcyl"
+        ? "ถังนอน % ความสูงไม่เท่ากับ % น้ำ — ช่วงก้นและบนถังน้ำน้อยต่อ 1 ซม. ช่วงกลางถังมากสุด"
+        : "วัดขนาดภายในถัง (หักความหนาผนัง) จะได้ลิตรตรงกว่าขนาดนอก",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary:
+        shape === "hcyl"
+          ? "ถังกลมนอน: ปริมาตรน้ำ = พื้นที่ส่วนของวงกลมใต้ระดับน้ำ × ความยาวถัง (สูตรตรง ไม่ได้เทียบตาราง) · 1 ลิตร = 1,000 ลบ.ซม."
+          : "ปริมาตร = พื้นที่ฐาน × ความสูง (หรือระดับน้ำ) · 1 ลิตร = 1,000 ลบ.ซม.",
+      steps: [
+        { label: "เต็มถัง", expr: fullExpr, subst: `${sizeText} → ${fmt(t.full, 2)} ลิตร` },
+        {
+          label: "ที่ระดับน้ำ",
+          expr: atExpr,
+          subst: shape === "hcyl" ? `r = ${fmtTrim(dims.d / 2, 2)}, h = ${fmtTrim(level, 2)} ซม. → ${fmt(t.at, 2)} ลิตร` : `ระดับ ${fmtTrim(level, 2)} ซม. → ${fmt(t.at, 2)} ลิตร`,
+        },
+        {
+          label: "น้ำต่อ 1 ซม.",
+          expr: shape === "hcyl" ? "ความกว้างผิวน้ำ 2√(2rh − h²) × ยาว ÷ 1000" : "พื้นที่ฐาน ÷ 1000",
+          subst: `${fmt(t.perCm, 3)} ลิตร/ซม.`,
+        },
+      ],
+      assumptions: [
+        shape === "hcyl" ? "ฝาหัวท้ายแบน (ถังฝาโค้ง/ฝาครึ่งทรงกลมจุมากกว่านี้)" : "ก้นถังเรียบ ผนังตั้งฉาก",
+        "ใช้ขนาดภายในถัง",
+      ],
+      caveats: ["ถังจริงมีก้นโค้ง/ข้อต่อ/ลูกลอย ความจุจริงต่างจากป้ายได้เล็กน้อย", DISCLAIMER_AB],
+      refs: [{ label: "เรขาคณิต: พื้นที่ส่วนของวงกลม (circular segment)" }],
+    },
+  });
+}
+
+/* ── เทียบราคาต่อหน่วย ── */
+
+const UNIT_PRICE_UNITS: Record<string, string> = { L: "ลิตร", kg: "กก.", m2: "ตร.ม.", m: "ม.", pc: "ชิ้น" };
+const UNIT_PRICE_MAX = 3;
+const UNIT_PRICE_DEFAULTS = [
+  { name: "ถังเล็ก 1 แกลลอน", p: 450, c: 1, s: 3.785 },
+  { name: "ถังใหญ่ 5 แกลลอน", p: 1890, c: 1, s: 18.925 },
+  { name: "แพ็ก 4 แกลลอน", p: 1700, c: 4, s: 3.785 },
+];
+
+export function calcUnitPrice(v: Values) {
+  const bad = guard("unitprice", v);
+  if (bad) return bad;
+  const n = Number(str(v, "n", "2"));
+  const unit = UNIT_PRICE_UNITS[str(v, "unit", "L")] ?? "หน่วย";
+  const need = num(v, "need", 20);
+  const items = [] as Array<{ name: string; price: number; qty: number; per: number; packs: number; cost: number; extra: number }>;
+  for (let i = 1; i <= n; i++) {
+    const d = UNIT_PRICE_DEFAULTS[i - 1];
+    const name = str(v, `name${i}`, d.name).trim() || `ตัวที่ ${i}`;
+    const price = num(v, `p${i}`, d.p);
+    const qty = num(v, `c${i}`, d.c) * num(v, `s${i}`, d.s);
+    const packs = need > 0 ? ceil(need / qty) : 0;
+    items.push({ name, price, qty, per: price / qty, packs, cost: packs * price, extra: packs * qty - need });
+  }
+  const best = items.reduce((a, b) => (b.per < a.per - 1e-12 ? b : a), items[0]);
+  const allSame = items.every((x) => Math.abs(x.per - best.per) <= 1e-9 * best.per);
+  const buyBest = need > 0 ? items.reduce((a, b) => (b.cost < a.cost - 1e-9 ? b : a), items[0]) : null;
+  const pctMore = (x: (typeof items)[number]) => (x.per / best.per - 1) * 100;
+  return resultX({
+    title: "เทียบราคาต่อหน่วย",
+    headline: allSame
+      ? `ราคาต่อ${unit}เท่ากันทุกตัว (${fmt(best.per, 2)} บาท/${unit})`
+      : `ถูกสุดต่อ${unit}: ${best.name} ${fmt(best.per, 2)} บาท/${unit}${buyBest && buyBest !== best ? ` · ซื้อ ${fmtTrim(need, 2)} ${unit} จ่ายน้อยสุด: ${buyBest.name}` : ""}`,
+    rows: [
+      ...items.map((x) => ({
+        label: `${x.name} (${fmtTrim(x.price, 2)} บาท / ${fmtTrim(x.qty, 4)} ${unit})`,
+        value: `${fmt(x.per, 2)} บาท/${unit}${x === best || allSame ? (allSame ? "" : " · ถูกสุด") : ` · แพงกว่า ${fmt(pctMore(x), 1)}%`}`,
+        emphasize: x === best && !allSame,
+      })),
+      ...(need > 0
+        ? items.map((x) => ({
+            label: `ต้องใช้ ${fmtTrim(need, 2)} ${unit}: ${x.name}`,
+            value: `ซื้อ ${fmt(x.packs)} แพ็ก = ${fmtTrim(x.cost, 2)} บาท (เหลือ ${fmtTrim(x.extra, 3)} ${unit})${x === buyBest ? " · จ่ายน้อยสุด" : ""}`,
+            emphasize: x === buyBest,
+          }))
+        : []),
+    ],
+    tip: "ถูกต่อหน่วยไม่ได้แปลว่าจ่ายน้อยสุดเสมอ ถ้าแพ็กใหญ่ใช้ไม่หมด ดูแถว \"ต้องใช้\" ประกอบ · ซื้อผสมขนาดอาจถูกกว่านี้อีก",
+    explain: {
+      risk: "A",
+      updatedAt: "2026-11-26",
+      summary: `ราคาต่อ${unit} = ราคา ÷ (จำนวนต่อแพ็ก × ขนาดต่อชิ้น) · แพงกว่า % = (ราคาต่อหน่วย ÷ ถูกสุด − 1) × 100 · ซื้อจริง = ปัดขึ้น(ที่ต้องใช้ ÷ ขนาดแพ็ก) × ราคา`,
+      steps: [
+        ...items.map((x) => ({ label: x.name, expr: "บาท/หน่วย = ราคา ÷ ปริมาณในแพ็ก", subst: `${fmtTrim(x.price, 2)} ÷ ${fmtTrim(x.qty, 4)} = ${fmt(x.per, 4)} บาท/${unit}` })),
+        ...items
+          .filter((x) => x !== best && !allSame)
+          .map((x) => ({ label: `${x.name} เทียบตัวถูกสุด`, expr: "(ตัวนี้ ÷ ถูกสุด − 1) × 100", subst: `(${fmt(x.per, 4)} ÷ ${fmt(best.per, 4)} − 1) × 100 = ${fmt(pctMore(x), 2)}%` })),
+        ...(need > 0
+          ? items.map((x) => ({ label: `ซื้อจริง: ${x.name}`, expr: "แพ็ก = ปัดขึ้น(ที่ต้องใช้ ÷ ปริมาณในแพ็ก)", subst: `${fmtTrim(need, 2)} ÷ ${fmtTrim(x.qty, 4)} → ${fmt(x.packs)} แพ็ก × ${fmtTrim(x.price, 2)} = ${fmtTrim(x.cost, 2)} บาท` }))
+          : []),
+      ],
+      assumptions: ["ของทุกตัวคุณภาพเท่ากัน ใช้แทนกันได้", "ปริมาณในแพ็กใช้หน่วยเดียวกันทุกตัว (เช่น ลิตรทั้งหมด)"],
+      caveats: ["ใส่ปริมาณให้เป็นหน่วยเดียวกัน — เทียบกระเบื้องให้แปลงเป็น ตร.ม. ต่อแผ่น/กล่องก่อน", DISCLAIMER_AB],
+      refs: [{ label: "เลขคณิตราคาต่อหน่วย" }],
+    },
+  });
+}
+
+function unitPriceFields(): Field[] {
+  const out: Field[] = [];
+  for (let i = 1; i <= UNIT_PRICE_MAX; i++) {
+    const d = UNIT_PRICE_DEFAULTS[i - 1];
+    const when = i <= 2 ? undefined : { key: "n", is: ["3"] };
+    out.push(
+      { type: "text", key: `name${i}`, label: `ตัวที่ ${i}: ชื่อ`, default: d.name, placeholder: "เช่น ถังใหญ่", ...(when ? { when } : {}) },
+      { type: "number", key: `p${i}`, label: `ตัวที่ ${i}: ราคา`, unit: "บาท", default: d.p, min: 0.01, max: 10000000, step: 0.01, ...(when ? { when } : {}) },
+      { type: "number", key: `c${i}`, label: `ตัวที่ ${i}: จำนวนในแพ็ก`, unit: "ชิ้น", default: d.c, min: 1, max: 100000, ...(when ? { when } : {}) },
+      { type: "number", key: `s${i}`, label: `ตัวที่ ${i}: ขนาดต่อชิ้น (หน่วยที่เลือก)`, default: d.s, min: 0.0001, max: 1000000, step: 0.0001, ...(when ? { when } : {}) },
+    );
+  }
+  return out;
+}
+
+const round4Tools: ToolDef[] = [
+  {
+    id: "slope",
+    name: "ความชัน % ↔ องศา ↔ 1:n",
+    blurb: "แปลงความชันทุกแบบ · ยกเท่าไหร่ในระยะที่กำหนด",
+    keywords: ["ความชัน", "ความลาด", "องศา", "เปอร์เซ็นต์ลาด", "1:12", "ทางลาด", "slope", "ยก"],
+    fields: [
+      {
+        type: "select",
+        key: "mode",
+        label: "รู้ค่าอะไร",
+        default: "ratio",
+        options: [
+          { value: "ratio", label: "อัตราส่วน 1:n" },
+          { value: "pct", label: "เปอร์เซ็นต์" },
+          { value: "deg", label: "องศา" },
+          { value: "rise", label: "ยก (ซม.) ในระยะราบ (ม.)" },
+        ],
+      },
+      { type: "number", key: "n", label: "n ใน 1:n", default: 12, min: 0.01, max: 10000, step: 0.01, when: { key: "mode", is: "ratio" } },
+      { type: "number", key: "pct", label: "ความชัน", unit: "%", default: 2, min: 0.01, max: 10000, step: 0.01, when: { key: "mode", is: "pct" } },
+      { type: "number", key: "deg", label: "มุม", unit: "องศา", default: 30, min: 0.01, max: 89, step: 0.01, when: { key: "mode", is: "deg" } },
+      { type: "number", key: "rise", label: "ยก", unit: "ซม.", default: 25, min: 0.01, max: 100000, step: 0.01, when: { key: "mode", is: "rise" } },
+      { type: "number", key: "run", label: "ระยะราบ", unit: "ม.", default: 3, min: 0.01, max: 10000, step: 0.01, when: { key: "mode", is: "rise" } },
+      { type: "number", key: "len", label: "ระยะราบที่จะคิดยก", unit: "ม.", default: 3, min: 0.01, max: 10000, step: 0.01 },
+    ],
+    calc: calcSlopeConvert,
+  },
+  {
+    id: "rai",
+    name: "ไร่-งาน-ตารางวา ↔ ตร.ม.",
+    blurb: "แปลงขนาดที่ดิน หรือคิดจาก กว้าง × ยาว เป็นเมตร",
+    keywords: ["ไร่", "งาน", "ตารางวา", "ตร.วา", "ที่ดิน", "โฉนด", "ราคาที่ดิน"],
+    fields: [
+      {
+        type: "select",
+        key: "mode",
+        label: "รู้ค่าอะไร",
+        default: "m2",
+        options: [
+          { value: "m2", label: "ตารางเมตร" },
+          { value: "thai", label: "ไร่ งาน ตารางวา" },
+          { value: "wl", label: "กว้าง × ยาว (ม.)" },
+        ],
+      },
+      { type: "number", key: "m2", label: "พื้นที่", unit: "ตร.ม.", default: 3742, min: 0.01, max: 100000000, step: 0.01, when: { key: "mode", is: "m2" } },
+      { type: "number", key: "rai", label: "ไร่", unit: "ไร่", default: 2, min: 0, max: 100000, when: { key: "mode", is: "thai" } },
+      { type: "number", key: "ngan", label: "งาน", unit: "งาน", default: 1, min: 0, max: 1000, when: { key: "mode", is: "thai" } },
+      { type: "number", key: "wa", label: "ตารางวา", unit: "ตร.วา", default: 35.5, min: 0, max: 1000000, step: 0.01, when: { key: "mode", is: "thai" } },
+      { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 40, min: 0.01, max: 100000, step: 0.01, when: { key: "mode", is: "wl" } },
+      { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 93.55, min: 0.01, max: 100000, step: 0.01, when: { key: "mode", is: "wl" } },
+      { type: "number", key: "price", label: "ราคาต่อตารางวา (ไม่ใส่ก็ได้)", unit: "บาท", default: 0, min: 0, max: 10000000 },
+    ],
+    calc: calcRai,
+  },
+  {
+    id: "tank",
+    name: "ปริมาตรถังเป็นลิตร",
+    blurb: "ถังกลมตั้ง/นอน ถังเหลี่ยม · เต็มถังกี่ลิตร น้ำสูงเท่านี้เหลือกี่ลิตร",
+    keywords: ["ลิตร", "ถังนอน", "ถังน้ำมัน", "ระดับน้ำ", "ทรงกระบอก", "ความจุถัง", "วัดน้ำในถัง"],
+    fields: [
+      {
+        type: "select",
+        key: "shape",
+        label: "รูปถัง",
+        default: "hcyl",
+        options: [
+          { value: "hcyl", label: "ถังกลมนอน" },
+          { value: "vcyl", label: "ถังกลมตั้ง" },
+          { value: "box", label: "ถังเหลี่ยม / บ่อ" },
+        ],
+      },
+      { type: "number", key: "d", label: "เส้นผ่านศูนย์กลางใน", unit: "ซม.", default: 100, min: 10, max: 1000, step: 0.1, when: { key: "shape", is: ["hcyl", "vcyl"] } },
+      { type: "number", key: "len", label: "ยาวถัง", unit: "ซม.", default: 200, min: 10, max: 3000, step: 0.1, when: { key: "shape", is: "hcyl" } },
+      { type: "number", key: "bw", label: "กว้างใน", unit: "ซม.", default: 100, min: 10, max: 3000, step: 0.1, when: { key: "shape", is: "box" } },
+      { type: "number", key: "bl", label: "ยาวใน", unit: "ซม.", default: 100, min: 10, max: 3000, step: 0.1, when: { key: "shape", is: "box" } },
+      { type: "number", key: "h", label: "สูงใน", unit: "ซม.", default: 130, min: 10, max: 3000, step: 0.1, when: { key: "shape", is: ["vcyl", "box"] } },
+      { type: "number", key: "level", label: "ระดับน้ำจากก้นถัง", unit: "ซม.", default: 30, min: 0, max: 3000, step: 0.1 },
+    ],
+    calc: calcTankVolume,
+  },
+  {
+    id: "unitprice",
+    name: "เทียบราคาต่อหน่วย",
+    blurb: "2–3 ตัวเลือก ราคากับขนาดแพ็ก → บาทต่อหน่วย ตัวไหนถูก ซื้อจริงจ่ายเท่าไหร่",
+    keywords: ["เทียบราคา", "ราคาต่อหน่วย", "ถูกกว่า", "คุ้มกว่า", "ถังเล็กถังใหญ่", "บาทต่อลิตร", "บาทต่อตร.ม."],
+    fields: [
+      {
+        type: "select",
+        key: "n",
+        label: "จำนวนตัวเลือก",
+        default: "2",
+        options: [
+          { value: "2", label: "2 ตัว" },
+          { value: "3", label: "3 ตัว" },
+        ],
+      },
+      {
+        type: "select",
+        key: "unit",
+        label: "เทียบต่อ",
+        default: "L",
+        options: Object.entries(UNIT_PRICE_UNITS).map(([value, label]) => ({ value, label })),
+      },
+      ...unitPriceFields(),
+      { type: "number", key: "need", label: "ต้องใช้จริง (0 = ไม่คิด)", default: 20, min: 0, max: 10000000, step: 0.01 },
+    ],
+    calc: calcUnitPrice,
+  },
+];
+
 export const generalTools: ToolDef[] = [
   {
     id: "inch",
@@ -848,6 +1322,7 @@ export const generalTools: ToolDef[] = [
     ],
     calc: calcTriangle,
   },
+  ...round4Tools,
 ];
 
 /** แปลงหน่วยด่วน: ใส่ค่าเดียว ได้ทุกหน่วยที่ใช้บนหน้างานพร้อมกัน (ต่างจากเครื่องมือแปลงความยาวที่เลือกหน่วยปลายทางทีละตัว) */
