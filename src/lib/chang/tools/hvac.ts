@@ -1,17 +1,52 @@
-import type { JobDef, ToolDef, Values } from "../types";
-import { bool, ceil, fmt, jobFromParts, lerpTable, num, resultX, round, str } from "../math";
+import type { CalcResult, JobDef, ToolDef, Values } from "../types";
+import {
+  blockedResult,
+  bool,
+  ceil,
+  fmt,
+  fmtTrim,
+  guardInputs,
+  guardTool,
+  jobFromParts,
+  lerpTable,
+  num,
+  resultX,
+  round,
+  stockPieces,
+  str,
+  tableRange,
+  withDefaults,
+} from "../math";
 import {
   AC,
+  AC_KIT,
+  AC_TRUNK_SIZES,
+  AC_BREAKER_SOURCE,
+  AC_BREAKER_TABLE,
   AC_CHARGE_G_PER_M,
   AC_PIPE_LONG_RUN,
   AC_SIZES,
+  ACH_PRESETS,
   BTU_FACTOR,
+  CABLE_METHODS,
+  CABLE_TABLE_5_20,
+  CABLE_TABLE_SOURCE,
   DISCLAIMER_AB,
   DISCLAIMER_C,
+  ELEC,
   REFRIGERANT_PT,
+  REFRIGERANT_PT_SOURCE,
+  SHSC,
+  VENT,
+  VENT_FAN_CLASSES,
 } from "../constants";
+import { calcSlope } from "./plumbing";
+
+const guard = (id: string, v: Values) => guardTool(hvacTools, id, v);
 
 export function calcBtu(v: Values) {
+  const bad = guard("btu", v);
+  if (bad) return bad;
   const w = num(v, "w", 4);
   const l = num(v, "l", 5);
   const h = num(v, "h", 2.6);
@@ -42,17 +77,25 @@ export function calcBtu(v: Values) {
   const extraHeat = heat === "mid" ? AC.applianceMid.value : heat === "high" ? AC.applianceHigh.value : 0;
 
   const btu = base * sunFactor * topFactor + extraPeople + extraHeat;
-  const size = AC_SIZES.find((s) => s >= btu) ?? AC_SIZES[AC_SIZES.length - 1];
+  const biggest = AC_SIZES[AC_SIZES.length - 1];
+  const size = AC_SIZES.find((s) => s >= btu) ?? biggest;
   const ton = round(size / AC.btuPerTon.value, 2);
   const undersized = size < btu;
+  // ห้องใหญ่เกินแอร์ตัวเดียว: แบ่งเป็นกี่ตัว และตัวละเท่าไหร่ (เลือกรุ่นที่ขายจริงที่พอกับส่วนแบ่ง)
+  const units = undersized ? ceil(btu / biggest) : 1;
+  const unitSize = undersized ? (AC_SIZES.find((s) => s >= btu / units) ?? biggest) : size;
 
   const sizeIdx = AC_SIZES.indexOf(size);
   const ladder = AC_SIZES.slice(Math.max(0, sizeIdx - 2), sizeIdx + 3);
 
   return resultX({
     title: "คำนวณ BTU แอร์",
-    headline: `แนะนำแอร์ ${fmt(size)} BTU (ประมาณ ${ton} ตัน)`,
-    chart: {
+    headline: undersized
+      ? `ต้องการ ${fmt(ceil(btu))} BTU — เกินแอร์ตัวเดียว (ใหญ่สุด ${fmt(biggest)}) แบ่ง ${units} ตัวหรือใช้ระบบท่อลม`
+      : `แนะนำแอร์ ${fmt(size)} BTU (ประมาณ ${ton} ตัน)`,
+    chart: undersized
+      ? undefined
+      : {
       kind: "steps",
       unit: "BTU",
       need: ceil(btu),
@@ -72,8 +115,15 @@ export function calcBtu(v: Values) {
       ...(extraPeople > 0 ? [{ label: "คนเกิน 2 คน", value: `+ ${fmt(extraPeople)} BTU` }] : []),
       ...(extraHeat > 0 ? [{ label: "อุปกรณ์ความร้อน", value: `+ ${fmt(extraHeat)} BTU` }] : []),
       { label: "BTU ที่ต้องการ", value: `${fmt(ceil(btu))} BTU/ชม.`, emphasize: true },
-      { label: "ขนาดแอร์แนะนำ", value: `${fmt(size)} BTU`, emphasize: true },
-      { label: "ประมาณ", value: `${ton} ตัน` },
+      ...(undersized
+        ? [
+            { label: "แอร์ตัวเดียวใหญ่สุดที่ขายทั่วไป", value: `${fmt(biggest)} BTU — ไม่พอ` },
+            { label: "ถ้าแบ่งหลายตัว", value: `${units} ตัว × ${fmt(unitSize)} BTU`, emphasize: true },
+          ]
+        : [
+            { label: "ขนาดแอร์แนะนำ", value: `${fmt(size)} BTU`, emphasize: true },
+            { label: "ประมาณ", value: `${ton} ตัน` },
+          ]),
     ],
     tip: undersized
       ? "ห้องนี้ใหญ่เกินแอร์ตัวเดียวที่ขายทั่วไป ควรแบ่งเป็นสองตัวหรือใช้ระบบท่อลม"
@@ -118,7 +168,9 @@ export function calcBtu(v: Values) {
         {
           label: "เลือกรุ่นที่ขายจริง",
           expr: "ขนาดแอร์ = รุ่นที่ BTU ไม่ต่ำกว่าค่าที่คำนวณได้",
-          subst: `${fmt(ceil(btu))} → ${fmt(size)} BTU (${ton} ตัน)`,
+          subst: undersized
+            ? `${fmt(ceil(btu))} BTU เกินรุ่นใหญ่สุด ${fmt(biggest)} BTU → แบ่ง ${units} ตัว × ${fmt(unitSize)} BTU`
+            : `${fmt(ceil(btu))} → ${fmt(size)} BTU (${ton} ตัน)`,
         },
       ],
       constants: [
@@ -134,6 +186,9 @@ export function calcBtu(v: Values) {
         "คิดเป็นภาระความเย็นต่อพื้นที่ ไม่ได้คิดการถ่ายเทความร้อนผ่านผนังทีละด้าน",
       ],
       caveats: [
+        ...(undersized
+          ? ["ห้องใหญ่ระดับนี้ควรให้ช่างแอร์/วิศวกรคิดภาระความเย็นจริงและวางตำแหน่งเครื่อง ไม่ใช่คูณต่อตารางเมตรอย่างเดียว"]
+          : []),
         ...(doubleCounted
           ? ["เลือกประเภทห้องครัว/ทิศตะวันตก/ชั้นบนสุด แล้ว — ไม่คูณแดดบ่ายหรือชั้นบนซ้ำอีก"]
           : []),
@@ -150,35 +205,68 @@ export function calcBtu(v: Values) {
   });
 }
 
-export function satTemp(kind: string, psi: number): number {
-  const table = REFRIGERANT_PT[kind] ?? REFRIGERANT_PT.R32;
-  return round(lerpTable(psi, table), 1);
+/**
+ * เปิดตาราง P–T — คืน ok:false เมื่อไม่รู้จักน้ำยาหรือแรงดันอยู่นอกช่วงตาราง
+ * (ห้ามหนีบค่าปลายตาราง: แรงดันสูงกว่าตารางแล้วตอบอุณหภูมิแถวสุดท้าย ทำให้ Subcooling เพี้ยน)
+ */
+export function satLookup(
+  kind: string,
+  psi: number,
+): { ok: true; t: number } | { ok: false; reason: string } {
+  const table = REFRIGERANT_PT[kind];
+  if (!table) return { ok: false, reason: `ยังไม่มีตาราง P–T ของน้ำยา ${kind}` };
+  const { min, max } = tableRange(table);
+  if (!Number.isFinite(psi) || psi < min || psi > max) {
+    const top = table[table.length - 1];
+    return {
+      ok: false,
+      reason: `แรงดัน ${fmt(psi)} psi เกินช่วงตาราง ${kind} (${fmt(min)}–${fmt(max, 0)} psi ≈ ถึง ${fmt(top[1])} °C)`,
+    };
+  }
+  return { ok: true, t: round(lerpTable(psi, table), 1) };
 }
+
+/** อุณหภูมิอิ่มตัว (°C) — นอกช่วงตารางหรือไม่รู้จักน้ำยาคืน NaN ไม่หนีบค่า */
+export function satTemp(kind: string, psi: number): number {
+  const hit = satLookup(kind, psi);
+  return hit.ok ? hit.t : Number.NaN;
+}
+
+const PT_OUT_OF_RANGE_TIP =
+  "เช็กว่าเลือกน้ำยาถูกชนิดและอ่านเกจเป็น psi (ไม่ใช่ bar/MPa) ถ้าแรงดันสูงจริงระดับนี้ให้หยุดเครื่องแล้วหาสาเหตุก่อน";
 
 const PT_SAMPLE_PSI = [0, 30, 60, 100, 150, 200, 250, 300, 400] as const;
 
 export function calcPt(v: Values) {
+  const bad = guard("pt", v);
+  if (bad) return bad;
   const kind = str(v, "kind", "R32");
   const psi = num(v, "psi", 150);
-  const t = satTemp(kind, psi);
+  const hit = satLookup(kind, psi);
+  if (!hit.ok) return blockedResult({ headline: `${hit.reason} — ตอบไม่ได้`, tip: PT_OUT_OF_RANGE_TIP });
+  const t = hit.t;
+  const maxPsi = tableRange(REFRIGERANT_PT[kind]).max;
   const nearest = [...PT_SAMPLE_PSI].sort((a, b) => Math.abs(a - psi) - Math.abs(b - psi))[0];
   const chosenIdx = PT_SAMPLE_PSI.indexOf(nearest);
-  const ladder = PT_SAMPLE_PSI.slice(Math.max(0, chosenIdx - 2), chosenIdx + 3);
+  const ladder = PT_SAMPLE_PSI.slice(Math.max(0, chosenIdx - 2), chosenIdx + 3).filter((p) => p <= maxPsi);
 
   return resultX({
     title: "แรงดัน → อุณหภูมิ",
     headline: `${kind} ที่ ${fmt(psi)} psi ≈ ${fmt(t, 1)} °C`,
-    chart: {
-      kind: "steps",
-      unit: "psi",
-      need: psi,
-      needLabel: "แรงดันที่วัดได้",
-      items: ladder.map((p) => ({
-        label: `${p} psi (${fmt(satTemp(kind, p), 0)}°C)`,
-        value: p,
-        state: p === nearest ? "chosen" : p < psi ? "under" : "over",
-      })),
-    },
+    chart:
+      ladder.length > 1 && ladder.includes(nearest)
+        ? {
+            kind: "steps",
+            unit: "psi",
+            need: psi,
+            needLabel: "แรงดันที่วัดได้",
+            items: ladder.map((p) => ({
+              label: `${p} psi (${fmt(satTemp(kind, p), 0)}°C)`,
+              value: p,
+              state: p === nearest ? "chosen" : p < psi ? "under" : "over",
+            })),
+          }
+        : undefined,
     rows: [
       { label: "น้ำยา", value: kind },
       { label: "แรงดันเกจ", value: `${fmt(psi)} psi` },
@@ -187,7 +275,7 @@ export function calcPt(v: Values) {
     tip: "เทียบคร่าวจากตารางอิ่มตัว เกจหน้างานแต่ละยี่ห้อคลาดได้ ใช้เช็กแนว ไม่ใช่ใบสอบเทียบ",
     explain: {
       risk: "B",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary: "อ่านแรงดันจากเกจแล้วเทียบกับตาราง P-T (แรงดัน–อุณหภูมิอิ่มตัว) ของน้ำยาแต่ละชนิด โดยประมาณค่าระหว่างจุดตาราง (interpolation)",
       steps: [
         {
@@ -209,8 +297,7 @@ export function calcPt(v: Values) {
       ],
       refs: [
         {
-          label:
-            "ตาราง P–T อิ่มตัว R32/R410A/R22/R134a (แนว REFPROP / TDS ผู้ผลิตน้ำยา) หน่วยแรงดันเกจ psig",
+          label: REFRIGERANT_PT_SOURCE,
         },
       ],
     },
@@ -224,29 +311,44 @@ const PIPE_BRACKETS = [
   { upTo: Infinity, liq: '3/8"', suc: '3/4"' },
 ] as const;
 
+/** ช่างแอร์เรียกท่อทองแดงเป็น "หุน" (1 หุน = 1/8 นิ้ว): 1/4" = 2 หุน · 3/8" = 3 หุน · 1/2" = 4 หุน · 5/8" = 5 หุน · 3/4" = 6 หุน */
+export function copperHun(inchLabel: string): string {
+  const m = inchLabel.match(/^(\d+)\/(\d+)"$/);
+  if (!m) return inchLabel;
+  const hun = (Number(m[1]) / Number(m[2])) * 8;
+  return `${fmt(hun)} หุน (${inchLabel})`;
+}
+
+/** ขนาดท่อทองแดงคู่ตามขนาดแอร์ + เลื่อนขึ้นหนึ่งไซซ์เมื่อเดินไกล — ใช้ร่วมกันระหว่างเครื่องมือท่อทองแดงกับชุดติดตั้งแอร์ */
+export function copperSizeFor(btu: number, run: number) {
+  let idx = PIPE_BRACKETS.findIndex((b) => btu <= b.upTo);
+  if (idx < 0) idx = PIPE_BRACKETS.length - 1;
+  const longRun = run > AC_PIPE_LONG_RUN.value;
+  if (longRun) idx = Math.min(idx + 1, PIPE_BRACKETS.length - 1);
+  const { liq, suc } = PIPE_BRACKETS[idx];
+  return { idx, liq, suc, longRun };
+}
+
 export function calcPipe(v: Values) {
+  const bad = guard("pipe", v);
+  if (bad) return bad;
   const btu = num(v, "btu", 18000);
   const run = num(v, "run", 8);
-  let chosenIdx = PIPE_BRACKETS.findIndex((b) => btu <= b.upTo);
-  if (chosenIdx < 0) chosenIdx = PIPE_BRACKETS.length - 1;
-  const longRun = run > AC_PIPE_LONG_RUN.value;
-  if (longRun) chosenIdx = Math.min(chosenIdx + 1, PIPE_BRACKETS.length - 1);
-  const bracket = PIPE_BRACKETS[chosenIdx];
-  const { liq, suc } = bracket;
+  const { idx: chosenIdx, liq, suc, longRun } = copperSizeFor(btu, run);
   const extra = longRun
     ? `เดินไกลเกิน ${AC_PIPE_LONG_RUN.value} ม. เลื่อนขึ้นหนึ่งไซซ์แล้ว — ยึดคู่มือรุ่นเป็นหลัก`
     : "ระยะมาตรฐาน ใช้ไซซ์ตารางได้";
 
   return resultX({
     title: "ขนาดท่อทองแดง",
-    headline: `ท่อทองแดง ${liq} / ${suc}`,
+    headline: `ท่อทองแดง ${copperHun(liq).split(" (")[0]} + ${copperHun(suc).split(" (")[0]} (${liq} + ${suc}) ยาว ${fmtTrim(run, 1)} ม.`,
     chart: {
       kind: "steps",
       unit: "BTU",
       need: btu,
       needLabel: "ขนาดแอร์",
       items: [12000, 18000, 24000, 30000].map((upTo, i) => ({
-        label: `${PIPE_BRACKETS[i].liq}/${PIPE_BRACKETS[i].suc}`,
+        label: `${copperHun(PIPE_BRACKETS[i].liq).split(" หุน")[0]}+${copperHun(PIPE_BRACKETS[i].suc).split(" (")[0]}`,
         value: upTo,
         state: i === chosenIdx ? "chosen" : i < chosenIdx ? "under" : "over",
       })),
@@ -254,10 +356,11 @@ export function calcPipe(v: Values) {
     rows: [
       { label: "ขนาดแอร์", value: `${fmt(btu)} BTU` },
       { label: "ระยะเดินท่อ", value: `${fmt(run, 1)} ม.` },
-      { label: "ท่อน้ำยาเหลว", value: liq, emphasize: true },
-      { label: "ท่อดูด", value: suc, emphasize: true },
+      { label: "ท่อน้ำยาเหลว (ท่อเล็ก)", value: copperHun(liq), emphasize: true },
+      { label: "ท่อดูด (ท่อใหญ่)", value: copperHun(suc), emphasize: true },
+      { label: "ความยาวที่ต้องซื้อ", value: `ท่อคู่ ${fmtTrim(run, 1)} ม. ต่อเครื่อง (เส้นเล็ก ${fmtTrim(run, 1)} ม. + เส้นใหญ่ ${fmtTrim(run, 1)} ม.) พร้อมฉนวนหุ้มทั้งสองเส้น` },
     ],
-    tip: extra,
+    tip: `${extra} · ความหนาท่อและช่วงขนาดให้ดูคู่มือรุ่น (R32/R410A แรงดันสูง ใช้ท่อหนาตามที่ผู้ผลิตกำหนด)`,
     explain: {
       risk: "B",
       updatedAt: "2026-08-21",
@@ -266,7 +369,8 @@ export function calcPipe(v: Values) {
         {
           label: "เปิดตารางตามขนาดแอร์",
           expr: "≤12,000 BTU → 1/4\"/3/8\" · ≤18,000 → 1/4\"/1/2\" · ≤24,000 → 3/8\"/5/8\" · เกิน → 3/8\"/3/4\"",
-          subst: `${fmt(btu)} BTU → ${liq} / ${suc}`,
+          subst: `${fmt(btu)} BTU → ${liq} / ${suc} = ${copperHun(liq).split(" (")[0]} / ${copperHun(suc).split(" (")[0]}`,
+          note: "1 หุน = 1/8 นิ้ว",
         },
         {
           label: "เช็กระยะเดินท่อ",
@@ -286,6 +390,8 @@ export function calcPipe(v: Values) {
 }
 
 export function calcCharge(v: Values) {
+  const bad = guard("charge", v);
+  if (bad) return bad;
   const kind = str(v, "kind", "R32");
   const factory = num(v, "factory", 700);
   const std = num(v, "std", 5);
@@ -317,7 +423,10 @@ export function calcCharge(v: Values) {
       { label: "เติมเพิ่ม", value: `${fmt(add)} ก. (${gPerM} ก./ม.)`, emphasize: true },
       { label: "รวมโดยประมาณ", value: `${fmt(total)} ก.` },
     ],
-    tip: "ชั่งจากหลอดตามรุ่น อย่าเดาจากเกจอย่างเดียว น้ำยา R32 ระวังไฟไหม้",
+    tip:
+      kind === "R32"
+        ? "ชั่งน้ำหนักตามที่คิดได้ อย่าเดาจากเกจอย่างเดียว · R32 ติดไฟได้ เติมในที่อากาศถ่ายเท ห้ามมีประกายไฟ"
+        : "ชั่งน้ำหนักตามที่คิดได้ อย่าเดาจากเกจอย่างเดียว เทียบอัตราเติมกับคู่มือรุ่นอีกครั้ง",
     explain: {
       risk: "B",
       updatedAt: "2026-08-21",
@@ -338,7 +447,7 @@ export function calcCharge(v: Values) {
       caveats: [
         "แต่ละรุ่น/ยี่ห้อกำหนดอัตราเติมต่อเมตรต่างกัน ให้ยึดคู่มือรุ่นที่ติดตั้งจริงเป็นหลัก",
         "การเติมน้ำยาควรชั่งน้ำหนักจากถังตามที่คำนวณ ไม่ใช่เติมจนกว่าเกจจะขึ้นตามความรู้สึก",
-        "น้ำยา R32 ติดไฟได้เล็กน้อย (A2L) ต้องเติมในที่อากาศถ่ายเทและห้ามมีประกายไฟ",
+        ...(kind === "R32" ? ["น้ำยา R32 ติดไฟได้เล็กน้อย (A2L) ต้องเติมในที่อากาศถ่ายเทและห้ามมีประกายไฟ"] : []),
         DISCLAIMER_AB,
       ],
       refs: [{ label: "คู่มือติดตั้งเครื่องปรับอากาศ (อัตราเติมน้ำยาเพิ่มต่อระยะท่อ)" }],
@@ -346,21 +455,40 @@ export function calcCharge(v: Values) {
   });
 }
 
-export function breakerForBtu(btu: number) {
-  if (btu <= 9000) return { amp: 6, breaker: 16, wire: 2.5 };
-  if (btu <= 12000) return { amp: 7, breaker: 16, wire: 2.5 };
-  if (btu <= 18000) return { amp: 10, breaker: 20, wire: 2.5 };
-  if (btu <= 24000) return { amp: 13, breaker: 20, wire: 4 };
-  if (btu <= 30000) return { amp: 16, breaker: 25, wire: 4 };
-  return { amp: 20, breaker: 32, wire: 6 };
+type AcCableMethod = keyof typeof CABLE_METHODS;
+
+/**
+ * เบรกเกอร์ + สายไฟแอร์ตามขนาด BTU
+ * สายต้องทนกระแสไม่น้อยกว่าพิกัดเบรกเกอร์ตามตาราง วสท. 5-20 ของวิธีเดินสายที่เลือก (ตารางเดียวกับเครื่องมือช่างไฟ)
+ * คืน null เมื่อ BTU เกินแถวสุดท้ายของตารางคร่าว — ห้ามใช้แถวสุดท้ายแทน
+ */
+export function breakerForBtu(btu: number, method: AcCableMethod = "surface") {
+  const row = AC_BREAKER_TABLE.find((r) => btu <= r.upTo);
+  if (!row) return null;
+  const column = `${CABLE_METHODS[method].group}c2` as "g1c2" | "g2c2";
+  const cable = CABLE_TABLE_5_20.find((c) => c[column] >= row.breaker && c.mm2 >= row.minWire);
+  if (!cable) return null;
+  return { amp: row.amp, breaker: row.breaker, wire: cable.mm2, ampacity: cable[column], minWire: row.minWire };
 }
 
-const BREAKER_LADDER = [16, 20, 25, 32] as const;
+const BREAKER_LADDER = [...new Set(AC_BREAKER_TABLE.map((r) => r.breaker))];
+const AC_BREAKER_MAX_BTU = AC_BREAKER_TABLE[AC_BREAKER_TABLE.length - 1].upTo;
 
 export function calcBreaker(v: Values) {
+  const bad = guard("breaker", v);
+  if (bad) return bad;
   const btu = num(v, "btu", 18000);
-  const s = breakerForBtu(btu);
-  const designAmp = round(s.amp * 1.25, 1);
+  const method: AcCableMethod = str(v, "method", "surface") === "embed" ? "embed" : "surface";
+  const methodName = CABLE_METHODS[method].short;
+  const s = breakerForBtu(btu, method);
+  if (!s) {
+    return blockedResult({
+      headline: `แอร์ ${fmt(btu)} BTU เกินตารางคร่าว (ถึง ${fmt(AC_BREAKER_MAX_BTU)} BTU) — ใช้ค่าบนป้ายเครื่อง`,
+      tip: "ดูค่า MCA / MOCP หรือกระแสสูงสุดบนป้ายคอยล์ร้อน แล้วเอากระแสนั้นไปคิดในเครื่องมือ “เลือกขนาดสายไฟ” ของช่างไฟ หรือให้ช่างไฟ/วิศวกรกำหนด",
+    });
+  }
+  const factor = ELEC.continuousFactor.value;
+  const designAmp = round(s.amp * factor, 1);
 
   return resultX({
     title: "เบรกเกอร์ + สายไฟแอร์",
@@ -381,12 +509,15 @@ export function calcBreaker(v: Values) {
       { label: "กระแสประมาณ", value: `${s.amp} A` },
       { label: "เบรกเกอร์", value: `${s.breaker} A`, emphasize: true },
       { label: "สายไฟ (ทองแดง)", value: `${s.wire} ตร.มม.`, emphasize: true },
+      { label: "สายทนได้ตามตาราง", value: `${s.ampacity} A ≥ เบรกเกอร์ ${s.breaker} A` },
+      { label: "วิธีเดินสายที่คิด", value: methodName },
     ],
-    tip: "เดินสายแยกวงจร อย่าพ่วงกับปลั๊กทั่วไป ระยะไกลให้เช็กแรงดันตกด้วย",
+    tip: "เดินสายแยกวงจร อย่าพ่วงกับปลั๊กทั่วไป ถ้าป้ายเครื่องบอกเบรกเกอร์/สายใหญ่กว่านี้ให้ยึดป้ายเครื่อง ระยะไกลเช็กแรงดันตกด้วย",
     explain: {
       risk: "C",
-      updatedAt: "2026-08-21",
-      summary: "เปิดตารางกระแสประมาณตามขนาด BTU แล้วเผื่อโหลดต่อเนื่อง 125% ก่อนเลือกเบรกเกอร์และสายไฟตามตาราง",
+      updatedAt: "2026-11-25",
+      summary:
+        "เปิดตารางกระแสประมาณตามขนาด BTU → เผื่อโหลดต่อเนื่อง 125% → เลือกเบรกเกอร์ → เลือกสายที่ทนกระแสไม่น้อยกว่าเบรกเกอร์จากตาราง วสท. 5-20 ตามวิธีเดินสาย",
       steps: [
         {
           label: "กระแสประมาณจากขนาดแอร์",
@@ -395,92 +526,212 @@ export function calcBreaker(v: Values) {
         },
         {
           label: "เผื่อโหลดต่อเนื่อง 125%",
-          expr: "I_design = กระแส × 1.25",
-          subst: `${s.amp} × 1.25 = ${fmt(designAmp, 1)} A`,
+          expr: `I_design = กระแส × ${factor}`,
+          subst: `${s.amp} × ${factor} = ${fmt(designAmp, 1)} A`,
         },
         {
-          label: "เลือกเบรกเกอร์และสาย",
-          expr: "เบรกเกอร์ ≥ I_design แล้วเปิดตารางสายตามพิกัดเบรกเกอร์",
-          subst: `${fmt(designAmp, 1)} A → เบรกเกอร์ ${s.breaker} A · สาย ${s.wire} ตร.มม.`,
+          label: "เลือกเบรกเกอร์",
+          expr: "เบรกเกอร์ ≥ I_design",
+          subst: `${fmt(designAmp, 1)} A → เบรกเกอร์ ${s.breaker} A`,
+        },
+        {
+          label: "เลือกสายจากตาราง วสท. 5-20",
+          expr: "พิกัดสายในตาราง (1 เฟส ตามวิธีเดินสาย) ≥ พิกัดเบรกเกอร์ และไม่เล็กกว่าขนาดขั้นต่ำของช่างแอร์",
+          subst: `${methodName}: สาย ${s.wire} ตร.มม. ทนได้ ${s.ampacity} A ≥ ${s.breaker} A (ขั้นต่ำช่างแอร์ ${s.minWire} ตร.มม.)`,
+          note: "สายต้องทนกระแสได้ไม่น้อยกว่าเบรกเกอร์ที่ป้องกันมันอยู่ — หลักเดียวกับเครื่องมือเลือกขนาดสายไฟ",
         },
       ],
-      assumptions: ["แอร์ 220V 1 เฟส เดินสายแยกวงจรเดี่ยวไม่พ่วงปลั๊กอื่น", "ระยะเดินสายไม่เกิน 20–25 ม. (ไม่กระทบแรงดันตกจนต้องขยับไซซ์)"],
+      constants: [ELEC.continuousFactor],
+      assumptions: [
+        "แอร์ 220 V 1 เฟส เดินสายแยกวงจรเดี่ยว 1 วงจรต่อท่อ ไม่พ่วงปลั๊กอื่น",
+        `วิธีเดินสาย: ${methodName} · สายทองแดงฉนวนพีวีซี (THW) อุณหภูมิโดยรอบไม่เกิน 40 °C`,
+        "ระยะเดินสายไม่เกิน 20–25 ม. (ไม่กระทบแรงดันตกจนต้องขยับไซซ์)",
+      ],
       caveats: [
-        "แอร์ 3 เฟสหรือขนาดใหญ่กว่า 30,000 BTU ต้องคำนวณกระแสจากสเปกจริงของรุ่น ไม่ใช่ตารางประมาณนี้",
+        "กระแสในตารางเป็นค่าประมาณตามขนาด BTU ไม่ใช่ค่าของรุ่น — ถ้าป้ายเครื่อง (MCA/MOCP) ระบุมากกว่านี้ให้ยึดป้ายเครื่อง",
+        "ท่อร้อยสายที่วิ่งในฝ้าใต้หลังคาร้อนจัด หลายวงจรในท่อเดียว หรืออุณหภูมิเกิน 40 °C ต้องลดพิกัดสาย ให้คิดในเครื่องมือเลือกขนาดสายไฟ",
+        `แอร์ 3 เฟสหรือใหญ่กว่า ${fmt(AC_BREAKER_MAX_BTU)} BTU ต้องคิดจากสเปกจริงของรุ่น ไม่ใช่ตารางประมาณนี้`,
         "ระยะเดินสายไกลกว่า 20–25 ม. ต้องเช็กแรงดันตกเพิ่ม อาจต้องขยับไซซ์สายขึ้น",
         DISCLAIMER_C,
       ],
-      refs: [{ label: "วสท. มาตรฐานการติดตั้งทางไฟฟ้า — เกณฑ์โหลดต่อเนื่อง 125%" }],
+      refs: [
+        { label: AC_BREAKER_SOURCE },
+        { label: CABLE_TABLE_SOURCE },
+        { label: "วสท. มาตรฐานการติดตั้งทางไฟฟ้า — เกณฑ์โหลดต่อเนื่อง 125%" },
+      ],
     },
   });
 }
 
+type ShscLevel = "impossible" | "flood" | "low" | "ok" | "high";
+
+function shLevel(sh: number): ShscLevel {
+  if (sh < SHSC.impossible.value) return "impossible";
+  if (sh < SHSC.shFlood.value) return "flood";
+  if (sh < SHSC.shMin.value) return "low";
+  if (sh > SHSC.shMax.value) return "high";
+  return "ok";
+}
+
+function scLevel(sc: number): ShscLevel {
+  if (sc < SHSC.impossible.value) return "impossible";
+  if (sc < SHSC.scMin.value) return "low";
+  if (sc > SHSC.scMax.value) return "high";
+  return "ok";
+}
+
+/** วินิจฉัยจาก SH และ SC ทีละตัว แล้วค่อยดูคู่ — "ดูโอเค" ได้เฉพาะเมื่อทั้งสองค่าอยู่ในช่วงปกติเท่านั้น */
+export function diagnoseShsc(sh: number, sc: number): { level: "ok" | "warn" | "danger"; text: string; tip: string } {
+  const a = shLevel(sh);
+  const b = scLevel(sc);
+  const range = `ช่วงปกติ SH ${SHSC.shMin.value}–${SHSC.shMax.value} °C · SC ${SHSC.scMin.value}–${SHSC.scMax.value} °C`;
+  if (a === "flood") {
+    const cause =
+      b === "high"
+        ? "SC สูงด้วย น่าจะน้ำยาเกิน"
+        : "เช็กลมผ่านคอยล์เย็น (ฟิลเตอร์ตัน คอยล์สกปรก พัดลมช้า) และวาล์วลดแรงดันเปิดค้าง";
+    return {
+      level: "danger",
+      text: `SH ต่ำมาก (${fmt(sh, 1)} °C) — เสี่ยงน้ำยาเหลวไหลกลับคอมเพรสเซอร์`,
+      tip: `${cause} · อย่าปล่อยเดินนาน คอมเพรสเซอร์อัดของเหลวแล้วพังได้ · ${range}`,
+    };
+  }
+  if (a === "low") {
+    return {
+      level: "warn",
+      text:
+        b === "high"
+          ? "SH ต่ำ SC สูง — น่าจะน้ำยาเกิน"
+          : b === "low"
+            ? "SH ต่ำ SC ต่ำ — วาล์วลดแรงดันป้อนน้ำยามากไป หรือลมผ่านคอยล์เย็นน้อย"
+            : "SH ต่ำ — เช็กลมผ่านคอยล์เย็นและฟิลเตอร์ก่อน",
+      tip: `SH ยิ่งต่ำยิ่งเสี่ยงน้ำยาเหลวกลับคอมเพรสเซอร์ แก้สาเหตุแล้ววัดซ้ำ · ${range}`,
+    };
+  }
+  if (a === "high") {
+    return {
+      level: "warn",
+      text:
+        b === "low"
+          ? "SH สูง SC ต่ำ — น่าจะน้ำยาน้อยหรือรั่ว"
+          : b === "high"
+            ? "SH สูง SC สูง — น่าจะมีจุดตันทางน้ำยา (ไดเออร์ แคปทิ้ว วาล์ว)"
+            : "SH สูง — น้ำยาเข้าคอยล์เย็นไม่พอ เช็กรั่ว/จุดตัน และดูว่าโหลดห้องสูงผิดปกติไหม",
+      tip: `SH สูงนาน ๆ คอมเพรสเซอร์ร้อนจัดเพราะไอดูดเย็นไม่พอ หารอยรั่วก่อนเติมน้ำยา และชั่งน้ำหนักตอนเติม · ${range}`,
+    };
+  }
+  if (b === "low") {
+    return {
+      level: "warn",
+      text: "SC ต่ำ — น้ำยาอาจน้อย เช็กรอยรั่วก่อน",
+      tip: `SH ยังอยู่ในช่วง แต่ของเหลวก่อนเข้าวาล์วเย็นไม่พอ วัดซ้ำตอนระบบนิ่งอย่างน้อย 15 นาที · ${range}`,
+    };
+  }
+  if (b === "high") {
+    return {
+      level: "warn",
+      text: "SC สูง — น้ำยาอาจเกิน หรือคอยล์ร้อนระบายไม่ดี",
+      tip: `ล้างคอยล์ร้อน เช็กพัดลมคอยล์ร้อนและอากาศค้างในระบบก่อนสรุปว่าน้ำยาเกิน · ${range}`,
+    };
+  }
+  return {
+    level: "ok",
+    text: "ดูโอเค — SH และ SC อยู่ในช่วงใช้งาน",
+    tip: `${range} แล้วแต่ระบบ เทียบคู่มือรุ่นก่อนจบงาน`,
+  };
+}
+
 export function calcShsc(v: Values) {
+  const bad = guard("shsc", v);
+  if (bad) return bad;
   const kind = str(v, "kind", "R32");
   const sucP = num(v, "sucP", 120);
   const sucT = num(v, "sucT", 12);
   const liqP = num(v, "liqP", 380);
   const liqT = num(v, "liqT", 38);
-  const satSuc = satTemp(kind, sucP);
-  const satLiq = satTemp(kind, liqP);
+  const hitSuc = satLookup(kind, sucP);
+  const hitLiq = satLookup(kind, liqP);
+  if (!hitSuc.ok) return blockedResult({ headline: `ท่อดูด: ${hitSuc.reason} — ยังสรุปไม่ได้`, tip: PT_OUT_OF_RANGE_TIP });
+  if (!hitLiq.ok) return blockedResult({ headline: `ท่อของเหลว: ${hitLiq.reason} — ยังสรุปไม่ได้`, tip: PT_OUT_OF_RANGE_TIP });
+  const satSuc = hitSuc.t;
+  const satLiq = hitLiq.t;
   const sh = round(sucT - satSuc, 1);
   const sc = round(satLiq - liqT, 1);
-  let diag = "ดูโอเค — ความร้อนเกิน/ความเย็นเกินอยู่ในช่วงใช้งาน";
-  if (sh > 12 && sc < 4) diag = "ความร้อนเกินสูง ความเย็นเกินต่ำ — น่าจะน้ำยาน้อย";
-  else if (sh < 4 && sc > 12) diag = "ความร้อนเกินต่ำ ความเย็นเกินสูง — น่าจะน้ำยาเกิน";
-  else if (sh > 12 && sc > 12) diag = "ทั้งคู่สูง — อาจอุดตันหรือลมไหลไม่พอ";
-  else if (sh < 3 && sc < 3) diag = "ทั้งคู่ต่ำ — ดู TXV/คอยล์และลม";
+  const measured = [
+    { label: "น้ำยา", value: kind },
+    { label: "Superheat", value: `${fmt(sh, 1)} °C`, emphasize: true },
+    { label: "Subcooling", value: `${fmt(sc, 1)} °C`, emphasize: true },
+    { label: "T sat ดูด", value: `${fmt(satSuc, 1)} °C` },
+    { label: "T sat ของเหลว", value: `${fmt(satLiq, 1)} °C` },
+  ];
+  if (shLevel(sh) === "impossible" || scLevel(sc) === "impossible") {
+    const which = [
+      ...(shLevel(sh) === "impossible" ? [`SH ${fmt(sh, 1)} °C`] : []),
+      ...(scLevel(sc) === "impossible" ? [`SC ${fmt(sc, 1)} °C`] : []),
+    ].join(" และ ");
+    return blockedResult({
+      headline: `ค่าที่วัดเป็นไปไม่ได้ (${which} ติดลบ) — เช็กเกจ จุดวัดอุณหภูมิ และชนิดน้ำยา`,
+      tip: "ท่อดูดเย็นกว่าอุณหภูมิอิ่มตัว หรือท่อของเหลวร้อนกว่าอุณหภูมิอิ่มตัวไม่ได้ ส่วนใหญ่มาจากเลือกน้ำยาผิดชนิด เกจคลาด หรือเทอร์โมมิเตอร์แนบท่อไม่สนิท วัดใหม่ก่อนวินิจฉัย",
+      rows: measured,
+    });
+  }
+  const diag = diagnoseShsc(sh, sc);
+  const chartMax = Math.max(20, Math.ceil(sh * 1.2));
 
   return resultX({
     title: "วิเคราะห์ SH/SC",
-    headline: diag,
+    headline: diag.text,
     chart: {
       kind: "threshold",
       unit: "°C",
-      value: round(sh, 1),
-      max: 20,
+      value: Math.max(0, sh),
+      max: chartMax,
       zones: [
-        { upTo: 4, tone: "bad", label: "ต่ำ — สงสัยน้ำยาเกิน" },
-        { upTo: 12, tone: "good", label: "ปกติ" },
-        { upTo: 20, tone: "bad", label: "สูง — สงสัยน้ำยาน้อย" },
+        // ขอบโซนถอยลง 0.1 เพราะกราฟนับค่าที่เท่ากับขอบเป็นโซนล่าง — SH เท่ากับค่าต่ำสุดพอดีต้องเป็น "ปกติ"
+        { upTo: SHSC.shFlood.value - 0.1, tone: "bad", label: "ต่ำมาก — น้ำยาเหลวกลับคอม" },
+        { upTo: SHSC.shMin.value - 0.1, tone: "warn", label: "ต่ำ" },
+        { upTo: SHSC.shMax.value, tone: "good", label: "ปกติ" },
+        { upTo: chartMax, tone: "bad", label: "สูง — น้ำยาเข้าคอยล์เย็นไม่พอ" },
       ],
     },
-    rows: [
-      { label: "น้ำยา", value: kind },
-      { label: "Superheat", value: `${fmt(sh, 1)} °C`, emphasize: true },
-      { label: "Subcooling", value: `${fmt(sc, 1)} °C`, emphasize: true },
-      { label: "T sat ดูด", value: `${fmt(satSuc, 1)} °C` },
-      { label: "T sat ของเหลว", value: `${fmt(satLiq, 1)} °C` },
-    ],
-    tip: "ช่วงบ้านทั่วไป SH ประมาณ 5–12°C SC 5–10°C แล้วแต่ระบบ เทียบคู่มือรุ่นก่อนจบงาน",
+    rows: measured,
+    tip: diag.tip,
     explain: {
       risk: "B",
-      updatedAt: "2026-08-21",
+      updatedAt: "2026-11-25",
       summary: "Superheat = อุณหภูมิท่อดูดจริง − อุณหภูมิอิ่มตัวที่แรงดันดูด · Subcooling = อุณหภูมิอิ่มตัวที่แรงดันของเหลว − อุณหภูมิท่อของเหลวจริง",
       steps: [
         {
           label: "Superheat (SH)",
           expr: "SH = T ท่อดูดจริง − T sat ที่ความดันดูด",
-          subst: `${fmt(sucT)} − ${fmt(satSuc, 1)} = ${fmt(sh, 1)} °C`,
+          subst: `${fmt(sucT, 1)} − ${fmt(satSuc, 1)} = ${fmt(sh, 1)} °C`,
         },
         {
           label: "Subcooling (SC)",
           expr: "SC = T sat ที่ความดันของเหลว − T ท่อของเหลวจริง",
-          subst: `${fmt(satLiq, 1)} − ${fmt(liqT)} = ${fmt(sc, 1)} °C`,
+          subst: `${fmt(satLiq, 1)} − ${fmt(liqT, 1)} = ${fmt(sc, 1)} °C`,
         },
         {
-          label: "วินิจฉัยจากคู่ SH/SC",
-          expr: "SH สูง+SC ต่ำ → น้ำยาน้อย · SH ต่ำ+SC สูง → น้ำยาเกิน · ทั้งคู่สูง → ลม/ท่ออุดตัน",
-          subst: diag,
+          label: "วินิจฉัยจาก SH และ SC",
+          expr: `ดูทีละค่าเทียบช่วงปกติ (SH ${SHSC.shMin.value}–${SHSC.shMax.value} · SC ${SHSC.scMin.value}–${SHSC.scMax.value} °C) แล้วดูคู่: SH สูง+SC ต่ำ → น้ำยาน้อย · SH ต่ำ+SC สูง → น้ำยาเกิน · สูงทั้งคู่ → จุดตัน · SH ต่ำกว่า ${SHSC.shFlood.value} → เสี่ยงน้ำยาเหลวกลับคอม`,
+          subst: diag.text,
         },
       ],
-      assumptions: ["ระบบ Fixed orifice/Capillary ทั่วไปของแอร์บ้าน ไม่ใช่ระบบ TXV ที่ SH ควบคุมอัตโนมัติแคบกว่า"],
+      constants: [SHSC.shMin, SHSC.shMax, SHSC.shFlood, SHSC.scMin, SHSC.scMax],
+      assumptions: [
+        "แอร์บ้านแยกส่วนทั่วไป วัดขณะระบบเดินนิ่งแล้วอย่างน้อย 15 นาที",
+        "แรงดันเป็นแรงดันเกจ (psig) วัดอุณหภูมิที่ผิวท่อใกล้จุดวัดแรงดัน หุ้มฉนวนหัววัดแล้ว",
+      ],
       caveats: [
-        "ค่าช่วงปกติแตกต่างกันตามรุ่นและสภาพอากาศขณะวัด (โหลดคอยล์ร้อน/เย็น) ให้เทียบคู่มือรุ่นเป็นหลัก",
+        "ช่วงปกติต่างกันตามรุ่น ชนิดอุปกรณ์ลดแรงดัน (แคปทิ้ว / TXV / EEV อินเวอร์เตอร์) และอากาศขณะวัด ให้เทียบคู่มือรุ่นเป็นหลัก",
+        "ผลนี้ชี้แนวทางตรวจ ไม่ใช่คำสั่งให้เติมหรือปล่อยน้ำยา — การเติมต้องชั่งน้ำหนักตามคู่มือรุ่น",
         "วัดขณะระบบยังไม่นิ่ง (เพิ่งเปิดไม่ถึง 15 นาที) ค่าจะไม่แม่นยำ",
         DISCLAIMER_AB,
       ],
-      refs: [{ label: "แนวปฏิบัติงานวินิจฉัยระบบทำความเย็นด้วย Superheat/Subcooling" }],
+      refs: [
+        { label: "แนวปฏิบัติงานวินิจฉัยระบบทำความเย็นด้วย Superheat/Subcooling" },
+        { label: REFRIGERANT_PT_SOURCE },
+      ],
     },
   });
 }
@@ -488,6 +739,8 @@ export function calcShsc(v: Values) {
 const EER_LADDER = [9, 12, 15, 18, 21] as const;
 
 export function calcEnergy(v: Values) {
+  const bad = guard("energy", v);
+  if (bad) return bad;
   const btu = num(v, "btu", 18000);
   const eer = num(v, "eer", 12);
   const hours = num(v, "hours", 8);
@@ -548,15 +801,270 @@ export function calcEnergy(v: Values) {
   });
 }
 
+/* ─────────── ชุดติดตั้งแอร์ / ใบสั่งของ ─────────── */
+
+function rowOf(r: CalcResult, label: string): string {
+  return r.rows.find((x) => x.label === label)?.value ?? "-";
+}
+
+const WALL_BRACKET: Record<string, { name: string; bracket: string }> = {
+  brick: { name: "อิฐฉาบปูน", bracket: `ขาแขวนคอยล์ร้อน 1 ชุด + พุก ${AC_KIT.anchorsPerBracket.value} ตัว (เจาะให้โดนเนื้ออิฐ ไม่โดนแนวปูน)` },
+  concrete: { name: "คอนกรีต", bracket: `ขาแขวนคอยล์ร้อน 1 ชุด + พุกเหล็ก ${AC_KIT.anchorsPerBracket.value} ตัว` },
+  light: { name: "เบา/ไม้/สมาร์ทบอร์ด", bracket: "ห้ามแขวนผนังเบา — ใช้ขาตั้งพื้น 1 ชุด + ยางรองกันสั่น 4 ตัว" },
+};
+
+export function calcAcKit(v: Values) {
+  const bad = guard("kit", v);
+  if (bad) return bad;
+  const btu = num(v, "btu", 12000);
+  const run = num(v, "run", 6);
+  const height = num(v, "height", 1);
+  const wallKey = str(v, "wall", "brick");
+  const wall = WALL_BRACKET[wallKey] ?? WALL_BRACKET.brick;
+  const kind = str(v, "kind", "R32");
+  const std = num(v, "std", 5);
+  const feed = num(v, "feed", 10);
+  const drainLen = num(v, "drain", 4);
+  const spare = num(v, "spare", 0.5);
+  const trunkFull = bool(v, "trunkFull", true);
+  const trunkLen = trunkFull ? run : num(v, "trunkLen", 3);
+  if (height > run + 1e-9) {
+    return blockedResult({
+      headline: `สูงต่าง ${fmtTrim(height, 1)} ม. มากกว่าระยะท่อทั้งเส้น ${fmtTrim(run, 1)} ม. — เป็นไปไม่ได้ ตรวจค่าที่กรอก`,
+      rows: [{ label: "ระยะท่อ", value: "ต้องรวมช่วงดิ่งขึ้น-ลงแล้ว จึงไม่น้อยกว่าระยะสูงต่าง" }],
+      tip: "วัดระยะท่อตามแนวเดินจริงทั้งแนวนอนและแนวดิ่ง",
+    });
+  }
+  if (trunkLen > run + 1e-9) {
+    return blockedResult({
+      headline: `รางครอบ ${fmtTrim(trunkLen, 1)} ม. ยาวกว่าท่อ ${fmtTrim(run, 1)} ม. — ตรวจค่าที่กรอก`,
+      tip: "รางครอบท่อยาวได้ไม่เกินแนวท่อ ถ้าครอบตลอดแนวให้ติ๊ก “ครอบรางตลอดแนวท่อ”",
+    });
+  }
+
+  const pipe = copperSizeFor(btu, run);
+  const pipeRes = calcPipe({ btu, run });
+  const chargeRes = calcCharge({ kind, std, run });
+  const breakerRes = calcBreaker({ btu, method: "surface" });
+  const elec = breakerForBtu(btu, "surface");
+  const slopeRes = calcSlope({ len: drainLen, ratio: String(AC_KIT.drainRatio.value) });
+
+  const pipeBuy = ceil(run + spare);
+  const insul = stockPieces(pipeBuy, AC_KIT.insulationStick.value, "ท่อน");
+  const powerBuy = ceil(feed + spare);
+  const linkBuy = ceil(run + spare);
+  const drain = stockPieces(drainLen, AC_KIT.drainStick.value, "เส้น");
+  const trunk = stockPieces(trunkLen, AC_KIT.trunkStick.value, "ท่อน");
+  const trunkSize = (AC_TRUNK_SIZES.find((t) => btu <= t.maxBtu) ?? AC_TRUNK_SIZES[AC_TRUNK_SIZES.length - 1]).name;
+  const extra = Math.max(0, run - AC_KIT.freeLen.value);
+  const needCharge = run > std;
+  const addCharge = rowOf(chargeRes, "เติมเพิ่ม");
+  const drop = rowOf(slopeRes, "ตกทั้งเส้น");
+  const hun = (inch: string) => copperHun(inch).split(" (")[0];
+  const pipePair = `${hun(pipe.liq)} + ${hun(pipe.suc)}`;
+  const wireText = elec ? `${elec.wire} ตร.มม.` : "ตามป้ายเครื่อง";
+  const tall = height > AC_KIT.heightWarn.value;
+
+  const rows = [
+    { label: "แอร์", value: `${fmt(btu)} BTU · ท่อ ${fmtTrim(run, 1)} ม. · สูงต่าง ${fmtTrim(height, 1)} ม. · ผนัง${wall.name}` },
+    { label: `ท่อทองแดงเส้นเล็ก ${copperHun(pipe.liq)}`, value: `${fmt(pipeBuy)} ม.`, emphasize: true },
+    { label: `ท่อทองแดงเส้นใหญ่ ${copperHun(pipe.suc)}`, value: `${fmt(pipeBuy)} ม.`, emphasize: true },
+    { label: `ฉนวนหุ้มท่อ ${hun(pipe.liq)}`, value: `${fmt(pipeBuy)} ม. → ${insul.text}` },
+    { label: `ฉนวนหุ้มท่อ ${hun(pipe.suc)}`, value: `${fmt(pipeBuy)} ม. → ${insul.text}` },
+    {
+      label: elec ? `สายไฟเข้าเครื่อง VCT ${AC_KIT.powerCores.value}×${elec.wire} ตร.มม.` : "สายไฟเข้าเครื่อง VCT",
+      value: `${fmt(powerBuy)} ม.${elec ? "" : " (ขนาดตามป้ายเครื่อง)"}`,
+      emphasize: true,
+    },
+    {
+      label: elec ? `สายเชื่อมคอยล์ร้อน-เย็น VCT ${AC_KIT.linkCores.value}×${elec.wire} ตร.มม.` : "สายเชื่อมคอยล์ร้อน-เย็น VCT",
+      value: `${fmt(linkBuy)} ม. (บางรุ่นใช้สายเล็กกว่านี้ ดูแผนผังสายของรุ่น)`,
+    },
+    {
+      label: "เบรกเกอร์",
+      value: elec ? `${elec.breaker} A (สาย ${wireText} ทน ${elec.ampacity} A)` : "เกินตารางคร่าว — ใช้ค่าบนป้ายเครื่อง",
+      emphasize: true,
+    },
+    { label: "ท่อน้ำทิ้ง PVC 4 หุน", value: `${drain.text} · ลาด 1:${fmt(AC_KIT.drainRatio.value)} ตก ${drop}` },
+    ...(trunkLen > 0 ? [{ label: `รางครอบท่อ ${trunkSize}`, value: `${fmtTrim(trunkLen, 1)} ม. → ${trunk.text} + ข้องอ/ฝาครอบตามแนวจริง` }] : []),
+    { label: "ขาแขวน/ขาตั้งคอยล์ร้อน", value: wall.bracket },
+    {
+      label: `น้ำยา ${kind} เติมเพิ่ม`,
+      value: needCharge ? `${addCharge} · ท่อเกิน ${fmtTrim(std, 1)} ม.` : `ไม่ต้องเติม (ท่อ ${fmtTrim(run, 1)} ม. ไม่เกิน ${fmtTrim(std, 1)} ม.)`,
+    },
+    {
+      label: "ค่าแรงระยะเกิน",
+      value:
+        extra > 0
+          ? `ท่อเกินแพ็กติดตั้ง ${fmtTrim(AC_KIT.freeLen.value, 1)} ม. ไป ${fmtTrim(extra, 1)} ม. — คิดค่าท่อ+แรงเพิ่ม ${fmtTrim(extra, 1)} ม.`
+          : `ไม่เกินแพ็กติดตั้ง ${fmtTrim(AC_KIT.freeLen.value, 1)} ม.`,
+    },
+    ...(tall
+      ? [{ label: "สูงต่างมาก", value: `เกิน ${fmt(AC_KIT.heightWarn.value)} ม. เช็กระยะสูงต่างสูงสุดและการทำกับดักน้ำมันในคู่มือรุ่น`, emphasize: true }]
+      : []),
+  ];
+
+  const kitPart = resultX({
+    title: "ชุดติดตั้งแอร์",
+    rows,
+    tip: "",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-25",
+      summary:
+        "ใบสั่งของงานติดตั้งแอร์ 1 ชุด: ท่อคู่และสายยาวตามระยะจริง + เผื่อต่อเส้น ปัดขึ้นเป็นเมตร · ฉนวน/ราง/ท่อน้ำทิ้ง ปัดขึ้นเป็นท่อนที่ขาย",
+      steps: [
+        { label: "ท่อทองแดง (ต่อเส้น)", expr: "ปัดขึ้น(ระยะท่อ + เผื่อ)", subst: `${fmtTrim(run, 1)} + ${fmtTrim(spare, 1)} → ${fmt(pipeBuy)} ม. เส้นละขนาด` },
+        {
+          label: "ฉนวนหุ้มท่อ",
+          expr: `ปัดขึ้น(ยาวท่อ ÷ ${fmtTrim(AC_KIT.insulationStick.value, 1)} ม.) ต่อเส้น`,
+          subst: `${fmt(pipeBuy)} ÷ ${fmtTrim(AC_KIT.insulationStick.value, 1)} → ${insul.text}`,
+        },
+        { label: "สายไฟเข้าเครื่อง", expr: "ปัดขึ้น(ระยะจากตู้ไฟ + เผื่อ)", subst: `${fmtTrim(feed, 1)} + ${fmtTrim(spare, 1)} → ${fmt(powerBuy)} ม.` },
+        { label: "สายเชื่อมคอยล์", expr: "ปัดขึ้น(ระยะท่อ + เผื่อ)", subst: `${fmtTrim(run, 1)} + ${fmtTrim(spare, 1)} → ${fmt(linkBuy)} ม.` },
+        { label: "รางครอบท่อ", expr: `ปัดขึ้น(ยาวราง ÷ ${fmtTrim(AC_KIT.trunkStick.value, 1)} ม.)`, subst: `${fmtTrim(trunkLen, 1)} ม. → ${trunk.text}` },
+        { label: "ค่าแรงระยะเกิน", expr: `ระยะท่อ − ${fmtTrim(AC_KIT.freeLen.value, 1)} ม. (แพ็กติดตั้ง)`, subst: `${fmtTrim(run, 1)} − ${fmtTrim(AC_KIT.freeLen.value, 1)} = ${fmtTrim(extra, 1)} ม.` },
+      ],
+      constants: [AC_KIT.insulationStick, AC_KIT.trunkStick, AC_KIT.drainStick, AC_KIT.freeLen, AC_KIT.heightWarn, AC_KIT.linkCores],
+      assumptions: [
+        "แอร์ผนังแยกส่วน 1 เครื่อง ไฟ 220 V 1 เฟส เดินสายแยกวงจรจากตู้ไฟ",
+        "ระยะท่อคือแนวเดินจริงรวมช่วงดิ่ง · สายเชื่อมคอยล์ยาวเท่าแนวท่อ",
+        "ท่อน้ำทิ้ง PVC 4 หุน · รางครอบเลือกตามขนาดแอร์ (ท่อคู่ + ฉนวน + สาย + ท่อน้ำทิ้งต้องลงราง)",
+        "ค่าแรงระยะเกินคิดจากแพ็กติดตั้งทั่วไปที่รวมท่อ 4 ม. — แต่ละร้านกำหนดเองได้",
+      ],
+      caveats: [
+        "ยึดคู่มือรุ่นที่ติดตั้งจริงเรื่องขนาดท่อ ระยะไม่ต้องเติมน้ำยา ระยะสูงต่าง และขนาด/จำนวนแกนสายเชื่อม",
+        "สาย VCT หลายแกนพิกัดกระแสต่างจากสายเดี่ยวในท่อ — ขนาดในใบนี้มาจากตารางคร่าวตาม BTU ให้ช่างไฟยืนยันกับป้ายเครื่อง",
+        ...(tall ? ["ระยะสูงต่างเกินที่รุ่นส่วนใหญ่รับได้ บางรุ่นต้องทำกับดักน้ำมันทุกช่วงความสูงตามคู่มือ"] : []),
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "คู่มือติดตั้งเครื่องปรับอากาศแยกส่วนของผู้ผลิต (ท่อ สาย ท่อน้ำทิ้ง ขาแขวน)" }],
+    },
+  });
+
+  return jobFromParts({
+    title: "ชุดติดตั้งแอร์ / ใบสั่งของ",
+    headline: `ท่อ ${pipePair} ยาว ${fmt(pipeBuy)} ม. · สาย VCT ${elec ? `${AC_KIT.powerCores.value}×${elec.wire}` : "ตามป้ายเครื่อง"} · เบรกเกอร์ ${elec ? `${elec.breaker} A` : "ตามป้ายเครื่อง"}`,
+    rows,
+    tip: "ยังไม่รวมเทปพันท่อ ปลอกรูผนัง ซิลิโคนอุดรู และค่าแรงติดตั้ง · ขนาดสายและเบรกเกอร์เป็นตารางคร่าว ให้ช่างไฟยืนยันกับป้ายเครื่อง",
+    parts: [kitPart, pipeRes, chargeRes, ...(breakerRes.invalid ? [] : [breakerRes]), slopeRes],
+    chart: pipeRes.chart,
+  });
+}
+
+/* ═══════════════ รอบ 4 (2026-11-26): พัดลมระบายอากาศ ═══════════════ */
+
+/** ลม (ลบ.ม./ชม.) = ปริมาตรห้อง × อัตราเปลี่ยนอากาศ · CFM = ลบ.ม./ชม. ÷ 1.699011 */
+export function ventAirflow(w: number, l: number, h: number, ach: number) {
+  const vol = w * l * h;
+  const m3h = vol * ach;
+  return { vol, m3h, cfm: m3h / VENT.cfm.value };
+}
+
+export function calcVentFan(v: Values): CalcResult {
+  const bad = guard("fan", v);
+  if (bad) return bad;
+  const w = num(v, "w", 1.5);
+  const l = num(v, "l", 2);
+  const h = num(v, "h", 2.4);
+  const room = str(v, "room", "bath");
+  const preset = ACH_PRESETS[room];
+  const ach = preset ? preset.ach.value : num(v, "ach", 10);
+  const margin = num(v, "margin", VENT.margin.value);
+  const a = ventAirflow(w, l, h, ach);
+  const design = a.m3h * (1 + margin / 100);
+  const pick = VENT_FAN_CLASSES.find((f) => f.m3h >= design - 1e-9);
+  const biggest = VENT_FAN_CLASSES[VENT_FAN_CLASSES.length - 1];
+  const many = pick ? 0 : ceil(design / biggest.m3h);
+  const name = preset ? preset.label : "กำหนดเอง";
+  return resultX({
+    title: "พัดลมระบายอากาศ",
+    headline: pick
+      ? `ต้องการลม ${fmt(a.m3h)} ลบ.ม./ชม. (${fmt(a.cfm)} CFM) → ${pick.label}`
+      : `ต้องการลม ${fmt(a.m3h)} ลบ.ม./ชม. (${fmt(a.cfm)} CFM) → ${biggest.label} ${fmt(many)} ตัว`,
+    chart: pick
+      ? {
+          kind: "steps",
+          unit: "ลบ.ม./ชม.",
+          need: design,
+          needLabel: "ต้องการ (รวมเผื่อ)",
+          items: VENT_FAN_CLASSES.map((f) => ({ label: f.label, value: f.m3h, state: f === pick ? "chosen" : f.m3h < pick.m3h ? "under" : "over" })),
+        }
+      : undefined,
+    rows: [
+      { label: "ปริมาตรห้อง", value: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} × ${fmtTrim(h, 2)} ม. = ${fmt(a.vol, 2)} ลบ.ม.` },
+      { label: `เปลี่ยนอากาศ (${name})`, value: `${fmtTrim(ach, 1)} ครั้ง/ชม.` },
+      { label: "ลมที่ต้องดูดออก", value: `${fmt(a.m3h, 1)} ลบ.ม./ชม. = ${fmt(a.cfm, 1)} CFM`, emphasize: true },
+      { label: `รวมเผื่อท่อ/หน้ากาก ${fmtTrim(margin, 1)}%`, value: `${fmt(design, 1)} ลบ.ม./ชม.` },
+      pick
+        ? { label: "ขนาดพัดลม", value: `${pick.label} (ราว ${fmt(pick.m3h)} ลบ.ม./ชม.)`, emphasize: true }
+        : { label: "ขนาดพัดลม", value: `${biggest.label} ${fmt(many)} ตัว (ตัวละราว ${fmt(biggest.m3h)} ลบ.ม./ชม.) หรือพัดลมอุตสาหกรรม`, emphasize: true },
+    ],
+    tip: "พัดลมดูดออกต้องมีช่องให้ลมเข้าแทน (เกล็ดประตู ช่องใต้ประตู) ไม่งั้นลมไม่ออกตามสเปก — ดูค่าลมบนกล่องว่าวัดแบบมีท่อหรือไม่มี",
+    explain: {
+      risk: "B",
+      updatedAt: "2026-11-26",
+      summary: "ลมที่ต้องดูด = ปริมาตรห้อง × อัตราเปลี่ยนอากาศต่อชั่วโมง แล้วบวกเผื่อแรงต้านท่อ เทียบกับขั้นลมของพัดลม · 1 CFM = 1.699 ลบ.ม./ชม.",
+      steps: [
+        { label: "ปริมาตรห้อง", expr: "V = กว้าง × ยาว × สูง", subst: `${fmtTrim(w, 2)} × ${fmtTrim(l, 2)} × ${fmtTrim(h, 2)} = ${fmt(a.vol, 3)} ลบ.ม.` },
+        { label: "ลมที่ต้องดูด", expr: "Q = V × ACH", subst: `${fmt(a.vol, 3)} × ${fmtTrim(ach, 1)} = ${fmt(a.m3h, 2)} ลบ.ม./ชม.` },
+        {
+          label: "แปลงเป็น CFM",
+          expr: "CFM = ลบ.ม./ชม. ÷ (0.3048³ × 60)",
+          subst: `${fmt(a.m3h, 2)} ÷ ${fmt(VENT.cfm.value, 6)} = ${fmt(a.cfm, 2)} CFM`,
+          note: "1 ฟุต = 0.3048 ม. ตามนิยาม จึงได้ 1 CFM = 1.699011 ลบ.ม./ชม.",
+        },
+        { label: "รวมเผื่อ", expr: "Q × (1 + เผื่อ%)", subst: `${fmt(a.m3h, 2)} × ${fmtTrim(1 + margin / 100, 3)} = ${fmt(design, 2)} ลบ.ม./ชม.` },
+        pick
+          ? { label: "เลือกขั้นพัดลม", expr: "ขั้นแรกที่ลม ≥ ที่ต้องการรวมเผื่อ", subst: `${fmt(pick.m3h)} ≥ ${fmt(design, 1)} → ${pick.label}` }
+          : { label: "จำนวนพัดลม", expr: `ตัว = ปัดขึ้น(ลมรวมเผื่อ ÷ ${fmt(biggest.m3h)})`, subst: `${fmt(design, 1)} ÷ ${fmt(biggest.m3h)} = ${fmt(many)} ตัว` },
+      ],
+      constants: [...(preset ? [preset.ach] : []), VENT.cfm, VENT.margin, VENT.fanTableMax],
+      assumptions: ["ห้องปิด ลมเข้าแทนได้จากช่องเปิดที่มี", "ขั้นลมของพัดลมเป็นค่าแบบไม่มีท่อ ⚠️ ยังไม่ยืนยันกับรุ่นจริง"],
+      caveats: [
+        "อัตราเปลี่ยนอากาศตามชนิดห้องเป็นแนวปฏิบัติ (CIBSE / ASHRAE) ไม่ใช่ข้อบังคับ ⚠️ ยังไม่ได้เทียบกับกฎกระทรวงเรื่องการระบายอากาศ — อาคารที่ต้องขออนุญาตต้องตรวจกับกฎกระทรวงและมาตรฐานที่ใช้จริง",
+        "ครัวที่ผัดทอดหนักต้องใช้เครื่องดูดควันเหนือเตา พัดลมระบายอากาศห้องอย่างเดียวไม่พอ",
+        DISCLAIMER_AB,
+      ],
+      refs: [{ label: "การระบายอากาศด้วยอัตราเปลี่ยนอากาศ (Air changes per hour)" }, { label: "แนวปฏิบัติ CIBSE Guide B / ASHRAE (อัตราเปลี่ยนอากาศตามชนิดห้อง)" }],
+    },
+  });
+}
+
+const fanTool: ToolDef = {
+  id: "fan",
+  name: "พัดลมระบายอากาศ",
+  blurb: "ขนาดห้อง + ชนิดห้อง → ลม ลบ.ม./ชม. CFM และขนาดพัดลม",
+  keywords: ["พัดลมระบายอากาศ", "พัดลมดูดอากาศ", "ดูดอากาศ", "ระบายอากาศ", "cfm", "ach", "ห้องน้ำอับ"],
+  fields: [
+    { type: "number", key: "w", label: "กว้างห้อง", unit: "ม.", default: 1.5, min: 0.5, max: 50, step: 0.05 },
+    { type: "number", key: "l", label: "ยาวห้อง", unit: "ม.", default: 2, min: 0.5, max: 50, step: 0.05 },
+    { type: "number", key: "h", label: "สูงห้อง", unit: "ม.", default: 2.4, min: 1.8, max: 10, step: 0.05 },
+    {
+      type: "select",
+      key: "room",
+      label: "ชนิดห้อง (ค่าอ้างอิง)",
+      default: "bath",
+      options: [
+        ...Object.entries(ACH_PRESETS).map(([value, p]) => ({ value, label: `${p.label} ${fmt(p.ach.value)} ครั้ง/ชม.` })),
+        { value: "custom", label: "กำหนดเอง" },
+      ],
+    },
+    { type: "number", key: "ach", label: "เปลี่ยนอากาศ", unit: "ครั้ง/ชม.", default: 10, min: 1, max: 60, step: 0.5, when: { key: "room", is: "custom" } },
+    { type: "number", key: "margin", label: "เผื่อแรงต้านท่อ/หน้ากาก", unit: "%", default: VENT.margin.value, min: 0, max: 100 },
+  ],
+  calc: calcVentFan,
+};
+
 export const hvacTools: ToolDef[] = [
   {
     id: "btu",
     name: "คำนวณ BTU แอร์",
     blurb: "ขนาดแอร์ที่เหมาะกับห้อง",
     fields: [
-      { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 1, step: 0.1 },
-      { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 5, min: 1, step: 0.1 },
-      { type: "number", key: "h", label: "สูงฝ้า", unit: "ม.", default: 2.6, min: 2, step: 0.1 },
+      { type: "number", key: "w", label: "กว้าง", unit: "ม.", default: 4, min: 1, max: 50, step: 0.1 },
+      { type: "number", key: "l", label: "ยาว", unit: "ม.", default: 5, min: 1, max: 50, step: 0.1 },
+      { type: "number", key: "h", label: "สูงฝ้า", unit: "ม.", default: 2.6, min: 2, max: 8, step: 0.1 },
       {
         type: "select",
         key: "room",
@@ -588,7 +1096,7 @@ export const hvacTools: ToolDef[] = [
         default: false,
         when: { key: "room", is: ["bed", "live", "work"] },
       },
-      { type: "number", key: "people", label: "คนใช้ห้อง", unit: "คน", default: 2, min: 1 },
+      { type: "number", integer: true, key: "people", label: "คนใช้ห้อง", unit: "คน", default: 2, min: 1, max: 100 },
       {
         type: "select",
         key: "heat",
@@ -615,7 +1123,7 @@ export const hvacTools: ToolDef[] = [
         default: "R32",
         options: ["R32", "R410A", "R22", "R134a"].map((x) => ({ value: x, label: x })),
       },
-      { type: "number", key: "psi", label: "แรงดันเกจ", unit: "psi", default: 150, min: 0 },
+      { type: "number", key: "psi", label: "แรงดันเกจ", unit: "psi", default: 150, min: 0, max: 1000 },
     ],
     calc: calcPt,
   },
@@ -624,10 +1132,45 @@ export const hvacTools: ToolDef[] = [
     name: "ขนาดท่อทองแดง",
     blurb: "ท่อน้ำยาตามขนาดแอร์และระยะ",
     fields: [
-      { type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 18000, min: 5000, step: 1000 },
-      { type: "number", key: "run", label: "ระยะเดินท่อ", unit: "ม.", default: 8, min: 1, step: 0.5 },
+      { type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 18000, min: 5000, max: 60000, step: 1000 },
+      { type: "number", key: "run", label: "ระยะเดินท่อ", unit: "ม.", default: 8, min: 1, max: 50, step: 0.5 },
     ],
     calc: calcPipe,
+  },
+  {
+    id: "kit",
+    name: "ชุดติดตั้งแอร์ / ใบสั่งของ",
+    blurb: "ท่อ ฉนวน สาย VCT ราง ท่อน้ำทิ้ง ขาแขวน น้ำยา ค่าระยะเกิน",
+    fields: [
+      { type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 12000, min: 5000, max: 60000, step: 1000 },
+      { type: "number", key: "run", label: "ระยะท่อน้ำยา (รวมช่วงดิ่ง)", unit: "ม.", default: 6, min: 1, max: 50, step: 0.5 },
+      { type: "number", key: "height", label: "คอยล์ร้อน-เย็นสูงต่างกัน", unit: "ม.", default: 1, min: 0, max: 30, step: 0.5 },
+      {
+        type: "select",
+        key: "wall",
+        label: "ผนังที่แขวนคอยล์ร้อน",
+        default: "brick",
+        options: [
+          { value: "brick", label: "อิฐฉาบปูน" },
+          { value: "concrete", label: "คอนกรีต" },
+          { value: "light", label: "ผนังเบา / ไม้ / สมาร์ทบอร์ด" },
+        ],
+      },
+      {
+        type: "select",
+        key: "kind",
+        label: "น้ำยา",
+        default: "R32",
+        options: ["R32", "R410A", "R22"].map((x) => ({ value: x, label: x })),
+      },
+      { type: "number", key: "std", label: "ระยะท่อที่ไม่ต้องเติมน้ำยา (ดูคู่มือรุ่น)", unit: "ม.", default: 5, min: 0, max: 30 },
+      { type: "number", key: "feed", label: "ระยะสายไฟจากตู้ไฟถึงแอร์", unit: "ม.", default: 10, min: 1, max: 100, step: 0.5 },
+      { type: "number", key: "drain", label: "ยาวท่อน้ำทิ้ง", unit: "ม.", default: 4, min: 1, max: 50, step: 0.5 },
+      { type: "number", key: "spare", label: "เผื่อท่อ/สาย ต่อเส้น (บาน ดัด เข้าขั้ว)", unit: "ม.", default: 0.5, min: 0, max: 3, step: 0.1 },
+      { type: "bool", key: "trunkFull", label: "ครอบรางตลอดแนวท่อ", default: true },
+      { type: "number", key: "trunkLen", label: "ยาวรางครอบ (ช่วงที่เดินโชว์)", unit: "ม.", default: 3, min: 0, max: 50, step: 0.5, when: { key: "trunkFull", is: "false" } },
+    ],
+    calc: calcAcKit,
   },
   {
     id: "charge",
@@ -641,9 +1184,9 @@ export const hvacTools: ToolDef[] = [
         default: "R32",
         options: ["R32", "R410A", "R22"].map((x) => ({ value: x, label: x })),
       },
-      { type: "number", key: "factory", label: "ชาร์จจากโรงงาน", unit: "กรัม", default: 700, min: 0 },
-      { type: "number", key: "std", label: "ระยะมาตรฐานรุ่น", unit: "ม.", default: 5, min: 0 },
-      { type: "number", key: "run", label: "ระยะท่อจริง", unit: "ม.", default: 8, min: 0, step: 0.5 },
+      { type: "number", key: "factory", label: "ชาร์จจากโรงงาน", unit: "กรัม", default: 700, min: 0, max: 5000 },
+      { type: "number", key: "std", label: "ระยะมาตรฐานรุ่น", unit: "ม.", default: 5, min: 0, max: 30 },
+      { type: "number", key: "run", label: "ระยะท่อจริง", unit: "ม.", default: 8, min: 0, max: 50, step: 0.5 },
     ],
     calc: calcCharge,
   },
@@ -651,7 +1194,19 @@ export const hvacTools: ToolDef[] = [
     id: "breaker",
     name: "เบรกเกอร์ + สายไฟแอร์",
     blurb: "เลือกเบรกเกอร์และสายตามขนาดแอร์",
-    fields: [{ type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 18000, min: 5000, step: 1000 }],
+    fields: [
+      { type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 18000, min: 5000, max: 60000, step: 1000 },
+      {
+        type: "select",
+        key: "method",
+        label: "วิธีเดินสาย",
+        default: "surface",
+        options: [
+          { value: "surface", label: CABLE_METHODS.surface.label },
+          { value: "embed", label: CABLE_METHODS.embed.label },
+        ],
+      },
+    ],
     calc: calcBreaker,
   },
   {
@@ -666,10 +1221,10 @@ export const hvacTools: ToolDef[] = [
         default: "R32",
         options: ["R32", "R410A", "R22", "R134a"].map((x) => ({ value: x, label: x })),
       },
-      { type: "number", key: "sucP", label: "แรงดันท่อดูด", unit: "psi", default: 120, min: 0 },
-      { type: "number", key: "sucT", label: "อุณหภูมิต่อดูด (ใช้คิดความร้อนเกิน)", unit: "°C", default: 12 },
-      { type: "number", key: "liqP", label: "แรงดันท่อของเหลว", unit: "psi", default: 380, min: 0 },
-      { type: "number", key: "liqT", label: "อุณหภูมิต่อของเหลว (ใช้คิดความเย็นเกิน)", unit: "°C", default: 38 },
+      { type: "number", key: "sucP", label: "แรงดันท่อดูด", unit: "psi", default: 120, min: 0, max: 1000 },
+      { type: "number", key: "sucT", label: "อุณหภูมิท่อดูด (ใช้คิดความร้อนเกิน)", unit: "°C", default: 12, min: -40, max: 60 },
+      { type: "number", key: "liqP", label: "แรงดันท่อของเหลว", unit: "psi", default: 380, min: 0, max: 1000 },
+      { type: "number", key: "liqT", label: "อุณหภูมิท่อของเหลว (ใช้คิดความเย็นเกิน)", unit: "°C", default: 38, min: -10, max: 80 },
     ],
     calc: calcShsc,
   },
@@ -678,43 +1233,119 @@ export const hvacTools: ToolDef[] = [
     name: "ค่าไฟแอร์",
     blurb: "ประเมินค่าไฟต่อเดือน",
     fields: [
-      { type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 18000, min: 5000, step: 1000 },
-      { type: "number", key: "eer", label: "ค่าประสิทธิภาพแอร์ (EER)", default: 12, min: 6, step: 0.1 },
-      { type: "number", key: "hours", label: "ชั่วโมง/วัน", unit: "ชม.", default: 8, min: 1 },
-      { type: "number", key: "days", label: "วัน/เดือน", unit: "วัน", default: 30, min: 1 },
-      { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: 4.2, min: 0, step: 0.1 },
+      { type: "number", key: "btu", label: "ขนาดแอร์", unit: "BTU", default: 18000, min: 5000, max: 60000, step: 1000 },
+      { type: "number", key: "eer", label: "ค่าประสิทธิภาพแอร์ (EER)", default: 12, min: 6, max: 30, step: 0.1 },
+      { type: "number", key: "hours", label: "ชั่วโมง/วัน", unit: "ชม.", default: 8, min: 1, max: 24 },
+      { type: "number", key: "days", label: "วัน/เดือน", unit: "วัน", default: 30, min: 1, max: 31 },
+      { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: 4.2, min: 0.5, max: 20, step: 0.1 },
     ],
     calc: calcEnergy,
   },
+  fanTool,
 ];
 
 export const hvacJob: JobDef = {
   name: "คิดทั้งงานแอร์",
-  blurb: "กรอกห้องครั้งเดียว ได้ขนาดแอร์ สายไฟ และค่าไฟคร่าว ๆ",
+  blurb: "กรอกห้องครั้งเดียว ได้ขนาดแอร์ ท่อทองแดง น้ำยา สายไฟ ค่าไฟ",
   fields: [
     ...hvacTools[0].fields,
-    { type: "number", key: "eer", label: "ค่าประสิทธิภาพแอร์ (EER ถ้าไม่รู้ใส่ 12)", default: 12, min: 6, step: 0.1 },
-    { type: "number", key: "hours", label: "ชั่วโมงเปิด/วัน", unit: "ชม.", default: 8, min: 1 },
-    { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: 4.2, min: 0, step: 0.1 },
+    {
+      type: "select",
+      key: "bought",
+      label: "ขนาดแอร์ที่ซื้อแล้ว",
+      default: "auto",
+      options: [{ value: "auto", label: "ยังไม่ซื้อ — ให้คิดจากห้อง" }, ...AC_SIZES.map((x) => ({ value: String(x), label: `${fmt(x)} BTU` }))],
+    },
+    { type: "number", key: "run", label: "ระยะท่อน้ำยา", unit: "ม.", default: 4, min: 1, max: 50, step: 0.5 },
+    {
+      type: "select",
+      key: "kind",
+      label: "น้ำยา",
+      default: "R32",
+      options: ["R32", "R410A", "R22"].map((x) => ({ value: x, label: x })),
+    },
+    { type: "number", key: "std", label: "ระยะท่อที่ไม่ต้องเติมน้ำยา (ดูคู่มือรุ่น)", unit: "ม.", default: 5, min: 0, max: 30 },
+    { type: "number", key: "eer", label: "ค่าประสิทธิภาพแอร์ (EER ถ้าไม่รู้ใส่ 12)", default: 12, min: 6, max: 30, step: 0.1 },
+    { type: "number", key: "hours", label: "ชั่วโมงเปิด/วัน", unit: "ชม.", default: 8, min: 1, max: 24 },
+    { type: "number", key: "rate", label: "ค่าไฟ", unit: "บาท/หน่วย", default: 4.2, min: 0.5, max: 20, step: 0.1 },
   ],
-  calc: (v) => {
+  calc: (input) => {
+    const bad = guardInputs(hvacJob.fields, input);
+    if (bad) return bad;
+    const v = withDefaults(hvacJob.fields, input);
     const btuRes = calcBtu(v);
     const sizeRow = btuRes.rows.find((r) => r.label === "ขนาดแอร์แนะนำ");
-    const size = Number(String(sizeRow?.value).replace(/[^\d.]/g, "")) || 18000;
+    const boughtKey = str(v, "bought", "auto");
+    const bought = boughtKey === "auto" ? 0 : Number(boughtKey);
+    if (bought === 0 && (btuRes.invalid || !sizeRow)) {
+      // ห้องใหญ่เกินแอร์ตัวเดียว: ไม่มีขนาดเครื่องให้คิดสายไฟ/ค่าไฟต่อ — ตอบเฉพาะภาระ
+      return jobFromParts({
+        title: "งานแอร์ทั้งห้อง",
+        headline: btuRes.headline ?? "ห้องใหญ่เกินแอร์ตัวเดียว",
+        rows: [
+          ...btuRes.rows,
+          { label: "ท่อ / สายไฟ / ค่าไฟ", value: "คิดต่อเครื่องหลังเลือกจำนวนและขนาดเครื่องแล้ว (เลือกในช่อง “ขนาดแอร์ที่ซื้อแล้ว”)" },
+        ],
+        tip: "ห้องใหญ่ระดับนี้ให้ช่างแอร์สำรวจหน้างาน แบ่งเครื่องตามโซน แล้วค่อยคิดเบรกเกอร์และค่าไฟทีละเครื่อง",
+        parts: [btuRes],
+      });
+    }
+    const recSize = sizeRow && !btuRes.invalid ? Number(sizeRow.value.replace(/[^\d.]/g, "")) : 0;
+    const size = bought > 0 ? bought : recSize;
+    const run = num(v, "run", 4);
     const breakerRes = calcBreaker({ btu: size });
-    const energy = calcEnergy({ ...v, btu: size });
+    const pipeRes = calcPipe({ btu: size, run });
+    const chargeRes = calcCharge({ kind: v.kind, std: v.std, run });
+    const energy = calcEnergy({ btu: size, eer: v.eer, hours: v.hours, rate: v.rate });
+    const breakerOk = !breakerRes.invalid;
+    const breakerRow = breakerRes.rows.find((r) => r.label === "เบรกเกอร์")?.value;
+    const wireRow = breakerRes.rows.find((r) => r.label === "สายไฟ (ทองแดง)")?.value;
+    // แถวขนาดแอร์: ถ้าลูกค้าซื้อมาแล้วให้ยึดเครื่องนั้น แล้วบอกว่าเทียบกับที่ห้องต้องการเป็นอย่างไร
+    const sizeRows =
+      bought > 0
+        ? [
+            ...btuRes.rows.filter((r) => r.label !== "ขนาดแอร์แนะนำ").map((r) => ({ ...r, emphasize: false })),
+            ...(recSize > 0 ? [{ label: "ขนาดที่ห้องต้องการ", value: `${fmt(recSize)} BTU` }] : []),
+            {
+              label: "ขนาดแอร์ที่ใช้คิด (ซื้อแล้ว)",
+              value:
+                recSize === 0
+                  ? `${fmt(size)} BTU ต่อเครื่อง — ห้องนี้ต้องใช้หลายเครื่อง`
+                  : size < recSize
+                    ? `${fmt(size)} BTU — เล็กกว่าที่ห้องต้องการ เย็นช้าและคอมเพรสเซอร์ทำงานหนัก`
+                    : `${fmt(size)} BTU`,
+              emphasize: true,
+            },
+          ]
+        : btuRes.rows;
+    const pipeText = pipeRes.headline?.replace("ท่อทองแดง ", "") ?? "-";
     return jobFromParts({
       title: "งานแอร์ทั้งห้อง",
-      headline: btuRes.headline ?? `แนะนำแอร์ ${fmt(size)} BTU`,
+      headline:
+        bought > 0
+          ? `แอร์ ${fmt(size)} BTU (ซื้อแล้ว)${breakerOk ? ` · เบรกเกอร์ ${breakerRow} · สาย ${wireRow}` : ""}`
+          : (btuRes.headline ?? `แนะนำแอร์ ${fmt(size)} BTU`),
       rows: [
-        ...btuRes.rows,
-        ...breakerRes.rows.filter((r) => r.emphasize || r.label === "กระแสประมาณ"),
+        ...sizeRows,
+        { label: "ท่อทองแดง", value: pipeText, emphasize: true },
+        {
+          label: `น้ำยา ${str(v, "kind", "R32")} เติมเพิ่ม`,
+          value:
+            run > num(v, "std", 5)
+              ? (chargeRes.rows.find((r) => r.label === "เติมเพิ่ม")?.value ?? "-")
+              : `ไม่ต้องเติม (ท่อ ${fmtTrim(run, 1)} ม. ไม่เกิน ${fmtTrim(num(v, "std", 5), 1)} ม.)`,
+        },
+        ...(breakerOk
+          ? [
+              ...breakerRes.rows.filter((r) => r.emphasize || r.label === "กระแสประมาณ"),
+              { label: "หมายเหตุสายไฟ", value: `ตารางคร่าวตาม BTU (${CABLE_METHODS.surface.short}) — ให้ช่างไฟยืนยันกับป้ายเครื่อง` },
+            ]
+          : [{ label: "เบรกเกอร์ / สายไฟ", value: `เกินตารางคร่าว (ถึง ${fmt(AC_BREAKER_MAX_BTU)} BTU) — ใช้ค่าบนป้ายเครื่อง` }]),
         { label: "ค่าไฟ/เดือน", value: energy.rows.find((r) => r.emphasize)?.value ?? "-" },
-        { label: "หมายเหตุสายไฟ", value: "ตารางคร่าวตาม BTU ไม่ใช่ตาราง วสท. — ให้ช่างไฟยืนยัน" },
       ],
-      tip: "สายไฟในหน้านี้เป็นตารางคร่าวตามขนาดแอร์ งานจริงเทียบสเปกรุ่นและให้ช่างไฟ/วิศวกรยืนยัน ยังไม่รวมค่าติดตั้งและขาแขวน",
-      parts: [btuRes, breakerRes, energy],
-      chart: btuRes.chart,
+      tip: "ยังไม่รวมฉนวนท่อ สายคอนโทรล ท่อน้ำทิ้ง รางครอบท่อ และขาแขวน · สายไฟเป็นตารางคร่าวตามขนาดแอร์ งานจริงเทียบป้ายเครื่องและให้ช่างไฟ/วิศวกรยืนยัน ยังไม่รวมค่าติดตั้ง",
+      parts: [...(btuRes.invalid ? [] : [btuRes]), pipeRes, chargeRes, ...(breakerOk ? [breakerRes] : []), energy],
+      chart: bought > 0 ? undefined : btuRes.chart,
     });
   },
 };

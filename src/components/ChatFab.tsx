@@ -110,7 +110,8 @@ export function ChatFab({ lineUrl, lineId }: { lineUrl: string; lineId: string }
   }
 
   return (
-    <div className={`no-print fixed right-4 z-[45] ${fabBottom} sm:bottom-6`}>
+    // chat-fab: hook for pages that pin their own bar to the bottom edge (see globals.css, assistant answer bar)
+    <div className={`chat-fab no-print fixed right-4 z-[45] ${fabBottom} sm:bottom-6`}>
       {open ? (
         <div className="mb-3 flex h-[min(32rem,calc(100dvh-8rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-[3px] bg-white shadow-[0_8px_40px_rgba(35,50,61,0.18)]">
           <div className="flex items-center gap-2 bg-navy px-3 py-2.5 text-white">

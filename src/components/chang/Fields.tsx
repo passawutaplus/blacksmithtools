@@ -1,15 +1,28 @@
 "use client";
 
-import { ArrowLeftRight } from "lucide-react";
+import { useId, useState } from "react";
+import { ArrowLeftRight, Check, CircleAlert } from "lucide-react";
 import type { Field, Values } from "@/lib/chang/types";
 import { visibleFields } from "@/lib/chang/math";
+import {
+  draftMatchesValue,
+  formatFieldNumber,
+  parseNumberInput,
+  toFieldValue,
+} from "@/lib/chang/number-input";
 
-export function defaultsFrom(fields: Field[]): Values {
-  const v: Values = {};
-  for (const f of fields) {
-    v[f.key] = f.default;
-  }
-  return v;
+/** id ของช่องกรอกใน DOM — ใช้พาไปช่องที่กรอกผิดจากการ์ดผลลัพธ์/แถบคำตอบ */
+export function fieldDomId(key: string): string {
+  return `chang-field-${key}`;
+}
+
+/** เลื่อนไปที่ช่องแล้วโฟกัส (ไม่เลื่อนซ้ำตอนโฟกัส กันจอกระตุก) */
+export function focusField(key: string): void {
+  const el = document.getElementById(fieldDomId(key));
+  if (!el) return;
+  const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  el.focus({ preventScroll: true });
 }
 
 type SelectField = Extract<Field, { type: "select" }>;
@@ -186,7 +199,7 @@ export function SwapButton({ onClick, label = "สลับหน่วย" }: {
       type="button"
       aria-label={label}
       onClick={onClick}
-      className="mb-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-steel bg-white text-navy transition hover:border-navy/30 hover:bg-navy/5 hover:text-forge active:scale-95"
+      className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[2px] border border-navy/30 bg-white text-navy transition-colors hover:border-navy hover:bg-navy hover:text-white"
     >
       <ArrowLeftRight className="h-4 w-4" aria-hidden />
     </button>
@@ -253,25 +266,9 @@ function FieldControl({
     return (
       <fieldset>
         <legend className="label">{field.label}</legend>
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            className={`min-h-11 rounded px-3 py-2 text-sm font-semibold ${
-              !on ? "bg-navy text-white" : "border border-steel bg-white text-navy"
-            }`}
-            onClick={() => onChange(false)}
-          >
-            ไม่
-          </button>
-          <button
-            type="button"
-            className={`min-h-11 rounded px-3 py-2 text-sm font-semibold ${
-              on ? "bg-navy text-white" : "border border-steel bg-white text-navy"
-            }`}
-            onClick={() => onChange(true)}
-          >
-            ใช่
-          </button>
+        <div className="grid grid-cols-2">
+          <ToggleOption label="ไม่" selected={!on} onClick={() => onChange(false)} side="left" />
+          <ToggleOption label="ใช่" selected={on} onClick={() => onChange(true)} side="right" />
         </div>
       </fieldset>
     );
@@ -282,6 +279,7 @@ function FieldControl({
       <label className="block">
         <span className="label">{field.label}</span>
         <select
+          id={fieldDomId(field.key)}
           className="input"
           value={String(value ?? field.default)}
           onChange={(e) => onChange(e.target.value)}
@@ -301,6 +299,7 @@ function FieldControl({
       <label className="block">
         <span className="label">{field.label}</span>
         <textarea
+          id={fieldDomId(field.key)}
           className="input min-h-24 py-3"
           rows={3}
           placeholder={field.placeholder}
@@ -311,24 +310,103 @@ function FieldControl({
     );
   }
 
+  return <NumberControl field={field} value={value} error={error} onChange={onChange} />;
+}
+
+/** ปุ่มเลือก ใช่/ไม่ — บอกสถานะด้วยเครื่องหมายถูก + aria-pressed ไม่ใช่สีอย่างเดียว */
+function ToggleOption({
+  label,
+  selected,
+  onClick,
+  side,
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  side: "left" | "right";
+}) {
   return (
-    <label className="block">
-      <span className="label">{field.label}</span>
-      <span className={`flex items-center gap-2 rounded border bg-white px-3 ${error ? "border-forge" : "border-[#d1d5db]"}`}>
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={onClick}
+      className={`flex min-h-12 items-center justify-center gap-1.5 border px-3 text-sm font-semibold transition-colors ${
+        side === "left" ? "rounded-l-[2px]" : "-ml-px rounded-r-[2px]"
+      } ${
+        selected
+          ? "relative z-10 border-navy bg-navy text-white"
+          : "border-navy/30 bg-white text-navy hover:border-navy"
+      }`}
+    >
+      {selected ? <Check className="h-4 w-4 shrink-0" strokeWidth={2.5} aria-hidden /> : null}
+      {label}
+    </button>
+  );
+}
+
+type NumberField = Extract<Field, { type: "number" }>;
+
+/**
+ * ช่องตัวเลข — ใช้ type="text" + inputMode="decimal" แทน type="number"
+ * เพราะ type="number" ทิ้งคอมมาและเลขไทยเงียบ ๆ ("4,5" กลายเป็น 45) ดูกติกาที่ number-input.ts
+ */
+function NumberControl({
+  field,
+  value,
+  error,
+  onChange,
+}: {
+  field: NumberField;
+  value: string | number | boolean | undefined;
+  error?: string;
+  onChange: (v: string | number | boolean) => void;
+}) {
+  const uid = useId();
+  const errorId = `${uid}-err`;
+  const unitId = `${uid}-unit`;
+  // ข้อความที่พิมพ์ค้างไว้ (เช่น "4." หรือ "๔,๕") — ใช้ต่อเมื่อยังหมายถึงค่าเดียวกับในฟอร์ม
+  const [draft, setDraft] = useState<string | null>(null);
+  const text = draft !== null && draftMatchesValue(draft, value) ? draft : formatFieldNumber(value);
+  const describedBy = [error ? errorId : null, field.unit ? unitId : null].filter(Boolean).join(" ") || undefined;
+
+  return (
+    <div>
+      <label className="label" htmlFor={fieldDomId(field.key)}>
+        {field.label}
+      </label>
+      <div className="chang-field" data-invalid={error ? "true" : undefined}>
         <input
-          type="number"
+          id={fieldDomId(field.key)}
+          type="text"
           inputMode="decimal"
-          className="min-h-11 w-full bg-transparent text-base outline-none"
-          min={field.min}
-          max={field.max}
-          step={field.step ?? 1}
-          value={value === undefined || value === "" ? "" : Number(value)}
-          onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
-          aria-invalid={Boolean(error)}
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint="done"
+          value={text}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            onChange(toFieldValue(parseNumberInput(e.target.value)));
+          }}
+          onBlur={() => {
+            // ออกจากช่องแล้วแสดงค่าที่ระบบเข้าใจ ("4,5" → "4.5", "๓" → "3") ให้เห็นกับตาว่าคิดจากเลขอะไร
+            if (draft !== null && parseNumberInput(draft).kind !== "invalid") setDraft(null);
+          }}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={describedBy}
         />
-        {field.unit ? <span className="shrink-0 text-sm text-muted">{field.unit}</span> : null}
-      </span>
-      {error ? <span className="mt-1 block text-xs text-forge">{error}</span> : null}
-    </label>
+        {field.unit ? (
+          <span id={unitId} className="shrink-0 text-sm text-navy/75">
+            {field.unit}
+          </span>
+        ) : null}
+      </div>
+      {error ? (
+        <p id={errorId} className="mt-1.5 flex items-start gap-1.5 text-sm font-medium leading-snug text-forge">
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <span>{error}</span>
+        </p>
+      ) : null}
+    </div>
   );
 }
