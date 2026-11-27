@@ -3,12 +3,14 @@ import Link from "next/link";
 import { Mail, MapPin, Phone } from "lucide-react";
 import { ShopLogo } from "@/components/ShopLogo";
 import {
+  FacebookTile,
+  InstagramTile,
+  YouTubeTile,
   LazadaTile,
   LineTile,
   ShopeeTile,
   ThaiMartTile,
   TikTokTile,
-  WebsiteTile,
 } from "@/components/ChannelIcons";
 import type { SiteSettings } from "@/lib/types";
 
@@ -59,46 +61,6 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
   const year = new Date().getFullYear();
   const address =
     settings.address && !settings.address.includes("แก้ไขในหลังร้าน") ? settings.address : "";
-  const socials = [
-    {
-      href: settings.facebookUrl,
-      label: "Facebook",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
-          <path d="M14.5 8.5V6.8c0-.7.5-1.3 1.2-1.3H17V3h-1.8C12.8 3 11 4.8 11 7.2v1.3H9v2.7h2V21h3.5v-9.8h2.2l.3-2.7h-2.5Z" />
-        </svg>
-      ),
-    },
-    {
-      href: settings.instagramUrl,
-      label: "Instagram",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-          <rect x="4" y="4" width="16" height="16" rx="4" />
-          <circle cx="12" cy="12" r="3.4" />
-          <circle cx="17.2" cy="6.8" r="0.8" fill="currentColor" stroke="none" />
-        </svg>
-      ),
-    },
-    {
-      href: settings.youtubeUrl,
-      label: "YouTube",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
-          <path d="M22 12.2s0-3.2-.4-4.6c-.2-.8-.9-1.5-1.7-1.7C18.4 5.5 12 5.5 12 5.5s-6.4 0-7.9.4c-.8.2-1.5.9-1.7 1.7C2 9 2 12.2 2 12.2s0 3.2.4 4.6c.2.8.9 1.5 1.7 1.7 1.5.4 7.9.4 7.9.4s6.4 0 7.9-.4c.8-.2 1.5-.9 1.7-1.7.4-1.4.4-4.6.4-4.6ZM10 15.2V9.2l5.2 3-5.2 3Z" />
-        </svg>
-      ),
-    },
-    {
-      href: settings.tiktokSocialUrl,
-      label: "TikTok",
-      icon: (
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor" aria-hidden>
-          <path d="M14.6 4c.4 1.5 1.3 2.8 2.5 3.6 1 .7 2.2 1.1 3.4 1.2v2.6c-1.4 0-2.8-.4-4-1.1v7.2A6.5 6.5 0 1 1 9.2 11v2.7a3.8 3.8 0 1 0 2.7 3.6V4h2.7Z" />
-        </svg>
-      ),
-    },
-  ].filter((s) => s.href);
 
   return (
     <footer className="no-print mt-16 border-t border-steel bg-white" data-reveal>
@@ -108,7 +70,7 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
             href="/"
             className="inline-block focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-forge"
           >
-            <ShopLogo variant="header" className="h-12 w-auto" />
+            <ShopLogo variant="header" className="h-[4.5rem] w-auto" />
           </Link>
           {settings.tagline ? (
             <p className="mt-2 text-sm font-semibold text-forge">{settings.tagline}</p>
@@ -183,34 +145,16 @@ export function SiteFooter({ settings }: { settings: SiteSettings }) {
 
         <Col title="ติดตามเรา">
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <WebsiteTile href="/" />
             {settings.shopeeShopUrl ? <ShopeeTile href={settings.shopeeShopUrl} /> : null}
             {settings.lazadaShopUrl ? <LazadaTile href={settings.lazadaShopUrl} /> : null}
             {settings.thaiMartShopUrl ? <ThaiMartTile href={settings.thaiMartShopUrl} /> : null}
             {settings.tiktokShopUrl ? <TikTokTile href={settings.tiktokShopUrl} /> : null}
             {settings.lineUrl ? <LineTile href={settings.lineUrl} /> : null}
+            {settings.facebookUrl ? <FacebookTile href={settings.facebookUrl} /> : null}
+            {settings.instagramUrl ? <InstagramTile href={settings.instagramUrl} /> : null}
+            {settings.youtubeUrl ? <YouTubeTile href={settings.youtubeUrl} /> : null}
+            {settings.tiktokSocialUrl && settings.tiktokSocialUrl !== settings.tiktokShopUrl ? <TikTokTile href={settings.tiktokSocialUrl} label="TikTok" /> : null}
           </div>
-          {socials.length > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {socials.map((s, i) => (
-                <a
-                  key={s.label}
-                  href={s.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={s.label}
-                  title={s.label}
-                  className={
-                    i === 0
-                      ? "inline-flex h-9 w-9 items-center justify-center rounded-full bg-forge text-white"
-                      : "inline-flex h-9 w-9 items-center justify-center rounded-full border border-steel text-navy hover:border-forge hover:text-forge"
-                  }
-                >
-                  {s.icon}
-                </a>
-              ))}
-            </div>
-          ) : null}
         </Col>
       </div>
 
