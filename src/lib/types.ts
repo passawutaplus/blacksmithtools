@@ -279,6 +279,7 @@ export interface WholesaleLead {
 
 export interface DbShape {
   catalogVersion?: string;
+  copyVersion?: string;
   shippingPolicyVersion?: string;
   shopAddressVersion?: string;
   products: Product[];

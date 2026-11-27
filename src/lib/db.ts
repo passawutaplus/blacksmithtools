@@ -1,7 +1,7 @@
 import "server-only";
 import path from "path";
 import { nanoid } from "nanoid";
-import { brands, categories, CATALOG_VERSION, defaultSettings, seedProducts, SHOP_ADDRESS, SHOP_ADDRESS_VERSION, SHOP_PHONE } from "./seed";
+import { brands, categories, CATALOG_VERSION, COPY_VERSION, defaultSettings, seedProducts, SHOP_ADDRESS, SHOP_ADDRESS_VERSION, SHOP_PHONE } from "./seed";
 import { linePricing, normalizeVariants, syncFromVariants } from "./product";
 import { slugify } from "./utils";
 import type { AdminOrderRow } from "./admin-types";
@@ -76,6 +76,7 @@ const SHIPPING_POLICY_VERSION = "2026-08-21-35-1000";
 function emptyDb(): DbShape {
   return {
     catalogVersion: CATALOG_VERSION,
+    copyVersion: COPY_VERSION,
     shippingPolicyVersion: SHIPPING_POLICY_VERSION,
     shopAddressVersion: SHOP_ADDRESS_VERSION,
     products: structuredClone(seedProducts),
@@ -101,6 +102,21 @@ function applyCatalog(db: DbShape): boolean {
   db.products = structuredClone(seedProducts);
   db.brands = structuredClone(brands);
   db.categories = structuredClone(categories);
+  return true;
+}
+
+/** Text-only refresh: only name / nameTh / description are replaced, matched by product id. */
+function applyCopy(db: DbShape): boolean {
+  if (!COPY_VERSION || db.copyVersion === COPY_VERSION) return false;
+  const seedById = new Map(seedProducts.map((p) => [p.id, p]));
+  for (const p of db.products) {
+    const seed = seedById.get(p.id);
+    if (!seed) continue;
+    p.name = seed.name;
+    p.nameTh = seed.nameTh;
+    p.description = seed.description;
+  }
+  db.copyVersion = COPY_VERSION;
   return true;
 }
 
@@ -142,9 +158,10 @@ async function ensureDb(): Promise<DbShape> {
   if (typeof db.inquirySeq !== "number") db.inquirySeq = db.inquiries.length;
   db.settings = { ...defaultSettings, ...db.settings };
   const catalogChanged = applyCatalog(db);
+  const copyChanged = applyCopy(db);
   const shippingChanged = applyShippingPolicy(db);
   const addressChanged = applyShopAddress(db);
-  if (catalogChanged || shippingChanged || addressChanged) {
+  if (catalogChanged || copyChanged || shippingChanged || addressChanged) {
     try {
       await saveDb(db);
     } catch (e) {
