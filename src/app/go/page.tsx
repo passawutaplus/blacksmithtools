@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { getProductBySlug, getSettings, listProducts } from "@/lib/db";
 import { LinkPortal } from "@/components/LinkPortal";
+import { OG_BASE } from "@/lib/seo";
 import { portalChemSlides, portalPrintSlides } from "@/lib/portal-links";
 
 export const viewport: Viewport = {
@@ -23,6 +24,7 @@ export async function generateMetadata({
     title,
     description,
     openGraph: {
+      ...OG_BASE,
       title: `${title} | BlackSmith Tools`,
       description,
       images: product?.imageUrl ? [{ url: product.imageUrl }] : [{ url: "/brand/logo.png" }],

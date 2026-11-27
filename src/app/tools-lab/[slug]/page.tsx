@@ -7,6 +7,7 @@ import { PILLAR_LABEL, extractFaq, getArticle, listArticles, plainText, readingM
 import { ArticleToc } from "@/components/ArticleToc";
 import { ReadingProgress } from "@/components/ReadingProgress";
 import { jsonLd } from "@/lib/json-ld";
+import { OG_BASE } from "@/lib/seo";
 
 export async function generateStaticParams() {
   return (await listArticles()).map((a) => ({ slug: a.slug }));
@@ -24,10 +25,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     ...(a.keywords.length ? { keywords: a.keywords } : {}),
     robots: a.draft ? { index: false, follow: false } : undefined,
     openGraph: {
+      ...OG_BASE,
       type: "article",
       title: a.title,
       description: a.description,
       publishedTime: a.date,
+      ...(a.updated ? { modifiedTime: a.updated } : {}),
       ...(a.cover ? { images: [{ url: a.cover, width: 1080, height: 1080, alt: a.coverAlt ?? a.title }] } : {}),
     },
     twitter: { card: a.cover ? "summary_large_image" : "summary", title: a.title, description: a.description },

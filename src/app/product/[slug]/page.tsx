@@ -1,16 +1,17 @@
 import { jsonLd as toJsonLd } from "@/lib/json-ld";
-import { shortProductName } from "@/lib/product";
+import { shortProductName, productVariants } from "@/lib/product";
+import { OG_BASE, SITE_BRAND, metaDescription, seoProductTitle } from "@/lib/seo";
 import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { getProductBySlug, listProducts, getSettings, listPublishedReviews, getProductStats } from "@/lib/db";
 import { ReviewSection } from "@/components/ReviewSection";
-import { formatTHB } from "@/lib/utils";
 import { getProductBlurb } from "@/lib/parse-product-details";
 import { ProductDetail } from "@/components/ProductDetail";
 import { ProductCard } from "@/components/ProductCard";
 import { SectionHead } from "@/components/PageHeader";
 import { storefrontCategories } from "@/lib/collections";
+import { toCardProduct } from "@/lib/card-product";
 
 export async function generateMetadata({
   params,
@@ -22,16 +23,21 @@ export async function generateMetadata({
   if (!data) return { title: "ไม่พบสินค้า" };
   const { product, brands } = data;
   const blurb = getProductBlurb(product, 180);
-  const brandNames = brands.map((b) => b.name).join(", ");
+  const compat = product.compatibilities.filter((c) => !/อเนกประสงค์|ทั่วไป/u.test(c));
+  const fits = compat.length
+    ? `ใช้ได้กับ ${compat.join(", ")}`
+    : brands.filter((b) => b.slug !== "blacksmith").length
+      ? `ใช้ได้กับ ${brands.filter((b) => b.slug !== "blacksmith").map((b) => b.name).join(", ")}`
+      : "";
   return {
-    title: `${shortProductName(product.nameTh)} | ${formatTHB(product.price)}`,
-    description: product.compatibilities.length
-      ? `${blurb} ใช้กับ: ${product.compatibilities.join(", ")}. ${brandNames}`
-      : `${blurb} ${brandNames}`.trim(),
+    title: seoProductTitle(product.nameTh),
+    description: metaDescription(fits ? `${fits} · ${blurb}` : blurb),
     alternates: { canonical: `/product/${product.slug}` },
     openGraph: {
+      ...OG_BASE,
+      type: "website",
       title: shortProductName(product.nameTh),
-      description: blurb,
+      description: metaDescription(blurb),
       images: [{ url: product.imageUrl }],
     },
   };
@@ -68,22 +74,26 @@ export default async function ProductPage({
   const relatedList = related.filter((p) => p.id !== product.id).slice(0, 4);
   const optionCount = product.variants?.length ?? 0;
   const blurb = getProductBlurb(product, 180);
+  const variantPrices = productVariants(product).map((v) => v.price ?? product.price);
+  const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://blacksmith-tools.com").replace(/\/$/, "");
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
-    name: product.nameTh,
+    name: shortProductName(product.nameTh),
     image: product.images,
     description: blurb,
     sku: product.sku,
-    brand: brands.map((b) => ({ "@type": "Brand", name: b.name })),
+    url: `${siteUrl}/product/${encodeURI(product.slug)}`,
+    // Every listing is made or packed by BlackSmith; Milwaukee/DeWalt/etc. are what it fits, not its maker.
+    brand: { "@type": "Brand", name: SITE_BRAND },
     offers:
       optionCount > 1
         ? {
             "@type": "AggregateOffer",
             priceCurrency: "THB",
-            lowPrice: product.price,
-            highPrice: product.compareAtPrice ?? product.price,
+            lowPrice: Math.min(product.price, ...variantPrices),
+            highPrice: Math.max(product.price, ...variantPrices),
             offerCount: optionCount,
             availability:
               product.stock > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
@@ -132,7 +142,7 @@ export default async function ProductPage({
           <SectionHead title="คุณอาจชอบ" href="/shop" />
           <div className="grid grid-cols-2 gap-5 md:grid-cols-4 md:gap-8">
             {relatedList.map((p) => (
-              <ProductCard key={p.id} product={p} layout="related" />
+              <ProductCard key={p.id} product={toCardProduct(p)} layout="related" />
             ))}
           </div>
         </section>

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 import type { Brand, Product } from "@/lib/types";
+import type { CardProduct } from "@/lib/card-product";
 import { brands } from "@/lib/seed";
 import { formatTHB } from "@/lib/utils";
 import { BrandLogo } from "@/components/BrandLogo";
@@ -23,7 +24,7 @@ export function ProductCard({
   product,
   layout = "shop",
 }: {
-  product: Product;
+  product: CardProduct;
   layout?: "shop" | "related";
 }) {
   const [addOpen, setAddOpen] = useState(false);
@@ -77,7 +78,7 @@ export function ProductCard({
             {shortProductName(product.nameTh)}
           </h3>
           {!compact ? (
-            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted">{getProductBlurb(product)}</p>
+            <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted">{product.cardBlurb ?? getProductBlurb(product)}</p>
           ) : null}
         </Link>
 

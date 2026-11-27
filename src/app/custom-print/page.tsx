@@ -7,12 +7,17 @@ import { PrintGuide } from "@/components/PrintGuide";
 import { PrintFlow } from "@/components/PrintFlow";
 import { PrintFarm } from "@/components/PrintFarm";
 import { PrintFileGuide } from "@/components/PrintFileGuide";
+import { jsonLd } from "@/lib/json-ld";
+import { OG_BASE, breadcrumbLd, siteUrl } from "@/lib/seo";
+
+const PRINT_DESC =
+  "รับพิมพ์ 3D FDM เส้น และ SLA เรซิ่น ตามสั่ง ส่งไฟล์ STL, 3MF, OBJ หรือ STEP ให้ร้านประเมินในโปรแกรมเตรียมพิมพ์ก่อนจึงแจ้งราคาแม่น";
 
 export const metadata = {
-  title: "บริการพิมพ์ 3D",
+  title: "รับพิมพ์ 3D ตามสั่ง FDM และเรซิ่น",
+  openGraph: { ...OG_BASE, type: "website", title: "รับพิมพ์ 3D ตามสั่ง | BlackSmith Tools", description: PRINT_DESC },
   alternates: { canonical: "/custom-print" },
-  description:
-    "รับพิมพ์ 3D FDM เส้น และ SLA เรซิ่น ตามสั่ง ส่งไฟล์ STL, 3MF, OBJ หรือ STEP ให้ร้านประเมินในโปรแกรมเตรียมพิมพ์ก่อนจึงแจ้งราคาแม่น",
+  description: PRINT_DESC,
 };
 
 const USES = [
@@ -78,9 +83,27 @@ const STEPS = [
 
 export default async function CustomPrintPage() {
   const settings = await getSettings();
+  const base = siteUrl();
+  const ld = [
+    {
+      "@context": "https://schema.org",
+      "@type": "Service",
+      name: "รับพิมพ์ 3D ตามสั่ง",
+      serviceType: "3D printing",
+      description: PRINT_DESC,
+      url: `${base}/custom-print`,
+      areaServed: { "@type": "Country", name: "Thailand" },
+      provider: { "@type": "Organization", name: "BlackSmith Tools", url: base },
+    },
+    breadcrumbLd([
+      ["หน้าแรก", "/"],
+      ["บริการพิมพ์ 3D", "/custom-print"],
+    ]),
+  ];
 
   return (
     <div className="bg-white pb-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd(ld) }} />
       <nav aria-label="เส้นทาง" className="border-b border-steel bg-white">
         <div className="container-bs py-3 text-sm text-muted">
           <Link href="/" className="hover:text-navy">

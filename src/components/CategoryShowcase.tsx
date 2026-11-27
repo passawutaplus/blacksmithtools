@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Category, Product } from "@/lib/types";
 import { ProductCard } from "@/components/ProductCard";
+import { toCardProduct } from "@/lib/card-product";
 
 export const COLLECTION_BANNER: Record<string, string> = {
   "battery-mount": "/print/works/fdm-2.png",
@@ -63,7 +64,7 @@ export function CategoryShowcase({
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         {products.map((p) => (
-          <ProductCard key={p.id} product={p} layout="related" />
+          <ProductCard key={p.id} product={toCardProduct(p)} layout="related" />
         ))}
       </div>
     </section>

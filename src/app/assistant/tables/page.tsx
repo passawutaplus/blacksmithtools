@@ -8,6 +8,7 @@ import {
 } from "@/lib/chang/constants";
 
 export const metadata = {
+  alternates: { canonical: "/assistant/tables" },
   title: "ตารางอ้างอิงงานช่าง",
   description: "ตารางสายไฟ วสท. ขนาดท่อ PVC และ P–T น้ำยาแอร์ จากค่าคงที่ในระบบ — ไม่มีการคำนวณ",
 };

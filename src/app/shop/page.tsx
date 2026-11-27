@@ -6,6 +6,7 @@ import { ProductCard } from "@/components/ProductCard";
 import { BrandLogo } from "@/components/BrandLogo";
 import { PageHeader } from "@/components/PageHeader";
 import { storefrontCategories } from "@/lib/collections";
+import { toCardProduct } from "@/lib/card-product";
 
 export const metadata = {
   title: "สินค้าทั้งหมด — อุปกรณ์เสริมเครื่องมือช่าง",
@@ -126,7 +127,7 @@ export default async function ShopPage({
             <p className="mt-6 text-sm text-muted">พบ {products.length} รายการ</p>
             <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
               {products.map((p) => (
-                <ProductCard key={p.id} product={p} />
+                <ProductCard key={p.id} product={toCardProduct(p)} />
               ))}
             </div>
             {products.length === 0 ? (
