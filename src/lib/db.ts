@@ -38,6 +38,8 @@ import type {
   ShippingAddress,
   SiteSettings,
   ShopReview,
+  PrintQuote,
+  PrintQuoteStatus,
   WholesaleLead,
   WholesaleLeadStatus,
 } from "./types";
@@ -154,6 +156,7 @@ async function ensureDb(): Promise<DbShape> {
   const db = JSON.parse(raw) as DbShape;
   loadedVersion.set(db, version);
   if (!Array.isArray(db.inquiries)) db.inquiries = [];
+  if (!Array.isArray(db.printQuotes)) db.printQuotes = [];
   if (!Array.isArray(db.testimonials)) db.testimonials = [];
   if (typeof db.inquirySeq !== "number") db.inquirySeq = db.inquiries.length;
   db.settings = { ...defaultSettings, ...db.settings };
@@ -1488,6 +1491,149 @@ async function createWholesaleLead__impl(input: {
   return lead;
 }
 
+// ---------- 3D-print quote requests ----------
+
+async function savePrintQuote__impl(quote: PrintQuote) {
+  const db = await ensureDb();
+  db.printQuotes ??= [];
+  if (db.printQuotes.some((q) => q.id === quote.id)) throw new Error("เลขคำขอซ้ำ");
+  db.printQuotes.push(quote);
+  await saveDb(db);
+  return quote;
+}
+
+export async function listPrintQuotes(status?: string) {
+  const db = await ensureDb();
+  let items = (db.printQuotes ?? []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (status) items = items.filter((q) => q.status === status);
+  // Attach the order's bill token so the admin can re-copy the payment message any time.
+  const byId = new Map(db.orders.map((o) => [o.id, o]));
+  return items.map((q) => {
+    const o = q.orderId ? byId.get(q.orderId) : undefined;
+    return o ? { ...q, orderToken: o.token, orderTotal: o.grandTotal, orderStatus: o.status } : q;
+  });
+}
+
+async function updatePrintQuote__impl(id: string, patch: { status?: PrintQuoteStatus; adminNote?: string }) {
+  const db = await ensureDb();
+  const q = (db.printQuotes ?? []).find((x) => x.id === id);
+  if (!q) throw new Error("ไม่พบคำขอ");
+  if (patch.status) {
+    if (!["new", "closed"].includes(patch.status)) throw new Error("สถานะไม่ถูกต้อง");
+    if (q.status === "ordered") throw new Error("คำขอนี้เปิดออเดอร์แล้ว จัดการต่อที่หน้าออเดอร์");
+    q.status = patch.status;
+  }
+  if (patch.adminNote !== undefined) q.adminNote = String(patch.adminNote).slice(0, 2000);
+  q.updatedAt = new Date().toISOString();
+  await saveDb(db);
+  return q;
+}
+
+/**
+ * Shop confirmed the price: create a normal shop order (pending payment) from the quote,
+ * so the usual slip → paid → ship (tracking) → bill-page flow applies.
+ */
+async function printQuoteToOrder__impl(id: string, input: { printTHB: number; shippingFee: number; note?: string }) {
+  const db = await ensureDb();
+  const q = (db.printQuotes ?? []).find((x) => x.id === id);
+  if (!q) throw new Error("ไม่พบคำขอ");
+  if (q.status === "ordered" && q.orderId) throw new Error(`เปิดออเดอร์แล้ว (${q.orderNumber})`);
+  const price = Math.round(Number(input.printTHB));
+  const shippingFee = Math.round(Number(input.shippingFee));
+  if (!Number.isFinite(price) || price <= 0 || price > 1_000_000) throw new Error("ใส่ราคาพิมพ์ให้ถูกต้อง");
+  if (!Number.isFinite(shippingFee) || shippingFee < 0 || shippingFee > 10_000) throw new Error("ใส่ค่าส่งให้ถูกต้อง");
+
+  const loc = completeThaiAddress({
+    province: q.contact.province,
+    district: q.contact.district,
+    subdistrict: q.contact.subdistrict,
+    postalCode: q.contact.zip,
+  });
+  const address: ShippingAddress = {
+    fullName: q.contact.name,
+    phone: q.contact.phone,
+    line1: q.contact.address,
+    subdistrict: loc.subdistrict || q.contact.subdistrict,
+    district: loc.district || q.contact.district,
+    province: loc.province || q.contact.province,
+    postalCode: loc.postalCode || q.contact.zip,
+  };
+  const files = q.files.filter((f) => f.status !== "error");
+  const pieces = files.reduce((s, f) => s + f.qty, 0);
+  const proc = q.process === "fdm" ? "FDM PETG" : "Resin";
+  const layer = q.process === "fdm" ? (q.quality === "fine" ? "0.15" : "0.25") : q.quality === "fine" ? "ละเอียด" : "ปกติ";
+  const items: OrderItem[] = [
+    {
+      productId: "custom",
+      name: `งานพิมพ์ 3D ${proc} · layer ${layer}`,
+      variantName: `${files.length} ไฟล์ · ${pieces} ชิ้น · คำขอ #${q.id}`,
+      sku: `PRINT3D-${q.id}`,
+      price,
+      quantity: 1,
+      imageUrl: "/print/part.png",
+    },
+  ];
+  // Job details for the shop (not shown to the customer): files, wanted sizes, notes.
+  const fileLines = files.map((f) => {
+    const dims = f.dims ? ` ${f.dims.map((n) => Math.round(n)).join("×")} มม.` : "";
+    const want = f.wantMm?.some(Boolean) ? ` → ต้องการ ${f.wantMm.map((n) => n || "-").join("×")} มม.` : "";
+    const note = f.note?.trim() ? ` · ${f.note.trim()}` : "";
+    const warn = f.status === "warn" ? ` ⚠ ${f.statusText}` : "";
+    return `• ${f.name} × ${f.qty}${dims}${want}${note}${warn}`;
+  });
+  const adminNote = [input.note?.trim() ?? "", `งานพิมพ์ 3D คำขอ #${q.id}`, ...fileLines].filter(Boolean).join("\n").slice(0, 4000);
+  db.orderSeq += 1;
+  const now = new Date().toISOString();
+  const order: Order = {
+    id: nanoid(12),
+    number: `BS-${todayCode()}-${String(db.orderSeq).padStart(4, "0")}`,
+    token: nanoid(32),
+    status: "pending_payment",
+    origin: "shop",
+    externalRef: q.id,
+    items,
+    subtotal: price,
+    shippingFee,
+    discount: 0,
+    grandTotal: price + shippingFee,
+    shippingMethod: q.shipping === "rider" ? "rider" : "standard",
+    address,
+    paymentMethod: "bank_transfer",
+    customerNote:
+      [
+        q.shipping === "rider" ? "ส่งด่วน Grab/ไรเดอร์ ลูกค้าจ่ายค่าส่งปลายทาง" : "",
+        q.contact.wantDate ? `ต้องการรับ ${q.contact.wantDate}` : "",
+        q.contact.lineId ? `LINE ${q.contact.lineId}` : "",
+      ]
+        .filter(Boolean)
+        .join(" · ") || undefined,
+    adminNote,
+    shipmentIds: [],
+    events: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  pushEvent(order, "created", `สร้างออเดอร์จากคำขอพิมพ์ 3D #${q.id}`);
+  const payment: Payment = {
+    id: nanoid(12),
+    orderId: order.id,
+    provider: "bank_transfer",
+    amount: order.grandTotal,
+    status: "pending",
+    createdAt: now,
+    updatedAt: now,
+  };
+  order.paymentId = payment.id;
+  db.orders.push(order);
+  db.payments.push(payment);
+  q.status = "ordered";
+  q.orderId = order.id;
+  q.orderNumber = order.number;
+  q.updatedAt = now;
+  await saveDb(db);
+  return { quote: q, order };
+}
+
 export async function listWholesaleLeads(status?: string) {
   const db = await ensureDb();
   let items = db.inquiries.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -1580,5 +1726,8 @@ export const refundOrder = withStateRetry(refundOrder__impl);
 export const completeOrder = withStateRetry(completeOrder__impl);
 export const saveAdminNote = withStateRetry(saveAdminNote__impl);
 export const createWholesaleLead = withStateRetry(createWholesaleLead__impl);
+export const savePrintQuote = withStateRetry(savePrintQuote__impl);
+export const updatePrintQuote = withStateRetry(updatePrintQuote__impl);
+export const printQuoteToOrder = withStateRetry(printQuoteToOrder__impl);
 export const updateWholesaleLead = withStateRetry(updateWholesaleLead__impl);
 export const attachPaysoRef = withStateRetry(attachPaysoRef__impl);

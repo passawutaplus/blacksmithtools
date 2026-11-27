@@ -6,7 +6,7 @@ const CARRIER_LABELS: Record<Carrier, string> = {
   thailand_post: "ไปรษณีย์ไทย",
   jnt: "J&T Express",
   best: "Best Express",
-  pickup: "นัดรับเอง",
+  pickup: "Grab / ไรเดอร์ / ส่งเอง",
   other: "อื่น ๆ",
 };
 
@@ -34,7 +34,7 @@ export function trackingUrl(carrier: Carrier, trackingNo: string) {
 }
 
 export function trackingLinkLabel(carrier: Carrier) {
-  if (carrier === "pickup") return "นัดรับเอง ไม่มีเลขพัสดุ";
+  if (carrier === "pickup") return "ส่งโดยไรเดอร์ ไม่มีเลขพัสดุ";
   if (carrier === "other") return "คัดลอกเลขไปเช็คกับขนส่ง";
   return `เปิดหน้า ${carrierLabel(carrier)} — เลขใส่ให้แล้ว`;
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Eye, Package, Printer } from "lucide-react";
+import { Copy, Eye, Package, Printer } from "lucide-react";
 import { StatusBadge } from "@/components/admin/StatusBadge";
 import { adminJson } from "@/lib/admin-client";
 import type { AdminOrderRow } from "@/lib/admin-types";
@@ -96,7 +96,7 @@ function ShipmentCard({
               value={trackingNo}
               disabled={busy || carrier === "pickup"}
               onChange={(e) => setTrackingNo(e.target.value)}
-              placeholder={carrier === "pickup" ? "นัดรับ ไม่ต้องใส่เลข" : "เลขพัสดุจากขนส่ง"}
+              placeholder={carrier === "pickup" ? "ไรเดอร์ ไม่ต้องใส่เลข" : "เลขพัสดุจากขนส่ง"}
             />
           </div>
           <div className="flex flex-wrap gap-2 sm:col-span-2">
@@ -198,6 +198,7 @@ export default function AdminOrderDetailPage() {
   const [row, setRow] = useState<AdminOrderRow | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [copiedLink, setCopiedLink] = useState(false);
   const [carrier, setCarrier] = useState<Carrier>("flash");
   const [trackingNo, setTrackingNo] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
@@ -341,6 +342,7 @@ export default function AdminOrderDetailPage() {
               onChange={(e) => {
                 const status = e.target.value as OrderStatus;
                 if (status === order.status) return;
+                if (!window.confirm(`เปลี่ยนสถานะเป็น "${ORDER_STATUS_LABEL[status]}" ?`)) return;
                 void run("set_status", { status });
               }}
             >
@@ -361,7 +363,14 @@ export default function AdminOrderDetailPage() {
             type="button"
             className="btn btn-primary"
             disabled={!!busy}
-            onClick={() => void run("confirm_payment")}
+            onClick={() => {
+              if (
+                order.status === "pending_payment" &&
+                !window.confirm("ยังไม่มีสลิปจากลูกค้า ยืนยันว่าได้รับเงินแล้วจริงไหม? (ระบบจะออกใบเสร็จให้)")
+              )
+                return;
+              void run("confirm_payment");
+            }}
           >
             ยืนยันชำระ
           </button>
@@ -375,6 +384,23 @@ export default function AdminOrderDetailPage() {
         >
           <Eye className="h-5 w-5" aria-hidden />
         </Link>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          onClick={async () => {
+            const text = `ออเดอร์ ${order.number} ยอด ${order.grandTotal.toLocaleString("th-TH")} บาท\nชำระเงิน แนบสลิป และดูเลขพัสดุได้ที่\n${window.location.origin}/bill/${order.token}`;
+            try {
+              await navigator.clipboard.writeText(text);
+              setCopiedLink(true);
+              setTimeout(() => setCopiedLink(false), 1500);
+            } catch {
+              window.prompt("คัดลอกข้อความนี้", text);
+            }
+          }}
+        >
+          <Copy className="h-4 w-4" aria-hidden />
+          {copiedLink ? "คัดลอกแล้ว" : "คัดลอกลิงก์ส่งลูกค้า"}
+        </button>
         <div className="ml-auto flex flex-wrap gap-2">
           <Link
             href={`/bill/${order.token}/print/label`}
@@ -438,7 +464,13 @@ export default function AdminOrderDetailPage() {
             ) : null}
             <div>
               <dt className="text-muted">วิธีส่ง</dt>
-              <dd>{order.shippingMethod === "pickup" ? "นัดรับเอง" : "จัดส่ง"}</dd>
+              <dd>
+                {order.shippingMethod === "pickup"
+                  ? "นัดรับเอง"
+                  : order.shippingMethod === "rider"
+                    ? "ด่วน Grab/ไรเดอร์ (ลูกค้าจ่ายค่าส่งปลายทาง)"
+                    : "จัดส่งพัสดุ"}
+              </dd>
             </div>
           </dl>
         </section>
@@ -642,7 +674,7 @@ export default function AdminOrderDetailPage() {
                     value={trackingNo}
                     onChange={(e) => setTrackingNo(e.target.value)}
                     disabled={carrier === "pickup"}
-                    placeholder={carrier === "pickup" ? "นัดรับ ไม่ต้องใส่เลข" : "เลขพัสดุจากขนส่ง"}
+                    placeholder={carrier === "pickup" ? "ไรเดอร์ ไม่ต้องใส่เลข" : "เลขพัสดุจากขนส่ง"}
                   />
                 </div>
               </div>

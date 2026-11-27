@@ -15,6 +15,9 @@ import {
   listPendingSlips,
   listProducts,
   listWholesaleLeads,
+  listPrintQuotes,
+  printQuoteToOrder,
+  updatePrintQuote,
   markDelivered,
   markOrderPaid,
   refundOrder,
@@ -95,6 +98,10 @@ export async function GET(req: Request) {
       });
     case "reviews":
       return NextResponse.json({ reviews: await listShopReviews() });
+    case "print_quotes":
+      return NextResponse.json({
+        quotes: await listPrintQuotes(url.searchParams.get("status") || undefined),
+      });
     default:
       return NextResponse.json({ error: "ไม่รู้จักรายการ" }, { status: 400 });
   }
@@ -186,6 +193,18 @@ export async function POST(req: Request) {
             adminNote: body.adminNote,
           }),
         });
+      case "update_print_quote":
+        return NextResponse.json({
+          quote: await updatePrintQuote(String(body.id ?? ""), { status: body.status, adminNote: body.adminNote }),
+        });
+      case "print_quote_to_order":
+        return NextResponse.json(
+          await printQuoteToOrder(String(body.id ?? ""), {
+            printTHB: Number(body.printTHB),
+            shippingFee: Number(body.shippingFee),
+            note: typeof body.note === "string" ? body.note.slice(0, 500) : undefined,
+          }),
+        );
       default:
         return NextResponse.json({ error: "ไม่รู้จักคำสั่ง" }, { status: 400 });
     }

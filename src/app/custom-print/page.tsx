@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { Layers, Droplets, ListOrdered, MessageCircle, Truck, RotateCcw, ShieldCheck, Printer, FileDown } from "lucide-react";
+import { Calculator, Layers, Droplets, ListOrdered, MessageCircle, Truck, RotateCcw, ShieldCheck, Printer, FileDown } from "lucide-react";
 import { getSettings } from "@/lib/db";
 import { PrintQuoteForm } from "@/components/PrintQuoteForm";
 import { PrintGuide } from "@/components/PrintGuide";
@@ -67,7 +67,7 @@ const STEPS = [
   {
     n: "7",
     t: "ส่งงาน",
-    d: "ค่าส่งขนส่งทั่วไปร้านออกให้ฟรี หากต้องการเดลิเวอรี่ด่วน ลูกค้าออกเอง",
+    d: "ส่งพัสดุ ฿50/ออเดอร์ ส่งฟรีเมื่อยอดสั่ง 1,000 บาทขึ้นไป ถ้าต้องการด่วน ร้านเรียก Grab/ไรเดอร์ให้ ลูกค้าจ่ายค่าส่งปลายทาง",
   },
   {
     n: "8",
@@ -122,6 +122,10 @@ export default async function CustomPrintPage() {
                 <MessageCircle className="h-4 w-4" aria-hidden />
                 คุยผ่าน LINE
               </a>
+              <Link href="/custom-print/quote" className="btn btn-secondary text-navy">
+                <Calculator className="h-4 w-4" aria-hidden />
+                ประเมินราคาจากไฟล์
+              </Link>
               <a href="#quote" className="btn btn-secondary text-navy">
                 กรอกสเปกงาน
               </a>
@@ -179,7 +183,7 @@ export default async function CustomPrintPage() {
                 ค่าส่ง
               </p>
               <p className="mt-2 text-sm leading-relaxed text-navy/90">
-                ส่งขนส่งทั่วไป ร้านออกให้ฟรี หากต้องการเดลิเวอรี่ด่วน ลูกค้าเป็นคนออกค่าส่งเอง
+                ส่งพัสดุ ฿50/ออเดอร์ ส่งฟรีเมื่อยอดสั่ง 1,000 บาทขึ้นไป ถ้าต้องการด่วน ร้านเรียก Grab/ไรเดอร์ให้ ลูกค้าจ่ายค่าส่งปลายทาง
               </p>
             </div>
             <div className="card p-5">

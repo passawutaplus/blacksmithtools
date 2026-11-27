@@ -291,9 +291,52 @@ export interface DbShape {
   documents: DocumentRecord[];
   shipments: Shipment[];
   inquiries: WholesaleLead[];
+  /** 3D-print quote requests from /custom-print/quote (optional on old data). */
+  printQuotes?: PrintQuote[];
   testimonials: ShopReview[];
   settings: SiteSettings;
   receiptSeq: number;
   orderSeq: number;
   inquirySeq: number;
+}
+export type PrintQuoteStatus = "new" | "ordered" | "closed";
+
+export interface PrintQuoteFile {
+  name: string;
+  sizeBytes: number;
+  dims: [number, number, number] | null;
+  qty: number;
+  status: "ok" | "warn" | "error";
+  statusText: string;
+  wantMm?: string[];
+  note?: string;
+  blobPath?: string;
+}
+
+/** A customer's 3D-print quote request; the shop confirms the price and turns it into an order. */
+export interface PrintQuote {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: PrintQuoteStatus;
+  process: "fdm" | "resin";
+  quality: "normal" | "fine";
+  files: PrintQuoteFile[];
+  contact: {
+    name: string;
+    phone: string;
+    address: string;
+    subdistrict: string;
+    district: string;
+    province: string;
+    zip: string;
+    lineId?: string;
+    wantDate?: string;
+  };
+  shipping: "parcel" | "rider";
+  keepFiles: boolean;
+  estimate: { printTHB: number | null; hours: number | null };
+  orderId?: string;
+  orderNumber?: string;
+  adminNote?: string;
 }

@@ -112,6 +112,7 @@ export default async function BillPage({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">{item.name}</p>
+                  {item.variantName ? <p className="text-xs text-muted">{item.variantName}</p> : null}
                   <p className="text-xs text-muted">
                     SKU {item.sku} · {item.quantity} × {formatTHB(item.price)}
                   </p>
@@ -128,7 +129,13 @@ export default async function BillPage({
             {order.origin === "manual" ? null : (
               <div className="flex justify-between">
                 <span>ค่าส่ง</span>
-                <span>{order.shippingFee === 0 ? "ฟรี" : formatTHB(order.shippingFee)}</span>
+                <span>
+                  {order.shippingMethod === "rider"
+                    ? "ไรเดอร์ · จ่ายปลายทาง"
+                    : order.shippingFee === 0
+                      ? "ฟรี"
+                      : formatTHB(order.shippingFee)}
+                </span>
               </div>
             )}
             {order.discount ? (
